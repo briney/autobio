@@ -12,9 +12,7 @@ from autobio.schemas.base import BaseInput, BaseOutput
 class InverseFoldingInput(BaseInput):
     """Input schema for inverse folding tools (e.g., ProteinMPNN, ESM-IF1)."""
 
-    structure_path: Path = Field(
-        description="Path to the input backbone structure (PDB or mmCIF)."
-    )
+    structure_path: Path = Field(description="Path to the input backbone structure (PDB or mmCIF).")
     chains_to_design: list[str] | None = Field(
         default=None,
         description="Chain IDs to redesign. None designs all chains.",

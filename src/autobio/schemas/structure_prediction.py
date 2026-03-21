@@ -14,8 +14,7 @@ class StructurePredictionInput(BaseInput):
 
     sequences: dict[str, str] = Field(
         description=(
-            "Mapping of chain ID to amino acid sequence "
-            "(e.g., {'A': 'MKLL...', 'B': 'GVSE...'})."
+            "Mapping of chain ID to amino acid sequence (e.g., {'A': 'MKLL...', 'B': 'GVSE...'})."
         ),
     )
     num_models: int = Field(

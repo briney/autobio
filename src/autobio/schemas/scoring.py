@@ -13,9 +13,7 @@ from autobio.schemas.base import BaseInput, BaseOutput
 class ScoringInput(BaseInput):
     """Input schema for structure scoring tools (e.g., Rosetta, OpenMM energy)."""
 
-    structure_path: Path = Field(
-        description="Path to the structure to score (PDB or mmCIF)."
-    )
+    structure_path: Path = Field(description="Path to the structure to score (PDB or mmCIF).")
     sequences: dict[str, str] | None = Field(
         default=None,
         description=(
@@ -28,9 +26,7 @@ class ScoringInput(BaseInput):
 class ScoredStructure(BaseModel):
     """Scoring results for a single structure."""
 
-    total_score: float = Field(
-        description="Total energy score for the structure."
-    )
+    total_score: float = Field(description="Total energy score for the structure.")
     per_residue_scores: list[float] | None = Field(
         default=None,
         description="Per-residue energy scores in residue order.",

@@ -537,9 +537,7 @@ class TestOutputInheritance:
         assert out.metadata.tool_name == "test-tool"
         assert out.raw_output_path == Path("/tmp/ws/outputs/raw")
 
-    def test_missing_metadata_raises(
-        self, output_cls: type, kwargs: dict[str, Any]
-    ) -> None:
+    def test_missing_metadata_raises(self, output_cls: type, kwargs: dict[str, Any]) -> None:
         with pytest.raises(ValidationError):
             output_cls(
                 raw_output_path=Path("/tmp"),

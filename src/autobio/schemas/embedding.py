@@ -22,8 +22,7 @@ class EmbeddingInput(BaseInput):
     pooling: str | None = Field(
         default=None,
         description=(
-            "Pooling strategy for per-residue embeddings "
-            "(e.g., 'mean', 'cls', 'per_residue')."
+            "Pooling strategy for per-residue embeddings (e.g., 'mean', 'cls', 'per_residue')."
         ),
     )
 
@@ -55,6 +54,4 @@ class EmbeddingOutput(BaseOutput):
     model_name: str = Field(
         description="Name of the embedding model used (e.g., 'esm2_t33_650M_UR50D')."
     )
-    embedding_dimension: int = Field(
-        description="Dimensionality of all output embeddings."
-    )
+    embedding_dimension: int = Field(description="Dimensionality of all output embeddings.")
