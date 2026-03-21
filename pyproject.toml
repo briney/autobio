@@ -5,14 +5,23 @@ build-backend = "hatchling.build"
 [project]
 name = "autobio"
 version = "0.0.1"
-description = "A Python package"
+description = "Unified, agentic-friendly interface to computational biology tools via Docker containers"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "Bryan Briney" },
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2.0,<3",
+    "typer>=0.9,<1",
+    "python-on-whales>=0.60,<1",
+    "pynvml>=11.5,<12",
+    "rich>=13.0,<14",
+]
+
+[project.scripts]
+autobio = "autobio.cli.main:app"
 
 [project.optional-dependencies]
 dev = [
@@ -49,12 +58,25 @@ select = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "docker: marks tests that require Docker",
+    "gpu: marks tests that require GPU access",
+]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "python_on_whales.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pynvml.*"
+ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autobio"]
