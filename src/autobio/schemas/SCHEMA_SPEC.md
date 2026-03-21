@@ -1,4 +1,4 @@
-# Schema Specification — `SCHEMA_SPEC.md`
+# Schema Specification
 
 This document defines how to create and maintain standardized input/output schemas for autobio tool categories. Schemas are the contract between host-side runners, containers, and agents — they determine what data flows in and out of every tool invocation.
 
@@ -19,8 +19,9 @@ Each tool category (structure prediction, sequence embedding, inverse folding, e
 All schemas live in `src/autobio/schemas/`. Each tool category gets its own module:
 
 ```
-schemas/
-├── __init__.py
+src/autobio/schemas/
+├── __init__.py                    # re-exports all public types
+├── SCHEMA_SPEC.md                 # this document
 ├── base.py                        # base types (never edited per-category)
 ├── structure_prediction.py        # StructurePrediction I/O
 ├── embedding.py                   # SequenceEmbedding I/O
@@ -86,30 +87,31 @@ class BaseOutput(BaseModel):
 
 ### 4.1 Define the Input Model
 
-Create a new module (e.g., `src/autobio/schemas/docking.py`). Define an input model that inherits from `BaseInput`:
+Create a new module (e.g., `src/autobio/schemas/docking.py`). Define an input model that inherits from `BaseInput`. Use `Field(description=...)` for all fields — these descriptions are exposed to agents via `autobio info --format json`:
 
 ```python
 from pathlib import Path
+from pydantic import Field
 from autobio.schemas.base import BaseInput
 
 
 class DockingInput(BaseInput):
     """Input schema for molecular docking tools."""
 
-    receptor_path: Path
-    """Path to the receptor structure (PDB or mmCIF)."""
-
-    ligand_smiles: str | None = None
-    """SMILES string for the ligand. Provide this or ligand_path."""
-
-    ligand_path: Path | None = None
-    """Path to the ligand structure (SDF or MOL2). Provide this or ligand_smiles."""
-
-    num_poses: int = 10
-    """Number of docking poses to generate."""
-
-    exhaustiveness: int = 8
-    """Search exhaustiveness (higher = slower but more thorough)."""
+    receptor_path: Path = Field(description="Path to the receptor structure (PDB or mmCIF).")
+    ligand_smiles: str | None = Field(
+        default=None,
+        description="SMILES string for the ligand. Provide this or ligand_path.",
+    )
+    ligand_path: Path | None = Field(
+        default=None,
+        description="Path to the ligand structure (SDF or MOL2). Provide this or ligand_smiles.",
+    )
+    num_poses: int = Field(default=10, description="Number of docking poses to generate.")
+    exhaustiveness: int = Field(
+        default=8,
+        description="Search exhaustiveness (higher = slower but more thorough).",
+    )
 ```
 
 **Rules for input fields:**
@@ -119,8 +121,9 @@ class DockingInput(BaseInput):
 | All fields MUST have type annotations. | Validation and serialization depend on types. |
 | Required fields have no default value. | Pydantic enforces this at construction time. |
 | Optional fields use `X \| None = None` or have a default value. | Agents can omit optional fields safely. |
-| Every field MUST have a docstring or `Field(description=...)`. | The `autobio info` command exposes these descriptions to agents. |
+| Every field MUST use `Field(description=...)`. | The `autobio info` command exposes these descriptions to agents. |
 | Use `Path` for file references, not `str`. | Enables validation and consistent handling. |
+| Use `dict[str, str]` for per-chain data (e.g., chain ID to sequence). | Multi-chain structures are common; standardize the mapping pattern. |
 | Do NOT include fields that are purely execution-level concerns (GPU, timeout). | Those are handled by the runner's `run()` method, not the schema. |
 | Do NOT duplicate `extra` — it is inherited from `BaseInput`. | Tool-specific overrides always go through `extra`. |
 | Prefer semantic field names over tool-specific jargon. | Agents should be able to understand fields without knowing the underlying tool. |
@@ -188,16 +191,17 @@ class DockingOutput(BaseOutput):
 
 ### 4.4 Register the Schema
 
-After defining the schema, it must be registered:
+After defining the schema, it must be connected in two places:
 
 1. Export the input and output models from `schemas/__init__.py`:
    ```python
-   from autobio.schemas.docking import DockingInput, DockingOutput
+   from autobio.schemas.docking import DockingInput, DockingOutput, DockingPose
    ```
 
-2. Reference them in the tool's `ToolEntry` in `core/registry.py`:
+2. Reference them in the tool's `ToolEntry` (registered at the bottom of the tool module, not in `registry.py`):
    ```python
-   "diffdock": ToolEntry(
+   # In src/autobio/tools/diffdock.py
+   TOOL_REGISTRY["diffdock"] = ToolEntry(
        input_schema=DockingInput,
        output_schema=DockingOutput,
        ...
@@ -237,6 +241,28 @@ Example for structure prediction:
         "best_ptm": 0.89,
         "best_iptm": 0.85
     }
+}
+```
+
+Example for inverse folding (produced by `containers/mpnn/standardize.py`):
+
+```json
+{
+    "designed_sequences": [
+        {
+            "rank": 1,
+            "sequence": {"H": "GVKLTESG...", "L": "ASVLTQPP..."},
+            "score": null,
+            "recovery": 0.5652
+        },
+        {
+            "rank": 2,
+            "sequence": {"H": "EVQLVESG...", "L": "DIVMTQSP..."},
+            "score": null,
+            "recovery": 0.4891
+        }
+    ],
+    "native_sequence": {"H": "GVKLTESG...", "L": "ASVLTQPP..."}
 }
 ```
 
