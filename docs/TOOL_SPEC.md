@@ -7,7 +7,7 @@ This document defines how to create a new host-side tool runner. A tool runner i
 ## 1. Purpose
 
 Each tool in autobio has:
-- A **container** that runs the tool (see `CONTAINER_SPEC.md`)
+- A **container** that runs the tool (see `containers/CONTAINER_SPEC.md`)
 - A **runner** that prepares inputs for the container and parses its outputs
 
 The runner is responsible for:
@@ -427,5 +427,5 @@ def test_proteinx_smoke():
 - [ ] Unit tests cover `prepare_workspace` config generation
 - [ ] Unit tests cover `parse_output` deserialization with mock standardized data
 - [ ] Smoke test exercises full pipeline (Docker + optional GPU)
-- [ ] Corresponding container exists (see `CONTAINER_SPEC.md`)
+- [ ] Corresponding container exists (see `containers/CONTAINER_SPEC.md`)
 - [ ] Runner docstring documents any `extra` dict conventions specific to this tool

@@ -1,6 +1,8 @@
-# Container Specification — `CONTAINER_SPEC.md`
+# Container Specification
 
-This document defines how to create a new tool container for autobio. A container encapsulates a computational biology tool and its dependencies, exposing it through a standardized three-phase execution protocol. Containers are fully self-contained — they include the tool itself, all of its dependencies, and the logic to standardize the tool's native outputs into autobio's schema format.
+This document defines how to create a new tool container for autobio. A container encapsulates a computational biology tool and its dependencies, exposing it through a standardized three-phase execution protocol.
+
+Containers are **fully self-contained**: they include the tool, all runtime dependencies, model weights/checkpoints, and the logic to standardize the tool's native outputs into autobio's schema format. The host system provides only Docker, a GPU, and the workspace directory — nothing else.
 
 ---
 
@@ -22,18 +24,18 @@ Each tool has a build context directory under `containers/`:
 
 ```
 containers/
+├── CONTAINER_SPEC.md               # this document
 ├── base-entrypoint.sh              # shared — do not modify per-tool
 ├── <tool_name>/
 │   ├── Dockerfile
 │   ├── validate_config.sh          # Phase 1: config validation
 │   ├── run.sh                      # Phase 2: tool execution
 │   ├── standardize.sh              # Phase 3: output standardization
-│   ├── requirements.txt            # (optional) Python deps for standardization
 │   ├── standardize.py              # (optional) Python standardization script
 │   └── test/
 │       ├── inputs/                 # minimal test inputs for smoke tests
 │       │   ├── config.json
-│       │   └── sequences.fasta     # (example — varies by tool)
+│       │   └── structure.pdb       # (example — varies by tool)
 │       └── expected_outputs/       # golden standardized outputs
 │           └── result_data.json
 ```
@@ -150,10 +152,10 @@ exit 0
 
 ### 3.1 Dependencies of the Base Entrypoint
 
-The base entrypoint requires `jq` and `bc` to be available in the container. The Dockerfile must install these (they are often already present in base images, but should be explicitly ensured):
+The base entrypoint requires `jq` and `bc`. Many base images lack these, so the Dockerfile must install them explicitly. Also install `wget` if the Dockerfile downloads model weights at build time (see §5.2):
 
 ```dockerfile
-RUN apt-get update && apt-get install -y --no-install-recommends jq bc \
+RUN apt-get update && apt-get install -y --no-install-recommends jq bc wget \
     && rm -rf /var/lib/apt/lists/*
 ```
 
@@ -169,8 +171,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends jq bc \
 - Receives one argument: the path to `config.json`.
 - Exit code 0 = valid. Non-zero = invalid.
 - Print clear error messages to stderr on validation failure.
+- Validate that referenced files (structures, checkpoints) exist at the paths given in the config.
 
-**Example:**
+**Example** (from `containers/mpnn/validate_config.sh`):
 
 ```bash
 #!/usr/bin/env bash
@@ -179,15 +182,24 @@ set -euo pipefail
 CONFIG_FILE="$1"
 
 # Check required fields exist
-if ! jq -e '.sequences' "$CONFIG_FILE" > /dev/null 2>&1; then
-    echo "ERROR: config.json missing required field 'sequences'" >&2
+for field in structure_path model_type checkpoint_path; do
+    if ! jq -e ".$field" "$CONFIG_FILE" > /dev/null 2>&1; then
+        echo "ERROR: config.json missing required field '$field'" >&2
+        exit 1
+    fi
+done
+
+# Validate enum field
+MODEL_TYPE=$(jq -r '.model_type' "$CONFIG_FILE")
+if [[ "$MODEL_TYPE" != "protein_mpnn" && "$MODEL_TYPE" != "ligand_mpnn" ]]; then
+    echo "ERROR: model_type must be 'protein_mpnn' or 'ligand_mpnn', got '$MODEL_TYPE'" >&2
     exit 1
 fi
 
-# Validate field values
-NUM_MODELS=$(jq -r '.num_models // 1' "$CONFIG_FILE")
-if [ "$NUM_MODELS" -lt 1 ] || [ "$NUM_MODELS" -gt 5 ]; then
-    echo "ERROR: num_models must be between 1 and 5, got $NUM_MODELS" >&2
+# Validate referenced files exist
+STRUCTURE_PATH=$(jq -r '.structure_path' "$CONFIG_FILE")
+if [ ! -f "$STRUCTURE_PATH" ]; then
+    echo "ERROR: structure file not found: $STRUCTURE_PATH" >&2
     exit 1
 fi
 
@@ -205,7 +217,7 @@ exit 0
 - Must read input files from `$WORKSPACE/inputs/`.
 - Must write all outputs to `$WORKSPACE/outputs/raw/`.
 - Exit code 0 = success. Non-zero = failure.
-- May write additional tool-specific logs to `$WORKSPACE/logs/tool.log`.
+- Should capture tool output to `$WORKSPACE/logs/tool.log` via `tee`.
 
 **Example:**
 
@@ -215,19 +227,33 @@ set -euo pipefail
 
 WORKSPACE="$1"
 CONFIG="$WORKSPACE/config.json"
-INPUT_DIR="$WORKSPACE/inputs"
 OUTPUT_DIR="$WORKSPACE/outputs/raw"
 
-# Parse config
-SEQUENCES_FILE="$INPUT_DIR/sequences.fasta"
-NUM_MODELS=$(jq -r '.num_models // 1' "$CONFIG")
+# Read parameters from config.json
+STRUCTURE_PATH=$(jq -r '.structure_path' "$CONFIG")
+CHECKPOINT_PATH=$(jq -r '.checkpoint_path' "$CONFIG")
+TEMPERATURE=$(jq -r '.temperature // 0.1' "$CONFIG")
 
-# Run the tool (example: hypothetical tool CLI)
-proteinx predict \
-    --input "$SEQUENCES_FILE" \
-    --output-dir "$OUTPUT_DIR" \
-    --num-models "$NUM_MODELS" \
-    2>&1 | tee "$WORKSPACE/logs/tool.log"
+# Build and run the tool command
+CMD=(
+    my_tool predict
+    --structure "$STRUCTURE_PATH"
+    --checkpoint "$CHECKPOINT_PATH"
+    --output-dir "$OUTPUT_DIR"
+    --temperature "$TEMPERATURE"
+)
+
+echo "[tool] Running: ${CMD[*]}"
+"${CMD[@]}" 2>&1 | tee "$WORKSPACE/logs/tool.log"
+```
+
+**Pattern: optional config fields.** Use `jq -r '.field // empty'` with a guard to conditionally add CLI flags:
+
+```bash
+SEED=$(jq -r '.seed // empty' "$CONFIG" 2>/dev/null || true)
+if [ -n "$SEED" ] && [ "$SEED" != "null" ]; then
+    CMD+=(--seed "$SEED")
+fi
 ```
 
 ### 4.3 `standardize.sh`
@@ -236,151 +262,150 @@ proteinx predict \
 
 **Contract:**
 - Receives one argument: the workspace path.
-- Reads from `$WORKSPACE/outputs/raw/`.
+- Reads from `$WORKSPACE/outputs/raw/` and `$WORKSPACE/config.json` (for input structure metadata).
 - Writes to `$WORKSPACE/outputs/standardized/`.
-- MUST produce a `result_data.json` file in `outputs/standardized/` conforming to the category's output schema (see `SCHEMA_SPEC.md`).
+- MUST produce a `result_data.json` file in `outputs/standardized/` conforming to the category's output schema.
 - MUST copy or convert any referenced files (PDB structures, embeddings, etc.) into `outputs/standardized/`.
 - Exit code 0 = success. Non-zero = failure.
 
-**Example:**
+**Preferred pattern:** delegate to a Python script that receives the full workspace path. This gives the standardization script access to both the raw outputs and the input config (which often contains metadata needed for correct parsing, such as chain IDs or sequence lengths).
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-
-WORKSPACE="$1"
-RAW_DIR="$WORKSPACE/outputs/raw"
-STD_DIR="$WORKSPACE/outputs/standardized"
-
-# For complex standardization, delegate to a Python script
-python3 /opt/tool/standardize.py \
-    --raw-dir "$RAW_DIR" \
-    --std-dir "$STD_DIR"
+python3 /opt/tool/standardize.py --workspace "$1"
 ```
-
-Where `standardize.py` reads tool-native outputs and produces `result_data.json`:
 
 ```python
 #!/usr/bin/env python3
-"""
-Standardize ProteinX outputs into autobio schema format.
-Reads from outputs/raw/, writes to outputs/standardized/.
-"""
+"""Standardize tool outputs into autobio schema format."""
+
 import argparse
 import json
-import shutil
 from pathlib import Path
 
 
-def standardize(raw_dir: Path, std_dir: Path) -> None:
-    # Read tool-native ranking file
-    ranking = json.loads((raw_dir / "ranking.json").read_text())
+def standardize(workspace: Path) -> None:
+    raw_dir = workspace / "outputs" / "raw"
+    std_dir = workspace / "outputs" / "standardized"
+    config = json.loads((workspace / "config.json").read_text())
 
-    structures = []
-    best_plddt = 0.0
-    best_ptm = 0.0
+    # Read tool-native outputs from raw_dir...
+    # Use config for context (input structure path, chain info, etc.)...
+    # Write result_data.json to std_dir...
 
-    for i, entry in enumerate(ranking["models"]):
-        # Copy PDB to standardized dir with consistent naming
-        src_pdb = raw_dir / entry["pdb_filename"]
-        dst_pdb = std_dir / f"model_{i + 1}.pdb"
-        shutil.copy2(src_pdb, dst_pdb)
-
-        plddt_mean = entry["metrics"]["avg_plddt"]
-        ptm = entry["metrics"].get("ptm")
-
-        structures.append({
-            "model_rank": i + 1,
-            "structure_path": f"outputs/standardized/model_{i + 1}.pdb",
-            "plddt_mean": plddt_mean,
-            "plddt_per_residue": entry["metrics"].get("per_residue_plddt"),
-            "ptm": ptm,
-            "iptm": entry["metrics"].get("iptm"),
-            "chain_mapping": entry.get("chain_mapping"),
-        })
-
-        if plddt_mean > best_plddt:
-            best_plddt = plddt_mean
-        if ptm and ptm > best_ptm:
-            best_ptm = ptm
-
-    result_data = {
-        "structures": structures,
-        "confidence": {
-            "best_plddt_mean": best_plddt,
-            "best_ptm": best_ptm if best_ptm > 0 else None,
-            "best_iptm": None,  # ProteinX doesn't provide this
-        },
-    }
-
-    (std_dir / "result_data.json").write_text(
-        json.dumps(result_data, indent=2)
-    )
+    result_data = { ... }
+    (std_dir / "result_data.json").write_text(json.dumps(result_data, indent=2))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--raw-dir", type=Path, required=True)
-    parser.add_argument("--std-dir", type=Path, required=True)
+    parser.add_argument("--workspace", type=Path, required=True)
     args = parser.parse_args()
-    standardize(args.raw_dir, args.std_dir)
+    standardize(args.workspace)
 ```
 
 ---
 
 ## 5. Dockerfile
 
-### 5.1 Structure
+### 5.1 Build Context
+
+The build context is `containers/` (the parent directory, not the tool subdirectory). This is required because `base-entrypoint.sh` lives at `containers/base-entrypoint.sh` and must be accessible during the build. All Dockerfiles use `-f` to specify the path:
+
+```bash
+docker build -f containers/<tool_name>/Dockerfile containers/ -t autobio-<tool_name>:<version>
+```
+
+COPY paths in the Dockerfile are relative to the build context (`containers/`):
 
 ```dockerfile
-# ─── Option A: Extend an existing official image ────────────────────────
-FROM ghcr.io/official-org/tool-image:1.0.0 AS base
+# Shared entrypoint — from containers/base-entrypoint.sh
+COPY base-entrypoint.sh /opt/autobio/base-entrypoint.sh
 
-# ─── Option B: Build from scratch ───────────────────────────────────────
-# FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS base
-# RUN ... install tool dependencies ...
+# Tool-specific scripts — from containers/<tool_name>/
+COPY <tool_name>/validate_config.sh /opt/tool/validate_config.sh
+COPY <tool_name>/run.sh             /opt/tool/run.sh
+COPY <tool_name>/standardize.sh     /opt/tool/standardize.sh
+COPY <tool_name>/standardize.py     /opt/tool/standardize.py
+```
 
-# ─── Autobio protocol layer (same for all containers) ──────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends jq bc \
+Every Dockerfile should include the build command in a header comment for easy reference.
+
+### 5.2 Self-Contained Images: Baking in Model Weights
+
+Containers must be fully self-contained. Model weights and checkpoints are downloaded at image build time, not mounted from the host at runtime. This ensures:
+
+- **No host state dependency** — the container works identically on any machine with Docker and a GPU.
+- **Reproducibility** — the exact weights used are pinned in the image layer.
+- **Simpler orchestration** — no need to manage weight caches, download scripts, or volume mounts for models.
+
+Download weights in a dedicated `RUN` layer so they are cached across rebuilds:
+
+```dockerfile
+# Download model checkpoints at build time
+RUN mkdir -p /app/checkpoints \
+    && wget -q -O /app/checkpoints/model_v1.pt \
+       https://example.com/weights/model_v1.pt \
+    && wget -q -O /app/checkpoints/model_v2.pt \
+       https://example.com/weights/model_v2.pt
+```
+
+The `config.json` written by the host-side runner should reference these baked-in paths. The runner knows the container-internal checkpoint path (e.g., `/app/checkpoints/model_v1.pt`) and writes it into the config. See `TOOL_SPEC.md` for the runner side of this contract.
+
+If the upstream project provides an official Docker image with weights already included, prefer extending that image over downloading separately.
+
+### 5.3 Full Dockerfile Structure
+
+```dockerfile
+# autobio-<tool_name> — <brief description>
+#
+# Build context: containers/
+#   docker build -f containers/<tool_name>/Dockerfile containers/ -t autobio-<tool_name>:<version>
+
+# ─── Base image ──────────────────────────────────────────────────────────
+# Option A: extend an existing official image (preferred when available)
+FROM ghcr.io/official-org/tool-image:1.0.0
+
+# Option B: build from scratch
+# FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+# RUN ... install tool and dependencies ...
+
+# ─── Autobio protocol dependencies ──────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends jq bc wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy shared entrypoint
-COPY ../base-entrypoint.sh /opt/autobio/base-entrypoint.sh
+# ─── Model weights (baked into image) ───────────────────────────────────
+RUN mkdir -p /app/checkpoints \
+    && wget -q -O /app/checkpoints/model_v1.pt \
+       https://example.com/weights/model_v1.pt
+
+# ─── Shared entrypoint ──────────────────────────────────────────────────
+COPY base-entrypoint.sh /opt/autobio/base-entrypoint.sh
 RUN chmod +x /opt/autobio/base-entrypoint.sh
 
-# Copy tool-specific hook scripts
-COPY validate_config.sh /opt/tool/validate_config.sh
-COPY run.sh             /opt/tool/run.sh
-COPY standardize.sh     /opt/tool/standardize.sh
-COPY standardize.py     /opt/tool/standardize.py
+# ─── Tool-specific hook scripts ─────────────────────────────────────────
+COPY <tool_name>/validate_config.sh /opt/tool/validate_config.sh
+COPY <tool_name>/run.sh             /opt/tool/run.sh
+COPY <tool_name>/standardize.sh     /opt/tool/standardize.sh
+COPY <tool_name>/standardize.py     /opt/tool/standardize.py
 RUN chmod +x /opt/tool/*.sh
 
 ENTRYPOINT ["/opt/autobio/base-entrypoint.sh"]
 ```
 
-### 5.2 Build Context Considerations
+### 5.4 Image Tagging
 
-The Dockerfile's build context is `containers/<tool_name>/`. Since `base-entrypoint.sh` lives one level up in `containers/`, there are two options:
-
-1. **Build from the `containers/` root** with `-f`:
-   ```bash
-   docker build -f containers/proteinx/Dockerfile containers/
-   ```
-
-2. **Copy `base-entrypoint.sh` into each tool directory during CI** (simpler Dockerfiles, no context tricks).
-
-The CI pipeline should use whichever approach is cleaner. Document the chosen convention in the repo's Makefile or CI config.
-
-### 5.3 Image Tagging
-
-Images are tagged as `<tool_name>:<upstream_version>`:
+Images are tagged as `autobio-<tool_name>:<version>`:
+- `autobio-mpnn:1.0.0`
 - `autobio-alphafold:2.3.2`
 - `autobio-esm2:2.0.0`
-- `autobio-ligandmpnn:1.0.0`
 
-The full URI is: `ghcr.io/briney/autobio-<tool_name>:<version>`
+The full registry URI is: `ghcr.io/briney/autobio-<tool_name>:<version>`
 
 When the autobio wrapper changes but the upstream tool version doesn't, append a build number: `autobio-alphafold:2.3.2-build3`.
+
+Note: a single image can serve multiple autobio tools. For example, `autobio-mpnn:1.0.0` serves both `proteinmpnn` and `ligandmpnn` — the `config.json` written by the runner determines which model type and checkpoint are used.
 
 ---
 
@@ -434,19 +459,19 @@ A container can be tested independently of the host package:
 ```bash
 # Create a test workspace
 mkdir -p /tmp/test_ws/{inputs,outputs/raw,outputs/standardized,logs}
-cp containers/proteinx/test/inputs/* /tmp/test_ws/inputs/
-cp containers/proteinx/test/inputs/config.json /tmp/test_ws/
+cp containers/<tool_name>/test/inputs/* /tmp/test_ws/inputs/
+cp containers/<tool_name>/test/inputs/config.json /tmp/test_ws/
 
 # Run the container
 docker run --rm \
     -v /tmp/test_ws:/workspace \
     --gpus '"device=0"' \
-    ghcr.io/briney/autobio-proteinx:1.0.0
+    autobio-<tool_name>:<version>
 
 # Check results
 cat /tmp/test_ws/result.json
 diff <(jq -S . /tmp/test_ws/outputs/standardized/result_data.json) \
-     <(jq -S . containers/proteinx/test/expected_outputs/result_data.json)
+     <(jq -S . containers/<tool_name>/test/expected_outputs/result_data.json)
 ```
 
 ### 7.3 Standardization-Only Testing
@@ -457,12 +482,13 @@ The standardization phase can be tested without running the tool by providing pr
 # Populate outputs/raw/ with known tool outputs (from a previous run)
 mkdir -p /tmp/std_test/{outputs/raw,outputs/standardized,logs}
 cp /path/to/saved/raw_outputs/* /tmp/std_test/outputs/raw/
+cp /path/to/config.json /tmp/std_test/config.json
 
 # Run only standardize.sh inside the container
 docker run --rm \
     -v /tmp/std_test:/workspace \
     --entrypoint /opt/tool/standardize.sh \
-    ghcr.io/briney/autobio-proteinx:1.0.0 \
+    autobio-<tool_name>:<version> \
     /workspace
 
 # Verify standardized output
@@ -479,20 +505,22 @@ This allows fast iteration on the standardization logic without re-running expen
 
 - Check for all required config fields.
 - Validate types and ranges where practical.
+- Verify that referenced files (input structures, checkpoints) exist.
 - Print specific, actionable error messages to stderr:
   ```
-  ERROR: config.json missing required field 'sequences'
-  ERROR: num_models must be between 1 and 5, got 12
-  ERROR: input file 'inputs/template.pdb' not found
+  ERROR: config.json missing required field 'structure_path'
+  ERROR: model_type must be 'protein_mpnn' or 'ligand_mpnn', got 'invalid'
+  ERROR: structure file not found: /workspace/inputs/missing.pdb
+  ERROR: checkpoint file not found: /app/checkpoints/missing.pt
   ```
 
 ### 8.2 In `run.sh`
 
-- Let the tool's native error messages propagate (they go to stderr → `stderr.log`).
+- Let the tool's native error messages propagate (they go to stderr -> `stderr.log`).
 - For known failure modes, add contextual messages:
   ```bash
-  if ! command -v proteinx &>/dev/null; then
-      echo "ERROR: proteinx binary not found in PATH" >&2
+  if ! command -v my_tool &>/dev/null; then
+      echo "ERROR: my_tool binary not found in PATH" >&2
       exit 127
   fi
   ```
@@ -502,11 +530,12 @@ This allows fast iteration on the standardization logic without re-running expen
 
 - Verify that expected raw output files exist before attempting to parse them:
   ```python
-  ranking_file = raw_dir / "ranking.json"
-  if not ranking_file.exists():
-      print(f"ERROR: Expected {ranking_file} not found. "
-            f"Raw output files: {list(raw_dir.iterdir())}", file=sys.stderr)
-      sys.exit(1)
+  fasta_files = sorted(raw_dir.glob("*.fa")) + sorted(raw_dir.glob("*.fasta"))
+  if not fasta_files:
+      raise RuntimeError(
+          f"No FASTA files found in {raw_dir}. "
+          f"Files present: {[f.name for f in raw_dir.iterdir()]}"
+      )
   ```
 - If the tool produced partial outputs, standardize what's available and note the incompleteness in `result_data.json`.
 
@@ -516,18 +545,19 @@ This allows fast iteration on the standardization logic without re-running expen
 
 - [ ] Directory created at `containers/<tool_name>/`
 - [ ] `Dockerfile` builds successfully
+- [ ] Build command documented in Dockerfile header comment
 - [ ] `base-entrypoint.sh` is copied and set as `ENTRYPOINT`
-- [ ] `jq` and `bc` are installed in the image
-- [ ] `validate_config.sh` checks all required config fields
+- [ ] `jq`, `bc`, and `wget` are installed in the image
+- [ ] Model weights/checkpoints are baked into the image (not mounted from host)
+- [ ] `validate_config.sh` checks all required config fields and verifies referenced files exist
 - [ ] `run.sh` reads from `config.json` and `inputs/`, writes to `outputs/raw/`
-- [ ] `standardize.sh` reads from `outputs/raw/`, writes to `outputs/standardized/`
+- [ ] `standardize.sh` reads from `outputs/raw/` (and `config.json` for context), writes to `outputs/standardized/`
 - [ ] `standardize.sh` produces `outputs/standardized/result_data.json` conforming to the category schema
 - [ ] All hook scripts are executable (`chmod +x`)
 - [ ] `test/inputs/` contains minimal valid inputs
 - [ ] `test/expected_outputs/` contains golden `result_data.json`
 - [ ] Standalone container test passes (§7.2)
 - [ ] Standardization-only test passes (§7.3)
-- [ ] Container builds in CI (Tier 2 test)
-- [ ] Smoke test passes (Tier 3)
-- [ ] Image tagged following convention: `autobio-<tool>:<upstream_version>`
-- [ ] Corresponding host-side runner exists (see `TOOL_SPEC.md`)
+- [ ] Smoke test passes with Docker + GPU
+- [ ] Image tagged following convention: `autobio-<tool>:<version>`
+- [ ] Corresponding host-side runner exists (see `docs/TOOL_SPEC.md`)
