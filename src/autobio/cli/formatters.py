@@ -88,21 +88,21 @@ def format_tool_info(name: str, entry: ToolEntry, fmt: OutputFormat = OutputForm
     input_schema = entry.input_schema.model_json_schema()
 
     if fmt == OutputFormat.JSON:
-        return json.dumps(
-            {
-                "name": name,
-                "category": entry.category.value,
-                "image_tag": entry.image_tag,
-                "requires_gpu": entry.requires_gpu,
-                "gpu_count": entry.gpu_count,
-                "default_timeout": entry.default_timeout,
-                "supports_batch": entry.supports_batch,
-                "version": entry.version,
-                "description": entry.description,
-                "input_schema": input_schema,
-            },
-            indent=2,
-        )
+        data: dict[str, object] = {
+            "name": name,
+            "category": entry.category.value,
+            "image_tag": entry.image_tag,
+            "requires_gpu": entry.requires_gpu,
+            "gpu_count": entry.gpu_count,
+            "default_timeout": entry.default_timeout,
+            "supports_batch": entry.supports_batch,
+            "version": entry.version,
+            "description": entry.description,
+            "input_schema": input_schema,
+        }
+        if entry.notes:
+            data["notes"] = list(entry.notes)
+        return json.dumps(data, indent=2)
 
     table = Table(title=f"Tool: {name}", show_header=False)
     table.add_column("Field", style="cyan")
@@ -116,6 +116,9 @@ def format_tool_info(name: str, entry: ToolEntry, fmt: OutputFormat = OutputForm
     table.add_row("Batch Support", "yes" if entry.supports_batch else "no")
     table.add_row("Version", entry.version)
     table.add_row("Description", entry.description)
+    if entry.notes:
+        notes_text = "\n".join(f"- {note}" for note in entry.notes)
+        table.add_row("Notes", notes_text)
     table.add_row("Input Schema", json.dumps(input_schema, indent=2))
 
     return _render_table(table)

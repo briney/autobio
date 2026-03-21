@@ -83,6 +83,28 @@ class TestToolEntry:
         assert entry.supports_batch is False
         assert entry.description == "A mock tool for testing."
         assert entry.version == "1.0"
+        assert entry.notes == ()
+
+    def test_notes_default_empty(self) -> None:
+        entry = _make_entry()
+        assert entry.notes == ()
+
+    def test_notes_populated(self) -> None:
+        entry = ToolEntry(
+            image_tag="mock-tool:1.0",
+            category=ToolCategory.STRUCTURE_PREDICTION,
+            requires_gpu=True,
+            gpu_count=1,
+            input_schema=_MockInput,
+            output_schema=_MockOutput,
+            default_timeout=600,
+            supports_batch=False,
+            description="A mock tool.",
+            version="1.0",
+            notes=("First note.", "Second note."),
+        )
+        assert len(entry.notes) == 2
+        assert entry.notes[0] == "First note."
 
     def test_category_accepts_strenum(self) -> None:
         entry = _make_entry(category=ToolCategory.EMBEDDING)

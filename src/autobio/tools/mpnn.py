@@ -128,6 +128,20 @@ class MPNNRunner(ToolRunner):
 # Registry entries — populated when this module is imported
 # ---------------------------------------------------------------------------
 
+_MPNN_NOTES = (
+    "The foundry MPNN parser may resolve fewer residues than the PDB CA atom "
+    "count. Expect ~3-5% fewer residues in designed sequences compared to the "
+    "raw PDB SEQRES or ATOM record counts due to internal filtering of "
+    "disordered or incomplete residues.",
+    "PDB structures with multiple copies in the asymmetric unit (e.g., two Fab "
+    "copies with chains H, L, M, P) can trigger an atomworks parser error: "
+    "'Ambiguous residue annotations detected'. Use structures with unique chain "
+    "IDs per sequence, or preprocess to extract a single copy.",
+    "Output sequences are concatenated in alphabetical chain-ID order, not PDB "
+    "encounter order. The standardize step handles this, but if you inspect raw "
+    "FASTA output directly, be aware of this ordering.",
+)
+
 TOOL_REGISTRY["proteinmpnn"] = ToolEntry(
     image_tag="mpnn:1.0.0",
     category=ToolCategory.INVERSE_FOLDING,
@@ -139,6 +153,7 @@ TOOL_REGISTRY["proteinmpnn"] = ToolEntry(
     supports_batch=False,
     description="Design protein sequences for given backbone structures using ProteinMPNN.",
     version="1.0.0",
+    notes=_MPNN_NOTES,
 )
 
 TOOL_REGISTRY["ligandmpnn"] = ToolEntry(
@@ -152,4 +167,11 @@ TOOL_REGISTRY["ligandmpnn"] = ToolEntry(
     supports_batch=False,
     description="Design protein sequences with ligand awareness using LigandMPNN.",
     version="1.0.0",
+    notes=_MPNN_NOTES
+    + (
+        "For protein-ligand complexes, the foundry parser separates non-polymer "
+        "residues (ligands, ions) into synthetic chain IDs. Calcium ions (atom "
+        "name 'CA') may be miscounted as protein residues by external PDB parsers, "
+        "but the foundry parser handles them correctly.",
+    ),
 )

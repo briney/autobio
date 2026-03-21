@@ -38,6 +38,7 @@ class ToolEntry:
     supports_batch: bool
     description: str
     version: str
+    notes: tuple[str, ...] = ()
 
 
 TOOL_REGISTRY: dict[str, ToolEntry] = {}

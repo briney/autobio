@@ -150,6 +150,53 @@ class TestFormatToolInfo:
         assert parsed["supports_batch"] is False
         assert parsed["version"] == "1.0"
 
+    def test_json_no_notes_when_empty(self) -> None:
+        entry = _make_entry()
+        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
+        parsed = json.loads(result)
+        assert "notes" not in parsed
+
+    def test_json_includes_notes(self) -> None:
+        entry = ToolEntry(
+            image_tag="mock-tool:1.0",
+            category=ToolCategory.STRUCTURE_PREDICTION,
+            requires_gpu=True,
+            gpu_count=1,
+            input_schema=_MockInput,
+            output_schema=_MockOutput,
+            default_timeout=600,
+            supports_batch=False,
+            description="A mock tool.",
+            version="1.0",
+            notes=("Parser may drop residues.", "Use unique chain IDs."),
+        )
+        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
+        parsed = json.loads(result)
+        assert parsed["notes"] == ["Parser may drop residues.", "Use unique chain IDs."]
+
+    def test_table_contains_notes(self) -> None:
+        entry = ToolEntry(
+            image_tag="mock-tool:1.0",
+            category=ToolCategory.STRUCTURE_PREDICTION,
+            requires_gpu=True,
+            gpu_count=1,
+            input_schema=_MockInput,
+            output_schema=_MockOutput,
+            default_timeout=600,
+            supports_batch=False,
+            description="A mock tool.",
+            version="1.0",
+            notes=("Parser may drop residues.",),
+        )
+        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
+        assert "Notes" in result
+        assert "Parser may drop residues." in result
+
+    def test_table_no_notes_when_empty(self) -> None:
+        entry = _make_entry()
+        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
+        assert "Notes" not in result
+
     def test_table_contains_name(self) -> None:
         entry = _make_entry()
         result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
