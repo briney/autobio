@@ -1,0 +1,155 @@
+"""ProteinMPNN and LigandMPNN tool runners.
+
+Both tools share a single Docker image (``autobio-mpnn``) and runner class.
+The ``tool_name`` (``"proteinmpnn"`` or ``"ligandmpnn"``) determines which
+model type and checkpoint are used.
+
+LigandMPNN-specific parameters (``omit``, ``bias``, ``atomize_side_chains``,
+etc.) are passed through the ``extra`` dict on ``InverseFoldingInput``.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from typing import TYPE_CHECKING
+
+from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
+from autobio.schemas.inverse_folding import (
+    DesignedSequence,
+    InverseFoldingInput,
+    InverseFoldingOutput,
+)
+from autobio.tools.base import ToolRunner
+
+if TYPE_CHECKING:
+    from autobio.core.workspace import Workspace
+
+# ---------------------------------------------------------------------------
+# Model configuration — maps tool name to model_type and default checkpoint
+# ---------------------------------------------------------------------------
+
+_CHECKPOINT_DIR = "/app/foundry/checkpoints"
+
+_MODEL_CONFIG: dict[str, dict[str, str]] = {
+    "proteinmpnn": {
+        "model_type": "protein_mpnn",
+        "checkpoint": "proteinmpnn_v_48_020.pt",
+    },
+    "ligandmpnn": {
+        "model_type": "ligand_mpnn",
+        "checkpoint": "ligandmpnn_v_32_010_25.pt",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+
+class MPNNRunner(ToolRunner):
+    """Shared runner for ProteinMPNN and LigandMPNN inverse folding tools.
+
+    Both models use the same container image and three-phase protocol.
+    ``prepare_workspace`` maps standardised ``InverseFoldingInput`` fields
+    to the foundry ``mpnn`` CLI configuration.  ``parse_output`` reads the
+    standardised ``result_data.json`` produced by the container's
+    ``standardize.py`` script.
+    """
+
+    def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
+        """Write config.json and copy the input structure into the workspace."""
+        assert isinstance(input_data, InverseFoldingInput)
+        model_cfg = _MODEL_CONFIG[self.tool_name]
+
+        # Copy structure file into workspace inputs/
+        src_path = input_data.structure_path
+        dest_name = src_path.name
+        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+
+        # Build config.json for the container
+        config: dict[str, object] = {
+            "model_type": model_cfg["model_type"],
+            "checkpoint_path": f"{_CHECKPOINT_DIR}/{model_cfg['checkpoint']}",
+            "is_legacy_weights": True,
+            "structure_path": f"/workspace/inputs/{dest_name}",
+            "number_of_batches": input_data.num_sequences,
+            "temperature": input_data.temperature,
+        }
+
+        # Map chains_to_design → --designed_chains (comma-separated)
+        if input_data.chains_to_design is not None:
+            config["designed_chains"] = ",".join(input_data.chains_to_design)
+
+        # Map fixed_positions → --fixed_residues (e.g. "A35,A40,B10")
+        # NOTE: designed_chains and fixed_residues are mutually exclusive
+        # in the foundry CLI. fixed_positions takes precedence.
+        if input_data.fixed_positions is not None:
+            residue_ids = []
+            for chain, positions in input_data.fixed_positions.items():
+                for pos in positions:
+                    residue_ids.append(f"{chain}{pos}")
+            config["fixed_residues"] = ",".join(residue_ids)
+            # Remove designed_chains if present — they're mutually exclusive
+            config.pop("designed_chains", None)
+
+        # Flat-merge extra dict for tool-specific params
+        # (omit, seed, batch_size, bias, temperature_per_residue, etc.)
+        config.update(input_data.extra)
+
+        workspace.write_config(config)
+
+    def parse_output(self, workspace: Workspace) -> InverseFoldingOutput:
+        """Read standardised outputs and return an ``InverseFoldingOutput``."""
+        result_data_path = workspace.std_output_dir / "result_data.json"
+        data = json.loads(result_data_path.read_text())
+
+        designed_sequences = [
+            DesignedSequence(
+                rank=s["rank"],
+                sequence=s["sequence"],
+                score=s.get("score"),
+                recovery=s.get("recovery"),
+            )
+            for s in data["designed_sequences"]
+        ]
+
+        # Placeholder metadata — overwritten by base class run()
+        return InverseFoldingOutput(
+            designed_sequences=designed_sequences,
+            native_sequence=data.get("native_sequence"),
+            metadata=self._build_metadata(workspace, 0.0, [], ""),
+            raw_output_path=workspace.raw_output_dir,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Registry entries — populated when this module is imported
+# ---------------------------------------------------------------------------
+
+TOOL_REGISTRY["proteinmpnn"] = ToolEntry(
+    image_tag="mpnn:1.0.0",
+    category=ToolCategory.INVERSE_FOLDING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=InverseFoldingInput,
+    output_schema=InverseFoldingOutput,
+    default_timeout=600,
+    supports_batch=False,
+    description="Design protein sequences for given backbone structures using ProteinMPNN.",
+    version="1.0.0",
+)
+
+TOOL_REGISTRY["ligandmpnn"] = ToolEntry(
+    image_tag="mpnn:1.0.0",
+    category=ToolCategory.INVERSE_FOLDING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=InverseFoldingInput,
+    output_schema=InverseFoldingOutput,
+    default_timeout=600,
+    supports_batch=False,
+    description="Design protein sequences with ligand awareness using LigandMPNN.",
+    version="1.0.0",
+)

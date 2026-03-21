@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from autobio.tools.mpnn import MPNNRunner
+
 if TYPE_CHECKING:
     from autobio.core.config import AutobioConfig
     from autobio.tools.base import ToolRunner
 
-TOOL_RUNNERS: dict[str, type[ToolRunner]] = {}
+TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
+    "proteinmpnn": MPNNRunner,
+    "ligandmpnn": MPNNRunner,
+}
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 
 

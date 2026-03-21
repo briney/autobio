@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+import autobio.tools  # noqa: F401 -- trigger tool registration
 from autobio.cli.images import images_cmd, pull_cmd
 from autobio.cli.info import info_cmd
 from autobio.cli.list import list_tools_cmd
