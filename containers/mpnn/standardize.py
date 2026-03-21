@@ -213,9 +213,10 @@ def standardize(workspace: Path) -> None:
     std_dir = workspace / "outputs" / "standardized"
     config = json.loads((workspace / "config.json").read_text())
 
-    # Get input structure path and chain info
+    # Get input structure path and chain info. Sort chains alphabetically
+    # because the foundry MPNN CLI concatenates output in sorted chain order.
     structure_path = Path(config["structure_path"])
-    chain_lengths = _parse_chain_lengths(structure_path)
+    chain_lengths = dict(sorted(_parse_chain_lengths(structure_path).items()))
 
     # Parse all FASTA files from raw output
     fasta_files = sorted(raw_dir.glob("*.fa")) + sorted(raw_dir.glob("*.fasta"))

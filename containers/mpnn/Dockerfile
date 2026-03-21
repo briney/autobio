@@ -9,7 +9,7 @@
 FROM rosettacommons/foundry:latest
 
 # --- Autobio protocol dependencies -------------------------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends jq bc \
+RUN apt-get update && apt-get install -y --no-install-recommends jq bc wget \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Download default checkpoints -------------------------------------------
