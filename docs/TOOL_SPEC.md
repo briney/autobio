@@ -310,8 +310,18 @@ TOOL_REGISTRY["proteinx"] = ToolEntry(
     supports_batch=False,
     description="Predict protein structures using ProteinX.",
     version="1.0.0",
+    notes=(
+        "Requires at least 16 GB GPU memory for sequences over 1000 residues.",
+        "Template search is disabled by default; pass 'use_templates': true in extra.",
+    ),
 )
 ```
+
+The `notes` field is a tuple of strings surfaced by `autobio info <tool>` (both table and JSON formats). Use it to record tool-specific quirks, parser limitations, known edge cases, or resource requirements — anything an agent or user would benefit from knowing before running the tool. Every `ToolEntry` should include `notes`; use an empty tuple `()` if there are no caveats to document. Good notes are:
+
+- **Actionable**: tell the reader what to do or avoid, not just what the problem is.
+- **Specific**: reference concrete error messages, thresholds, or input characteristics.
+- **Discovered empirically**: capture things that aren't obvious from the tool's documentation — parser quirks, input format restrictions, performance cliffs, etc.
 
 And register the runner class so the CLI can instantiate it. In `tools/__init__.py`:
 
@@ -412,6 +422,7 @@ def test_proteinx_smoke():
 - [ ] `parse_output` resolves relative file paths against workspace root
 - [ ] `parse_output` returns fully populated Pydantic output model
 - [ ] Tool registered in `core/registry.py` with correct schemas and metadata
+- [ ] `ToolEntry.notes` populated with known quirks, limitations, or usage caveats (empty tuple if none)
 - [ ] Runner class registered in `tools/__init__.py`
 - [ ] Unit tests cover `prepare_workspace` config generation
 - [ ] Unit tests cover `parse_output` deserialization with mock standardized data
