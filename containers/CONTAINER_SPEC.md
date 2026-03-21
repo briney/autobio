@@ -351,7 +351,7 @@ RUN mkdir -p /app/checkpoints \
        https://example.com/weights/model_v2.pt
 ```
 
-The `config.json` written by the host-side runner should reference these baked-in paths. The runner knows the container-internal checkpoint path (e.g., `/app/checkpoints/model_v1.pt`) and writes it into the config. See `TOOL_SPEC.md` for the runner side of this contract.
+The `config.json` written by the host-side runner should reference these baked-in paths. The runner knows the container-internal checkpoint path (e.g., `/app/checkpoints/model_v1.pt`) and writes it into the config. See `src/autobio/tools/TOOL_SPEC.md` for the runner side of this contract.
 
 If the upstream project provides an official Docker image with weights already included, prefer extending that image over downloading separately.
 
@@ -560,4 +560,4 @@ This allows fast iteration on the standardization logic without re-running expen
 - [ ] Standardization-only test passes (§7.3)
 - [ ] Smoke test passes with Docker + GPU
 - [ ] Image tagged following convention: `autobio-<tool>:<version>`
-- [ ] Corresponding host-side runner exists (see `docs/TOOL_SPEC.md`)
+- [ ] Corresponding host-side runner exists (see `src/autobio/tools/TOOL_SPEC.md`)
