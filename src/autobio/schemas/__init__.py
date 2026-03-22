@@ -10,6 +10,11 @@ from autobio.schemas.inverse_folding import (
     InverseFoldingOutput,
 )
 from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.structure_design import (
+    DesignedStructure,
+    StructureDesignInput,
+    StructureDesignOutput,
+)
 from autobio.schemas.structure_prediction import (
     ConfidenceMetrics,
     PredictedStructure,
@@ -39,4 +44,8 @@ __all__ = [
     "ScoredStructure",
     "ScoringInput",
     "ScoringOutput",
+    # structure design
+    "DesignedStructure",
+    "StructureDesignInput",
+    "StructureDesignOutput",
 ]

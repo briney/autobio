@@ -17,6 +17,7 @@ class ToolCategory(StrEnum):
     EMBEDDING = "embedding"
     INVERSE_FOLDING = "inverse-folding"
     SCORING = "scoring"
+    STRUCTURE_DESIGN = "structure-design"
 
 
 @dataclass

@@ -16,6 +16,13 @@ from autobio.schemas.inverse_folding import (
     InverseFoldingOutput,
 )
 from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.structure_design import (
+    DesignedStructure as DesignDesignedStructure,
+)
+from autobio.schemas.structure_design import (
+    StructureDesignInput,
+    StructureDesignOutput,
+)
 from autobio.schemas.structure_prediction import (
     ConfidenceMetrics,
     PredictedStructure,
@@ -454,6 +461,108 @@ class TestScoringOutput:
 
 
 # ---------------------------------------------------------------------------
+# StructureDesign
+# ---------------------------------------------------------------------------
+
+
+class TestStructureDesignInput:
+    def test_required_design_specs(self) -> None:
+        inp = StructureDesignInput(design_specs={"test": {"length": "50"}})
+        assert "test" in inp.design_specs
+        assert inp.n_batches == 1
+        assert inp.input_structures == []
+
+    def test_optional_fields(self) -> None:
+        inp = StructureDesignInput(
+            design_specs={"test": {"length": "50"}},
+            input_structures=[Path("/data/target.pdb")],
+            n_batches=3,
+        )
+        assert inp.n_batches == 3
+        assert inp.input_structures == [Path("/data/target.pdb")]
+
+    def test_missing_design_specs_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            StructureDesignInput()  # type: ignore[call-arg]
+
+    def test_extra_dict_passthrough(self) -> None:
+        inp = StructureDesignInput(
+            design_specs={"test": {"length": "50"}},
+            extra={"step_scale": 3.0, "gamma_0": 0.2},
+        )
+        assert inp.extra["step_scale"] == 3.0
+        assert inp.extra["gamma_0"] == 0.2
+
+    def test_round_trip(self) -> None:
+        inp = StructureDesignInput(
+            design_specs={
+                "binder": {"input": "target.pdb", "contig": "40-80"},
+                "uncond": {"length": "100"},
+            },
+            input_structures=[Path("/data/target.pdb")],
+            n_batches=2,
+        )
+        dumped = inp.model_dump()
+        restored = StructureDesignInput.model_validate(dumped)
+        assert restored.design_specs == inp.design_specs
+        assert restored.n_batches == inp.n_batches
+
+
+class TestDesignDesignedStructure:
+    def test_required_fields(self) -> None:
+        ds = DesignDesignedStructure(
+            spec_name="test",
+            batch_index=0,
+            design_index=0,
+            structure_path=Path("outputs/standardized/test_b0_d0.cif"),
+        )
+        assert ds.spec_name == "test"
+        assert ds.diffusion_metadata is None
+
+    def test_all_fields(self) -> None:
+        ds = DesignDesignedStructure(
+            spec_name="binder",
+            batch_index=1,
+            design_index=3,
+            structure_path=Path("outputs/standardized/binder_b1_d3.cif"),
+            diffusion_metadata={"timing": {"total_seconds": 42.5}},
+        )
+        assert ds.diffusion_metadata is not None
+        assert ds.diffusion_metadata["timing"]["total_seconds"] == 42.5
+
+
+class TestStructureDesignOutput:
+    def test_round_trip(self) -> None:
+        out = StructureDesignOutput(
+            metadata=_METADATA,  # type: ignore[arg-type]
+            raw_output_path=Path("/tmp/ws/outputs/raw"),
+            designs=[
+                DesignDesignedStructure(
+                    spec_name="test",
+                    batch_index=0,
+                    design_index=0,
+                    structure_path=Path("outputs/standardized/test_b0_d0.cif"),
+                    diffusion_metadata={"timing": {"total_seconds": 10.0}},
+                ),
+            ],
+            spec_summary={"test": 1},
+        )
+        dumped = out.model_dump()
+        restored = StructureDesignOutput.model_validate(dumped)
+        assert len(restored.designs) == 1
+        assert restored.designs[0].spec_name == "test"
+        assert restored.spec_summary == {"test": 1}
+
+    def test_missing_required_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            StructureDesignOutput(
+                metadata=_METADATA,  # type: ignore[arg-type]
+                raw_output_path=Path("/tmp"),
+                # missing designs and spec_summary
+            )  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------------------------------
 # Cross-cutting: inheritance from BaseInput/BaseOutput
 # ---------------------------------------------------------------------------
 
@@ -465,8 +574,9 @@ class TestScoringOutput:
         (EmbeddingInput, {"sequences": {"seq1": "MK"}}),
         (InverseFoldingInput, {"structure_path": Path("/x.pdb")}),
         (ScoringInput, {"structure_path": Path("/x.pdb")}),
+        (StructureDesignInput, {"design_specs": {"t": {"length": "50"}}}),
     ],
-    ids=["structure_prediction", "embedding", "inverse_folding", "scoring"],
+    ids=["structure_prediction", "embedding", "inverse_folding", "scoring", "structure_design"],
 )
 class TestInputInheritance:
     def test_has_extra_field(self, input_cls: type, kwargs: dict[str, Any]) -> None:
@@ -522,8 +632,22 @@ class TestInputInheritance:
                 "scores": [ScoredStructure(total_score=-100.0)],
             },
         ),
+        (
+            StructureDesignOutput,
+            {
+                "designs": [
+                    DesignDesignedStructure(
+                        spec_name="t",
+                        batch_index=0,
+                        design_index=0,
+                        structure_path=Path("t_b0_d0.cif"),
+                    ),
+                ],
+                "spec_summary": {"t": 1},
+            },
+        ),
     ],
-    ids=["structure_prediction", "embedding", "inverse_folding", "scoring"],
+    ids=["structure_prediction", "embedding", "inverse_folding", "scoring", "structure_design"],
 )
 class TestOutputInheritance:
     def test_has_metadata_and_raw_output_path(

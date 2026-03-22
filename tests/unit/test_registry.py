@@ -56,13 +56,14 @@ class TestToolCategory:
         assert ToolCategory.EMBEDDING == "embedding"
         assert ToolCategory.INVERSE_FOLDING == "inverse-folding"
         assert ToolCategory.SCORING == "scoring"
+        assert ToolCategory.STRUCTURE_DESIGN == "structure-design"
 
     def test_is_str(self) -> None:
         for member in ToolCategory:
             assert isinstance(member, str)
 
     def test_member_count(self) -> None:
-        assert len(ToolCategory) == 4
+        assert len(ToolCategory) == 5
 
 
 # ---------------------------------------------------------------------------
