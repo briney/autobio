@@ -1,0 +1,598 @@
+"""Tests for BoltzRunner — prepare_workspace, parse_output, host validation, and registration."""
+
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING
+from unittest.mock import patch
+
+import pytest
+import yaml
+
+from autobio.core.config import AutobioConfig
+from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.result import AutobioError
+from autobio.core.workspace import Workspace
+from autobio.schemas.structure_prediction import (
+    StructurePredictionInput,
+    StructurePredictionOutput,
+)
+from autobio.tools import TOOL_RUNNERS, get_runner
+from autobio.tools.boltz import BoltzRunner
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def config() -> AutobioConfig:
+    return AutobioConfig.resolve()
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> BoltzRunner:
+    """Create a BoltzRunner (boltz2) with mocked ContainerManager and GPUManager."""
+    with (
+        patch("autobio.tools.base.ContainerManager"),
+        patch("autobio.tools.base.GPUManager"),
+    ):
+        return BoltzRunner("boltz2", config)
+
+
+@pytest.fixture()
+def boltz1_runner(config: AutobioConfig) -> BoltzRunner:
+    """Create a BoltzRunner for boltz1."""
+    with (
+        patch("autobio.tools.base.ContainerManager"),
+        patch("autobio.tools.base.GPUManager"),
+    ):
+        return BoltzRunner("boltz1", config)
+
+
+# ---------------------------------------------------------------------------
+# TestBoltzPrepareWorkspace
+# ---------------------------------------------------------------------------
+
+
+class TestBoltzPrepareWorkspace:
+    """Tests for BoltzRunner.prepare_workspace."""
+
+    @pytest.mark.parametrize(
+        ("tool_name", "expected_model"),
+        [
+            ("boltz1", "boltz1"),
+            ("boltz2", "boltz2"),
+        ],
+    )
+    def test_model_config_per_tool(
+        self,
+        tool_name: str,
+        expected_model: str,
+        config: AutobioConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Config contains correct model flag per tool name."""
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = BoltzRunner(tool_name, config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        r.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["model"] == expected_model
+
+    def test_yaml_generated_from_sequences(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Sequences dict is translated into a Boltz YAML input file."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={"A": "MKWVTFIS", "B": "GVSEKL"})
+        runner.prepare_workspace(input_data, workspace)
+
+        yaml_path = workspace.inputs_dir / "input.yaml"
+        assert yaml_path.exists()
+        yaml_data = yaml.safe_load(yaml_path.read_text())
+        assert yaml_data["version"] == 1
+        assert len(yaml_data["sequences"]) == 2
+
+        # Check that both chains appear as protein entities
+        ids = set()
+        for entry in yaml_data["sequences"]:
+            assert "protein" in entry
+            ids.add(entry["protein"]["id"])
+        assert ids == {"A", "B"}
+
+    def test_num_models_maps_to_diffusion_samples(
+        self, runner: BoltzRunner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"}, num_models=5)
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["diffusion_samples"] == 5
+
+    def test_num_models_default_omits_diffusion_samples(
+        self, runner: BoltzRunner, tmp_path: Path
+    ) -> None:
+        """When num_models=1 (default), diffusion_samples is not in config."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert "diffusion_samples" not in cfg
+
+    def test_use_msa_server_default_true(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """use_msa_server defaults to True in config."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["use_msa_server"] is True
+
+    def test_use_msa_server_can_be_disabled(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """extra['use_msa_server'] = False overrides the default."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"use_msa_server": False},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["use_msa_server"] is False
+
+    def test_templates_copied(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Template files are copied into workspace/inputs/."""
+        tmpl = tmp_path / "template.cif"
+        tmpl.write_text("data_test\n_entry.id test\n")
+
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            templates=[tmpl],
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        copied = workspace.inputs_dir / "template.cif"
+        assert copied.exists()
+
+        # YAML should reference the template with container path
+        yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
+        assert "templates" in yaml_data
+        assert yaml_data["templates"][0]["cif"] == "/workspace/inputs/template.cif"
+
+    def test_entity_types_override(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Non-protein entity types are correctly tagged in the YAML."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "ATCGATCG"},
+            extra={"entity_types": {"B": "dna"}},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
+        types = {}
+        for entry in yaml_data["sequences"]:
+            for etype, edata in entry.items():
+                types[edata["id"]] = etype
+        assert types["A"] == "protein"
+        assert types["B"] == "dna"
+
+    def test_ligand_smiles_entity(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Ligand entities with SMILES are correctly constructed."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
+            extra={"entity_types": {"L": {"smiles": "CC(=O)NC1=CC=C(O)C=C1"}}},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
+        ligand_entry = None
+        for entry in yaml_data["sequences"]:
+            if "ligand" in entry:
+                ligand_entry = entry["ligand"]
+        assert ligand_entry is not None
+        assert ligand_entry["id"] == "L"
+        assert ligand_entry["smiles"] == "CC(=O)NC1=CC=C(O)C=C1"
+
+    def test_ligand_ccd_entity(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Ligand entities with CCD codes are correctly constructed."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
+            extra={"entity_types": {"L": {"ccd": "ATP"}}},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
+        ligand_entry = None
+        for entry in yaml_data["sequences"]:
+            if "ligand" in entry:
+                ligand_entry = entry["ligand"]
+        assert ligand_entry is not None
+        assert ligand_entry["ccd"] == "ATP"
+
+    def test_raw_yaml_passthrough(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """extra['boltz_yaml'] bypasses automatic YAML generation."""
+        custom_yaml = {
+            "version": 1,
+            "sequences": [
+                {"protein": {"id": "X", "sequence": "MKWVTFIS"}},
+            ],
+            "constraints": [{"bond": {"atom1": ["X", 1, "CA"], "atom2": ["X", 5, "CA"]}}],
+        }
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={},
+            extra={"boltz_yaml": custom_yaml},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
+        assert yaml_data["version"] == 1
+        assert yaml_data["sequences"][0]["protein"]["id"] == "X"
+        assert "constraints" in yaml_data
+
+    def test_extra_dict_merged(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """CLI-level extra keys appear in config.json, consumed keys do not."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={
+                "sampling_steps": 100,
+                "seed": 42,
+                "step_scale": 1.5,
+                "entity_types": {"A": "protein"},  # consumed — should NOT appear
+            },
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["sampling_steps"] == 100
+        assert cfg["seed"] == 42
+        assert cfg["step_scale"] == 1.5
+        assert "entity_types" not in cfg
+
+    def test_defaults_applied(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Minimal input produces sensible defaults."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["model"] == "boltz2"
+        assert cfg["input_path"] == "/workspace/inputs/input.yaml"
+        assert cfg["output_dir"] == "/workspace/outputs/raw"
+        assert cfg["cache_dir"] == "/app/boltz/cache"
+        assert cfg["use_msa_server"] is True
+
+    def test_cache_dir_in_config(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["cache_dir"] == "/app/boltz/cache"
+
+    def test_msa_paths_copied(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """MSA files are copied and paths rewritten in the YAML."""
+        msa_file = tmp_path / "A.a3m"
+        msa_file.write_text(">A\nMVLSPADKTNVKAAWGKVGA\n")
+
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"msa_paths": [str(msa_file)]},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        # File copied
+        assert (workspace.inputs_dir / "A.a3m").exists()
+
+        # YAML references container path
+        yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
+        protein_entry = yaml_data["sequences"][0]["protein"]
+        assert protein_entry["msa"] == "/workspace/inputs/A.a3m"
+
+    def test_constraints_in_yaml(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Constraints from extra appear in the generated YAML."""
+        workspace = Workspace.create(tmp_path / "ws")
+        constraints = [{"pocket": {"binder": "A", "contacts": [["B", 10]]}}]
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "GVSEKL"},
+            extra={"constraints": constraints},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
+        assert "constraints" in yaml_data
+        assert yaml_data["constraints"] == constraints
+
+
+# ---------------------------------------------------------------------------
+# TestBoltzHostValidation
+# ---------------------------------------------------------------------------
+
+
+class TestBoltzHostValidation:
+    """Tests for host-side input validation."""
+
+    def test_empty_sequences_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(sequences={})
+        with pytest.raises(AutobioError, match="sequences must be non-empty"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_empty_sequences_ok_with_boltz_yaml(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Empty sequences is allowed when boltz_yaml is provided."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={},
+            extra={"boltz_yaml": {"version": 1, "sequences": []}},
+        )
+        # Should not raise
+        runner.prepare_workspace(input_data, workspace)
+
+    def test_missing_template_file_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            templates=[tmp_path / "nonexistent.cif"],
+        )
+        with pytest.raises(AutobioError, match="Template file does not exist"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_missing_msa_file_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"msa_paths": [str(tmp_path / "nonexistent.a3m")]},
+        )
+        with pytest.raises(AutobioError, match="MSA file does not exist"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_entity_types_unknown_chain_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"entity_types": {"Z": "dna"}},
+        )
+        with pytest.raises(AutobioError, match="unknown chain IDs"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_invalid_entity_type_dict_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructurePredictionInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"entity_types": {"A": {"invalid_key": "value"}}},
+        )
+        with pytest.raises(AutobioError, match="Unknown entity type dict"):
+            runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestBoltzParseOutput
+# ---------------------------------------------------------------------------
+
+_SINGLE_MODEL_RESULT = {
+    "structures": [
+        {
+            "model_rank": 1,
+            "structure_path": "/workspace/outputs/standardized/model_1.cif",
+            "plddt_per_residue": [92.1, 88.4, 95.0, 91.2],
+            "plddt_mean": 91.675,
+            "ptm": 0.89,
+            "iptm": 0.85,
+            "chain_mapping": None,
+        }
+    ],
+    "confidence": {
+        "best_plddt_mean": 91.675,
+        "best_ptm": 0.89,
+        "best_iptm": 0.85,
+    },
+}
+
+_MULTI_MODEL_RESULT = {
+    "structures": [
+        {
+            "model_rank": 1,
+            "structure_path": "/workspace/outputs/standardized/model_1.cif",
+            "plddt_per_residue": [92.0, 90.0],
+            "plddt_mean": 91.0,
+            "ptm": 0.92,
+            "iptm": 0.88,
+            "chain_mapping": None,
+        },
+        {
+            "model_rank": 2,
+            "structure_path": "/workspace/outputs/standardized/model_2.cif",
+            "plddt_per_residue": [85.0, 82.0],
+            "plddt_mean": 83.5,
+            "ptm": 0.80,
+            "iptm": 0.75,
+            "chain_mapping": None,
+        },
+        {
+            "model_rank": 3,
+            "structure_path": "/workspace/outputs/standardized/model_3.cif",
+            "plddt_per_residue": [78.0, 76.0],
+            "plddt_mean": 77.0,
+            "ptm": 0.72,
+            "iptm": 0.68,
+            "chain_mapping": None,
+        },
+    ],
+    "confidence": {
+        "best_plddt_mean": 91.0,
+        "best_ptm": 0.92,
+        "best_iptm": 0.88,
+    },
+}
+
+_AFFINITY_RESULT = {
+    "structures": [
+        {
+            "model_rank": 1,
+            "structure_path": "/workspace/outputs/standardized/model_1.cif",
+            "plddt_per_residue": [90.0],
+            "plddt_mean": 90.0,
+            "ptm": 0.88,
+            "iptm": 0.84,
+            "chain_mapping": None,
+            "affinity_probability": 0.92,
+            "affinity_value": -1.5,
+        }
+    ],
+    "confidence": {
+        "best_plddt_mean": 90.0,
+        "best_ptm": 0.88,
+        "best_iptm": 0.84,
+    },
+}
+
+
+class TestBoltzParseOutput:
+    """Tests for BoltzRunner.parse_output."""
+
+    def test_parse_single_model(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert len(output.structures) == 1
+        s = output.structures[0]
+        assert s.model_rank == 1
+        assert s.plddt_mean == pytest.approx(91.675)
+        assert s.ptm == pytest.approx(0.89)
+        assert s.iptm == pytest.approx(0.85)
+
+    def test_parse_multiple_models(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_MULTI_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert len(output.structures) == 3
+        assert output.structures[0].model_rank == 1
+        assert output.structures[2].model_rank == 3
+
+    def test_confidence_metrics(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_MULTI_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert output.confidence.best_plddt_mean == pytest.approx(91.0)
+        assert output.confidence.best_ptm == pytest.approx(0.92)
+        assert output.confidence.best_iptm == pytest.approx(0.88)
+
+    def test_plddt_per_residue(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert output.structures[0].plddt_per_residue is not None
+        assert len(output.structures[0].plddt_per_residue) == 4
+
+    def test_affinity_data(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_AFFINITY_RESULT))
+
+        output = runner.parse_output(workspace)
+        s = output.structures[0]
+        assert s.affinity_probability == pytest.approx(0.92)
+        assert s.affinity_value == pytest.approx(-1.5)
+
+    def test_affinity_data_absent(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """When no affinity data, fields are None."""
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert output.structures[0].affinity_probability is None
+        assert output.structures[0].affinity_value is None
+
+    def test_output_type(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert isinstance(output, StructurePredictionOutput)
+
+    def test_raw_output_path(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert output.raw_output_path == workspace.raw_output_dir
+
+    def test_container_paths_resolved_to_host(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Container-internal /workspace/... paths are remapped to host workspace."""
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_MODEL_RESULT))
+
+        output = runner.parse_output(workspace)
+        # The path should be under the host workspace, not /workspace/
+        expected = workspace.root / "outputs" / "standardized" / "model_1.cif"
+        assert output.structures[0].structure_path == expected
+
+
+# ---------------------------------------------------------------------------
+# TestBoltzRegistration
+# ---------------------------------------------------------------------------
+
+
+class TestBoltzRegistration:
+    """Tests for tool and runner registration."""
+
+    def test_boltz1_in_registry(self) -> None:
+        assert "boltz1" in TOOL_REGISTRY
+        entry = TOOL_REGISTRY["boltz1"]
+        assert entry.category == ToolCategory.STRUCTURE_PREDICTION
+        assert entry.input_schema is StructurePredictionInput
+        assert entry.output_schema is StructurePredictionOutput
+        assert entry.requires_gpu is True
+
+    def test_boltz2_in_registry(self) -> None:
+        assert "boltz2" in TOOL_REGISTRY
+        entry = TOOL_REGISTRY["boltz2"]
+        assert entry.category == ToolCategory.STRUCTURE_PREDICTION
+        assert "affinity" in entry.description.lower()
+
+    def test_both_share_image_tag(self) -> None:
+        assert TOOL_REGISTRY["boltz1"].image_tag == TOOL_REGISTRY["boltz2"].image_tag
+
+    def test_boltz2_longer_timeout(self) -> None:
+        assert TOOL_REGISTRY["boltz2"].default_timeout > TOOL_REGISTRY["boltz1"].default_timeout
+
+    def test_tool_runners_registered(self) -> None:
+        assert "boltz1" in TOOL_RUNNERS
+        assert "boltz2" in TOOL_RUNNERS
+        assert TOOL_RUNNERS["boltz1"] is BoltzRunner
+        assert TOOL_RUNNERS["boltz2"] is BoltzRunner
+
+    def test_get_runner_returns_boltz_runner(self, config: AutobioConfig) -> None:
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = get_runner("boltz2", config)
+        assert isinstance(r, BoltzRunner)
+        assert r.tool_name == "boltz2"
+
+    def test_notes_populated(self) -> None:
+        """Notes contain key topics for agent guidance."""
+        boltz2_notes = " ".join(TOOL_REGISTRY["boltz2"].notes)
+        assert "entity_types" in boltz2_notes
+        assert "affinity" in boltz2_notes.lower()
+        assert "msa" in boltz2_notes.lower()
+        assert "boltz_yaml" in boltz2_notes

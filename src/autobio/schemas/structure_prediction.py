@@ -54,6 +54,14 @@ class PredictedStructure(BaseModel):
         default=None,
         description="Mapping from input chain IDs to output chain IDs.",
     )
+    affinity_probability: float | None = Field(
+        default=None,
+        description="Predicted probability of binding (0-1 scale).",
+    )
+    affinity_value: float | None = Field(
+        default=None,
+        description="Predicted binding affinity as log10(IC50) in uM.",
+    )
 
 
 class ConfidenceMetrics(BaseModel):
