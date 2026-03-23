@@ -5,11 +5,10 @@ Walks the raw output directory, reads per-design CIF and JSON files, copies
 structures to ``outputs/standardized/``, and produces ``result_data.json``
 conforming to the ``StructureDesignOutput`` schema.
 
-RFD3 output structure (per spec)::
+RFD3 output structure is flat in out_dir::
 
-    <out_dir>/<spec_name>/<batch_index>/
-        diffusion_output_<batch>_<design>.cif.gz
-        diffusion_output_<batch>_<design>.json
+    <out_dir>/spec_{spec_name}_{batch_index}_model_{model_index}.cif.gz
+    <out_dir>/spec_{spec_name}_{batch_index}_model_{model_index}.json
 """
 
 from __future__ import annotations
@@ -17,41 +16,33 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import re
 import shutil
 from pathlib import Path
 
+# Matches: spec_{spec_name}_{batch_index}_model_{model_index}
+_FILENAME_RE = re.compile(
+    r"^spec_(?P<spec_name>.+)_(?P<batch>\d+)_model_(?P<model>\d+)$"
+)
+
 
 def _find_designs(raw_dir: Path) -> list[dict]:
-    """Walk the raw output tree and collect design records.
-
-    Handles two possible directory layouts:
-    1. <spec_name>/<batch_index>/diffusion_output_*.cif.gz
-    2. <batch_index>/diffusion_output_*.cif.gz  (single-spec shorthand)
-    """
+    """Find all design outputs in the flat raw output directory."""
     designs: list[dict] = []
 
-    for cif_path in sorted(raw_dir.rglob("*.cif.gz")):
-        # Determine spec_name and batch from path structure
-        rel = cif_path.relative_to(raw_dir)
-        parts = rel.parts
+    for cif_path in sorted(raw_dir.glob("*.cif.gz")):
+        stem = cif_path.name.removesuffix(".cif.gz")
 
-        if len(parts) >= 3:
-            # <spec_name>/<batch_index>/filename
-            spec_name = parts[0]
-            batch_index = int(parts[1])
-        elif len(parts) == 2:
-            # <batch_index>/filename  (single unnamed spec)
-            spec_name = "default"
-            batch_index = int(parts[0])
+        m = _FILENAME_RE.match(stem)
+        if m:
+            spec_name = m.group("spec_name")
+            batch_index = int(m.group("batch"))
+            design_index = int(m.group("model"))
         else:
-            # filename in raw_dir root
-            spec_name = "default"
+            # Fallback: treat entire stem as spec_name with batch=0, design=0
+            spec_name = stem
             batch_index = 0
-
-        # Parse design index from filename: diffusion_output_<batch>_<design>.cif.gz
-        stem = cif_path.name.replace(".cif.gz", "")
-        name_parts = stem.rsplit("_", 1)
-        design_index = int(name_parts[-1]) if len(name_parts) > 1 else 0
+            design_index = 0
 
         # Read companion JSON metadata if it exists
         json_path = cif_path.with_name(stem + ".json")
@@ -61,6 +52,15 @@ def _find_designs(raw_dir: Path) -> list[dict]:
                 metadata = json.loads(json_path.read_text())
             except (json.JSONDecodeError, OSError):
                 pass
+
+        # Prefer the canonical spec name from the metadata ("example" field)
+        # over the filename-derived name, which may include a file prefix.
+        if metadata:
+            example_name = (
+                metadata.get("specification", {}).get("extra", {}).get("example")
+            )
+            if example_name:
+                spec_name = example_name
 
         designs.append({
             "spec_name": spec_name,
@@ -73,9 +73,14 @@ def _find_designs(raw_dir: Path) -> list[dict]:
     return designs
 
 
-def _copy_structure(raw_cif_path: Path, std_dir: Path, spec_name: str,
-                    batch_index: int, design_index: int) -> Path:
-    """Copy (and optionally decompress) a CIF file to the standardized dir.
+def _copy_structure(
+    raw_cif_path: Path,
+    std_dir: Path,
+    spec_name: str,
+    batch_index: int,
+    design_index: int,
+) -> Path:
+    """Decompress a gzipped CIF file to the standardized dir.
 
     Returns the path within the standardized directory.
     """
@@ -111,8 +116,11 @@ def standardize(workspace: Path) -> None:
     for d in raw_designs:
         # Copy structure to standardized dir (decompressed)
         structure_path = _copy_structure(
-            d["raw_cif_path"], std_dir,
-            d["spec_name"], d["batch_index"], d["design_index"],
+            d["raw_cif_path"],
+            std_dir,
+            d["spec_name"],
+            d["batch_index"],
+            d["design_index"],
         )
 
         designs.append({

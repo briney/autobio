@@ -12,11 +12,9 @@ FROM rosettacommons/foundry:latest
 RUN apt-get update && apt-get install -y --no-install-recommends jq bc \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Install RFD3 model and checkpoints --------------------------------------
-# The foundry image provides the `foundry` CLI; install the rfd3 model
-# which downloads the default checkpoint.
-# TODO: verify exact install command against the production foundry image.
-RUN foundry install rfd3 || true
+# RFD3 checkpoints are already baked into rosettacommons/foundry:latest at
+# /weights/rfd3_latest.ckpt and /root/.foundry/checkpoints/rfd3_latest.ckpt.
+# No additional download needed.
 
 # --- Shared entrypoint -------------------------------------------------------
 COPY base-entrypoint.sh /opt/autobio/base-entrypoint.sh

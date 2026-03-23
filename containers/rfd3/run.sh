@@ -5,18 +5,20 @@ set -euo pipefail
 WORKSPACE="$1"
 CONFIG="$WORKSPACE/config.json"
 
-# --- Extract design_specs to a separate JSON file for rfd3 CLI ----------------
-jq '.design_specs' "$CONFIG" > "$WORKSPACE/inputs/rfd3_inputs.json"
+# --- Extract design_specs to a JSON file for rfd3 CLI -------------------------
+# Named "spec.json" so RFD3 uses "spec_{key}" naming in output files.
+jq '.design_specs' "$CONFIG" > "$WORKSPACE/inputs/spec.json"
 
 # --- Required fields ----------------------------------------------------------
 OUT_DIR=$(jq -r '.out_dir' "$CONFIG")
 N_BATCHES=$(jq -r '.n_batches // 1' "$CONFIG")
 
 # --- Build base command -------------------------------------------------------
+# rfd3 uses Hydra overrides directly (no subcommand).
 CMD=(
-    rfd3 design
+    rfd3
     "out_dir=$OUT_DIR"
-    "inputs=$WORKSPACE/inputs/rfd3_inputs.json"
+    "inputs=$WORKSPACE/inputs/spec.json"
     "n_batches=$N_BATCHES"
 )
 

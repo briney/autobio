@@ -5,14 +5,32 @@
       "batch_index": 0,
       "design_index": 0,
       "structure_path": "/workspace/outputs/standardized/unconditioned_test_b0_d0.cif",
-      "diffusion_metadata": null
+      "diffusion_metadata": {
+        "metrics": {
+          "num_residues": 50
+        },
+        "specification": {
+          "length": "50"
+        },
+        "ckpt_path": "/weights/rfd3_latest.ckpt",
+        "seed": null
+      }
     },
     {
       "spec_name": "unconditioned_test",
       "batch_index": 0,
       "design_index": 1,
       "structure_path": "/workspace/outputs/standardized/unconditioned_test_b0_d1.cif",
-      "diffusion_metadata": null
+      "diffusion_metadata": {
+        "metrics": {
+          "num_residues": 50
+        },
+        "specification": {
+          "length": "50"
+        },
+        "ckpt_path": "/weights/rfd3_latest.ckpt",
+        "seed": null
+      }
     }
   ],
   "spec_summary": {
