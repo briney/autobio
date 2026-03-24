@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from autobio.tools.boltz import BoltzRunner
 from autobio.tools.chai import ChaiRunner
 from autobio.tools.mpnn import MPNNRunner
+from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.rfd3 import RFD3Runner
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "boltz1": BoltzRunner,
     "boltz2": BoltzRunner,
     "chai1": ChaiRunner,
+    "openfold3": OpenFold3Runner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 
