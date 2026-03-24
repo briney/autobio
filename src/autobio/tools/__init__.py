@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from autobio.tools.boltz import BoltzRunner
 from autobio.tools.chai import ChaiRunner
+from autobio.tools.complexa import ComplexaRunner
 from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.rfd3 import RFD3Runner
@@ -18,6 +19,9 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "proteinmpnn": MPNNRunner,
     "ligandmpnn": MPNNRunner,
     "rfd3": RFD3Runner,
+    "complexa": ComplexaRunner,
+    "complexa_ligand": ComplexaRunner,
+    "complexa_ame": ComplexaRunner,
     "boltz1": BoltzRunner,
     "boltz2": BoltzRunner,
     "chai1": ChaiRunner,
