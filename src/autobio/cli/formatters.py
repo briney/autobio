@@ -100,6 +100,8 @@ def format_tool_info(name: str, entry: ToolEntry, fmt: OutputFormat = OutputForm
             "description": entry.description,
             "input_schema": input_schema,
         }
+        if entry.input_format:
+            data["input_format"] = list(entry.input_format)
         if entry.notes:
             data["notes"] = list(entry.notes)
         return json.dumps(data, indent=2)
@@ -116,6 +118,9 @@ def format_tool_info(name: str, entry: ToolEntry, fmt: OutputFormat = OutputForm
     table.add_row("Batch Support", "yes" if entry.supports_batch else "no")
     table.add_row("Version", entry.version)
     table.add_row("Description", entry.description)
+    if entry.input_format:
+        format_text = "\n".join(f"- {item}" for item in entry.input_format)
+        table.add_row("Input Format", format_text)
     if entry.notes:
         notes_text = "\n".join(f"- {note}" for note in entry.notes)
         table.add_row("Notes", notes_text)

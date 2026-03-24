@@ -293,25 +293,53 @@ class BoltzRunner(ToolRunner):
 # Registry entries — populated when this module is imported
 # ---------------------------------------------------------------------------
 
-_BOLTZ_SHARED_NOTES = (
-    # Input construction
-    "Each entry in the sequences dict becomes a Boltz entity. Default entity "
-    "type is 'protein'. To specify DNA, RNA, or ligand entities, use "
-    "extra['entity_types'] with a dict mapping chain IDs to types: "
-    "{'B': 'dna', 'C': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}}. "
-    "For protein chains, the sequence is the amino acid sequence. For DNA/RNA, "
-    "the sequence is the nucleotide sequence.",
-    # Ligand specification
-    "Ligands are specified via entity_types using either SMILES notation "
-    "({'smiles': 'CC...'}) or CCD component codes ({'ccd': 'ATP'}). The "
-    "sequence value for ligand chains in the sequences dict is ignored when "
-    "a SMILES or CCD code is provided in entity_types.",
-    # Raw YAML override
-    "For complex multi-entity predictions with constraints, modifications, or "
-    "other advanced features, provide the full Boltz YAML spec via "
-    "extra['boltz_yaml'] (as a dict or YAML string). This bypasses automatic "
-    "YAML generation and gives full access to the Boltz input format. See "
+_BOLTZ_INPUT_FORMAT = (
+    # YAML format overview
+    "Boltz takes a YAML input file with four top-level sections: sequences "
+    "(required), constraints (optional), templates (optional), and properties "
+    "(optional, Boltz-2 only). The file must start with 'version: 1'. Via the "
+    "autobio API, each entry in the sequences dict becomes a Boltz entity "
+    "(default type 'protein'). To specify other entity types, use "
+    "extra['entity_types'] mapping chain IDs to types: "
+    "{'B': 'dna', 'C': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}}.",
+    # Entity specification
+    "YAML entity types — "
+    "Protein: {protein: {id: A, sequence: MKLL...}} "
+    "DNA: {dna: {id: B, sequence: ATCGATCG}} "
+    "RNA: {rna: {id: C, sequence: AUCGAUCG}} "
+    "Ligand (SMILES): {ligand: {id: D, smiles: 'CC(=O)NC1=CC=C(O)C=C1'}} "
+    "Ligand (CCD): {ligand: {id: D, ccd: ATP}}. "
+    "Via the API, ligands are specified in entity_types using either SMILES "
+    "({'smiles': 'CC...'}) or CCD codes ({'ccd': 'ATP'}). The sequence value "
+    "for ligand chains is ignored when SMILES/CCD is provided in entity_types. "
+    "Use a list for the id field to specify multiple identical chains: "
+    "{protein: {id: [A, B], sequence: MKLL...}}.",
+    # Constraints
+    "YAML constraints section supports three types: "
+    "bond — covalent bond between atoms: "
+    "{bond: {atom1: [A, 437, N], atom2: [B, 1, C1]}}. "
+    "pocket — binding site conditioning: "
+    "{pocket: {binder: B, contacts: [[A, 100], [A, 101], [A, 105]]}}. "
+    "contact — distance restraint between residues: "
+    "{contact: {atoms: [[A, 100], [B, 50]], max_distance: 5.5}}.",
+    # Complete example
+    "Complete example — protein-ligand YAML:\\n"
+    "version: 1\\n"
+    "sequences:\\n"
+    "  - protein:\\n"
+    "      id: A\\n"
+    "      sequence: MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEK\\n"
+    "  - ligand:\\n"
+    "      id: B\\n"
+    "      smiles: 'CC(=O)NC1=CC=C(O)C=C1'",
+    # Raw override
+    "For full control over the native YAML format (constraints, modifications, "
+    "properties), provide the complete Boltz YAML spec via extra['boltz_yaml'] "
+    "(as a dict or YAML string). This bypasses automatic YAML generation. See "
     "https://github.com/jwohlwend/boltz/blob/main/docs/prediction.md.",
+)
+
+_BOLTZ_SHARED_NOTES = (
     # Templates
     "Template structures for template-based prediction are provided via the "
     "'templates' field on StructurePredictionInput. Files are copied into the "
@@ -369,6 +397,7 @@ TOOL_REGISTRY["boltz1"] = ToolEntry(
     ),
     version="1.0.0",
     notes=_BOLTZ1_NOTES,
+    input_format=_BOLTZ_INPUT_FORMAT,
 )
 
 TOOL_REGISTRY["boltz2"] = ToolEntry(
@@ -387,4 +416,5 @@ TOOL_REGISTRY["boltz2"] = ToolEntry(
     ),
     version="1.0.0",
     notes=_BOLTZ2_NOTES,
+    input_format=_BOLTZ_INPUT_FORMAT,
 )

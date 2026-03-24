@@ -174,6 +174,30 @@ class TestFormatToolInfo:
         parsed = json.loads(result)
         assert parsed["notes"] == ["Parser may drop residues.", "Use unique chain IDs."]
 
+    def test_json_no_input_format_when_empty(self) -> None:
+        entry = _make_entry()
+        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
+        parsed = json.loads(result)
+        assert "input_format" not in parsed
+
+    def test_json_includes_input_format(self) -> None:
+        entry = ToolEntry(
+            image_tag="mock-tool:1.0",
+            category=ToolCategory.STRUCTURE_PREDICTION,
+            requires_gpu=True,
+            gpu_count=1,
+            input_schema=_MockInput,
+            output_schema=_MockOutput,
+            default_timeout=600,
+            supports_batch=False,
+            description="A mock tool.",
+            version="1.0",
+            input_format=("Uses YAML format.", "Example: version: 1"),
+        )
+        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
+        parsed = json.loads(result)
+        assert parsed["input_format"] == ["Uses YAML format.", "Example: version: 1"]
+
     def test_table_contains_notes(self) -> None:
         entry = ToolEntry(
             image_tag="mock-tool:1.0",
@@ -196,6 +220,29 @@ class TestFormatToolInfo:
         entry = _make_entry()
         result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
         assert "Notes" not in result
+
+    def test_table_contains_input_format(self) -> None:
+        entry = ToolEntry(
+            image_tag="mock-tool:1.0",
+            category=ToolCategory.STRUCTURE_PREDICTION,
+            requires_gpu=True,
+            gpu_count=1,
+            input_schema=_MockInput,
+            output_schema=_MockOutput,
+            default_timeout=600,
+            supports_batch=False,
+            description="A mock tool.",
+            version="1.0",
+            input_format=("Uses YAML format.",),
+        )
+        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
+        assert "Input Format" in result
+        assert "Uses YAML format." in result
+
+    def test_table_no_input_format_when_empty(self) -> None:
+        entry = _make_entry()
+        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
+        assert "Input Format" not in result
 
     def test_table_contains_name(self) -> None:
         entry = _make_entry()

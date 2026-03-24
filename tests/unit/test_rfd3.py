@@ -408,11 +408,17 @@ class TestRFD3Registration:
     def test_notes_populated(self) -> None:
         entry = TOOL_REGISTRY["rfd3"]
         assert len(entry.notes) > 0
-        # Notes should cover key topics
+        # Notes should cover key operational topics
         all_notes = " ".join(entry.notes).lower()
-        assert "contig" in all_notes
-        assert "select" in all_notes
         assert "designability" in all_notes or "diversity" in all_notes
+
+    def test_input_format_populated(self) -> None:
+        entry = TOOL_REGISTRY["rfd3"]
+        assert len(entry.input_format) > 0
+        # Input format should cover contig syntax and select fields
+        all_fmt = " ".join(entry.input_format).lower()
+        assert "contig" in all_fmt
+        assert "select" in all_fmt
 
     def test_default_timeout(self) -> None:
         entry = TOOL_REGISTRY["rfd3"]

@@ -645,12 +645,17 @@ class TestOpenFold3Registration:
         assert r.tool_name == "openfold3"
 
     def test_notes_populated(self) -> None:
-        """Notes contain key topics for agent guidance."""
+        """Notes contain key operational topics for agent guidance."""
         notes = " ".join(TOOL_REGISTRY["openfold3"].notes)
-        assert "entity_types" in notes
         assert "msa" in notes.lower()
-        assert "ligand" in notes.lower()
-        assert "query_json" in notes
         assert "pae" in notes.lower()
-        assert "non_canonical" in notes.lower()
         assert "msa_server_url" in notes
+
+    def test_input_format_populated(self) -> None:
+        """Input format contains entity construction and native format info."""
+        fmt = " ".join(TOOL_REGISTRY["openfold3"].input_format)
+        assert "entity_types" in fmt
+        assert "ligand" in fmt.lower()
+        assert "query_json" in fmt
+        assert "non_canonical" in fmt.lower()
+        assert "json" in fmt.lower()

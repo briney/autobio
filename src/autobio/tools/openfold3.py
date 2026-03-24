@@ -311,29 +311,66 @@ class OpenFold3Runner(ToolRunner):
 # Registry entry — populated when this module is imported
 # ---------------------------------------------------------------------------
 
-_OPENFOLD3_NOTES = (
-    # Input construction
-    "Each entry in the sequences dict becomes a chain in the OpenFold3 query. "
-    "Default molecule type is 'protein'. To specify DNA, RNA, or ligand entities, "
-    "use extra['entity_types'] with a dict mapping chain IDs to types: "
-    "{'B': 'dna', 'C': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}, 'D': {'ccd': 'ATP'}}. "
-    "For protein chains, the sequence is the amino acid sequence. For DNA/RNA, "
-    "the sequence is the nucleotide sequence.",
-    # Ligand specification
-    "Ligands are specified via entity_types using either SMILES notation "
-    "({'smiles': 'CC...'}) or CCD component codes ({'ccd': 'ATP'}). The string "
-    "'ligand' can also be used, in which case the sequence value is treated as "
-    "the SMILES string.",
+_OPENFOLD3_INPUT_FORMAT = (
+    # JSON format overview
+    "OpenFold3 takes a JSON query file with top-level key 'queries' containing "
+    "a dict of named queries. Each query has a 'chains' list defining the "
+    "molecular entities. Via the autobio API, each entry in the sequences dict "
+    "becomes a chain (default molecule_type 'protein'). To specify other entity "
+    "types, use extra['entity_types'] mapping chain IDs to types: "
+    "{'B': 'dna', 'C': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}, 'D': {'ccd': 'ATP'}}.",
+    # Chain specification
+    "JSON chain fields — Each chain requires 'molecule_type' and 'chain_ids'. "
+    "Protein: {molecule_type: protein, chain_ids: A, sequence: MKLL...}. "
+    "DNA: {molecule_type: dna, chain_ids: B, sequence: ATCGATCG}. "
+    "RNA: {molecule_type: rna, chain_ids: C, sequence: AUCGAUCG}. "
+    "Ligand (SMILES): {molecule_type: ligand, chain_ids: D, smiles: 'CC...'}. "
+    "Ligand (CCD): {molecule_type: ligand, chain_ids: D, ccd_codes: ATP}. "
+    "Via the API, ligands are specified in entity_types using SMILES "
+    "({'smiles': 'CC...'}), CCD codes ({'ccd': 'ATP'}), or the string "
+    "'ligand' (sequence value used as SMILES). chain_ids can be a string "
+    "or list for multiple identical chains.",
     # Non-canonical residues
-    "Non-canonical residues are specified via extra['non_canonical_residues'] as "
-    "a dict mapping chain IDs to dicts of 1-based residue position to CCD code: "
-    "{'A': {'3': 'MHO', '5': 'SEP'}}. MSA computation uses only the primary "
-    "sequence.",
-    # Raw query JSON override
-    "For complex inputs, provide the full OpenFold3 query JSON via "
-    "extra['query_json'] (as a dict or JSON string). This bypasses automatic "
-    "query generation and gives full control over the input format. See "
+    "Non-canonical residues are specified per-chain using a dict mapping "
+    "1-based residue positions to CCD codes. In JSON: "
+    "{molecule_type: protein, chain_ids: A, sequence: MKLLVV, "
+    "non_canonical_residues: {3: MHO, 5: SEP}}. Via the API, use "
+    "extra['non_canonical_residues']: {'A': {'3': 'MHO', '5': 'SEP'}}. "
+    "MSA computation uses only the primary sequence.",
+    # Optional chain fields
+    "Optional chain fields: 'use_msas' (bool — enable/disable MSA for this "
+    "chain), 'use_main_msas'/'use_paired_msas' (bool — MSA type control), "
+    "'main_msa_file_paths'/'paired_msa_file_paths' (list — precomputed MSA "
+    "files), 'template_alignment_file_path' (str — template data). Multiple "
+    "queries in one JSON file enables batch inference.",
+    # Complete example
+    "Complete example — protein-ligand JSON:\\n"
+    "{\\n"
+    '  "queries": {\\n'
+    '    "complex_1": {\\n'
+    '      "chains": [\\n'
+    "        {\\n"
+    '          "molecule_type": "protein",\\n'
+    '          "chain_ids": "A",\\n'
+    '          "sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEK"\\n'
+    "        },\\n"
+    "        {\\n"
+    '          "molecule_type": "ligand",\\n'
+    '          "chain_ids": "B",\\n'
+    '          "smiles": "CC(=O)NC1=CC=C(O)C=C1"\\n'
+    "        }\\n"
+    "      ]\\n"
+    "    }\\n"
+    "  }\\n"
+    "}",
+    # Raw override
+    "For full control over the native JSON format, provide the complete query "
+    "JSON via extra['query_json'] (as a dict or JSON string). This bypasses "
+    "automatic query generation. See "
     "https://openfold-3.readthedocs.io/en/latest/input_format_reference.html.",
+)
+
+_OPENFOLD3_NOTES = (
     # MSA options
     "MSA generation via ColabFold server is ENABLED BY DEFAULT "
     "(use_msa_server=true). Only protein sequences are submitted to the server. "
@@ -384,4 +421,5 @@ TOOL_REGISTRY["openfold3"] = ToolEntry(
     ),
     version="1.0.0",
     notes=_OPENFOLD3_NOTES,
+    input_format=_OPENFOLD3_INPUT_FORMAT,
 )

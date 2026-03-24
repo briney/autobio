@@ -590,9 +590,14 @@ class TestBoltzRegistration:
         assert r.tool_name == "boltz2"
 
     def test_notes_populated(self) -> None:
-        """Notes contain key topics for agent guidance."""
+        """Notes contain key operational topics for agent guidance."""
         boltz2_notes = " ".join(TOOL_REGISTRY["boltz2"].notes)
-        assert "entity_types" in boltz2_notes
         assert "affinity" in boltz2_notes.lower()
         assert "msa" in boltz2_notes.lower()
-        assert "boltz_yaml" in boltz2_notes
+
+    def test_input_format_populated(self) -> None:
+        """Input format contains entity construction and native format info."""
+        fmt = " ".join(TOOL_REGISTRY["boltz2"].input_format)
+        assert "entity_types" in fmt
+        assert "boltz_yaml" in fmt
+        assert "yaml" in fmt.lower()

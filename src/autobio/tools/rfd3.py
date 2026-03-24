@@ -153,7 +153,7 @@ class RFD3Runner(ToolRunner):
 # Registry entry — populated when this module is imported
 # ---------------------------------------------------------------------------
 
-_RFD3_NOTES = (
+_RFD3_INPUT_FORMAT = (
     # Contig syntax
     "RFD3 uses a contig string to specify which residues come from the input "
     "structure and which are newly designed. Format: indexed residues from input "
@@ -182,6 +182,9 @@ _RFD3_NOTES = (
     "(5) Partial diffusion: set 'input', 'partial_t' (noise level in Å, "
     "recommended 5.0-15.0). "
     "(6) Symmetric design: add 'symmetry': {'id': 'C3'} (C or D groups).",
+)
+
+_RFD3_NOTES = (
     # Designability vs diversity
     "Key parameters for controlling designability vs diversity (pass via "
     "extra dict): 'step_scale' (default 1.5; higher=more designable, less "
@@ -233,4 +236,5 @@ TOOL_REGISTRY["rfd3"] = ToolEntry(
     ),
     version="1.0.0",
     notes=_RFD3_NOTES,
+    input_format=_RFD3_INPUT_FORMAT,
 )

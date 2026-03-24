@@ -40,6 +40,7 @@ class ToolEntry:
     description: str
     version: str
     notes: tuple[str, ...] = ()
+    input_format: tuple[str, ...] = ()
 
 
 TOOL_REGISTRY: dict[str, ToolEntry] = {}

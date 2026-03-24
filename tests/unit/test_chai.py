@@ -565,11 +565,16 @@ class TestChaiRegistration:
         assert r.tool_name == "chai1"
 
     def test_notes_populated(self) -> None:
-        """Notes contain key topics for agent guidance."""
+        """Notes contain key operational topics for agent guidance."""
         chai_notes = " ".join(TOOL_REGISTRY["chai1"].notes)
-        assert "entity_types" in chai_notes
-        assert "restraint" in chai_notes.lower() or "constraint" in chai_notes.lower()
         assert "msa" in chai_notes.lower()
-        assert "ligand" in chai_notes.lower()
-        assert "covalent" in chai_notes.lower()
-        assert "chai_fasta" in chai_notes
+
+    def test_input_format_populated(self) -> None:
+        """Input format contains entity construction and native format info."""
+        fmt = " ".join(TOOL_REGISTRY["chai1"].input_format)
+        assert "entity_types" in fmt
+        assert "restraint" in fmt.lower() or "constraint" in fmt.lower()
+        assert "ligand" in fmt.lower()
+        assert "covalent" in fmt.lower()
+        assert "chai_fasta" in fmt
+        assert "fasta" in fmt.lower()

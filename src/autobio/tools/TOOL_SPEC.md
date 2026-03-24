@@ -306,11 +306,18 @@ TOOL_REGISTRY["proteinmpnn"] = ToolEntry(
 
 **`image_tag`** is the tag portion only (e.g., `"mpnn:1.0.0"`). The host config's `image_prefix` is prepended at runtime to form the full URI (e.g., `ghcr.io/briney/autobio-mpnn:1.0.0`). Multiple tools can share the same `image_tag` when they use the same container.
 
-**`notes`** is a tuple of strings surfaced by `autobio info <tool>` in both table and JSON formats. Use it to record tool-specific quirks, parser limitations, known edge cases, or resource requirements — anything an agent or user would benefit from knowing before running the tool. Every `ToolEntry` must include `notes`; use an empty tuple `()` if there are no caveats. Good notes are:
+**`notes`** is a tuple of strings surfaced by `autobio info <tool>` in both table and JSON formats. Use it to record operational guidance: tool-specific quirks, parser limitations, known edge cases, resource requirements, MSA/template options, key parameters — anything an agent or user would benefit from knowing about running and tuning the tool. Every `ToolEntry` must include `notes`; use an empty tuple `()` if there are no caveats. Good notes are:
 
 - **Actionable**: tell the reader what to do or avoid, not just what the problem is.
 - **Specific**: reference concrete error messages, thresholds, or input characteristics.
 - **Discovered empirically**: capture things that aren't obvious from the tool's documentation — parser quirks, input format restrictions, performance cliffs, etc.
+
+**`input_format`** is a tuple of strings documenting the tool's native input format. Use it to describe how to construct valid inputs: the file format (FASTA, YAML, JSON, etc.), entity specification syntax, special cases (ligands, modified residues, constraints), and concrete examples. This is surfaced by `autobio info <tool>` as a separate "Input Format" section (table mode) or `"input_format"` key (JSON mode), making it easy for agents to programmatically distinguish input construction guidance from operational notes. Use an empty tuple `()` for tools with trivial inputs (e.g., a single PDB file path). Good input_format entries:
+
+- **Show the native syntax**: include actual format examples (FASTA headers, YAML structure, JSON hierarchy).
+- **Cover all entity types**: proteins, DNA, RNA, ligands, and any special cases (glycans, non-canonical residues).
+- **Include a complete example**: a full, valid input that an agent could adapt for a real prediction.
+- **Document the raw override**: mention the `extra` key for bypassing auto-generation (e.g., `extra['chai_fasta']`).
 
 ### 5.2 Runner Registration
 

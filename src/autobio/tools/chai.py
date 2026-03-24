@@ -293,36 +293,63 @@ class ChaiRunner(ToolRunner):
 # Registry entry — populated when this module is imported
 # ---------------------------------------------------------------------------
 
-_CHAI_NOTES = (
-    # Input construction
-    "Each entry in the sequences dict becomes a FASTA entity. Default entity "
-    "type is 'protein'. To specify DNA, RNA, or ligand entities, use "
-    "extra['entity_types'] with a dict mapping chain IDs to types: "
-    "{'B': 'dna', 'C': 'ligand', 'D': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}}. "
-    "For protein chains, the sequence is the amino acid sequence. For DNA/RNA, "
-    "the sequence is the nucleotide sequence. For ligands, the sequence is the "
-    "SMILES string.",
-    # Ligand specification
-    "Ligands are specified via entity_types using either the string 'ligand' "
-    "(in which case the sequence value is used as the SMILES string) or a dict "
-    "with a 'smiles' key ({'smiles': 'CC...'}).",
+_CHAI_INPUT_FORMAT = (
+    # FASTA format overview
+    "Chai-1 takes a multi-entity FASTA file as primary input. Each record has "
+    "a header specifying entity type and chain name, followed by the sequence. "
+    "Header format: >entity_type|name=chain_id where entity_type is one of: "
+    "protein, dna, rna, ligand. Via the autobio API, each entry in the "
+    "sequences dict becomes a FASTA entity (default type 'protein'). To "
+    "specify other entity types, use extra['entity_types'] mapping chain IDs "
+    "to types: {'B': 'dna', 'C': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}}.",
+    # Entity examples
+    "FASTA entity examples — "
+    "Protein: >protein|name=A\\nMKLLVVFLFL... "
+    "DNA: >dna|name=B\\nATCGATCG... "
+    "RNA: >rna|name=C\\nAUCGAUCG... "
+    "Ligand (SMILES): >ligand|name=D\\nCC(=O)NC1=CC=C(O)C=C1. "
+    "Via the API, ligands are specified in entity_types using either the "
+    "string 'ligand' (sequence value used as SMILES) or a dict with a "
+    "'smiles' key: {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}.",
     # Modified residues
-    "Modified residues are specified inline in the sequence using parenthesised "
-    "CCD codes: e.g., 'AAA(SEP)AAA' for phosphoserine. Chai-1 resolves these "
-    "against the Chemical Component Dictionary.",
-    # Raw FASTA override
-    "For complex inputs, provide the full Chai-1 FASTA via extra['chai_fasta'] "
-    "(as a string). This bypasses automatic FASTA generation and gives full "
-    "control over entity headers and sequence formatting.",
-    # Restraints and covalent bonds
-    "Restraints and covalent bonds are specified via extra['constraints'] as "
-    "either CSV content (string with commas/newlines) or a file path. The CSV "
-    "format has columns: chainA, res_idxA, chainB, res_idxB, connection_type, "
-    "confidence, min_distance_angstrom, max_distance_angstrom, comment, "
-    "restraint_id. Three connection types: 'contact' (residue-to-residue, "
-    "e.g., A,C387,B,Y101,contact,1.0,0.0,5.5,...), 'pocket' (any-to-residue, "
-    "empty res_idxA), 'covalent' (atom-to-atom, e.g., A,N437@N,B,@C1,covalent,"
-    "1.0,0.0,0.0,...). Chain IDs are assigned alphabetically by FASTA order.",
+    "Modified residues use parenthesised CCD codes inline in the protein "
+    "sequence: e.g., 'AAA(SEP)AAA' for phosphoserine, 'MK(TPO)LL(SEP)VV' "
+    "for multiple modifications. Chai-1 resolves these against the Chemical "
+    "Component Dictionary.",
+    # Glycans
+    "Glycans are specified as ligand entities using CCD codes. Single sugar: "
+    ">ligand|name=B\\nNAG. Multi-ring with bond notation: "
+    ">ligand|name=B\\nNAG(4-1 NAG(4-1 BMA(3-1 MAN)(6-1 MAN))). "
+    "Bond notation uses ATOM_NUMBER-ATOM_NUMBER between sugar units. Glycans "
+    "must be connected to a protein via a covalent bond in the restraints CSV.",
+    # Restraints CSV format
+    "Restraints and covalent bonds use a CSV file (provide via "
+    "extra['constraints'] as CSV content string or file path). Columns: "
+    "chainA, res_idxA, chainB, res_idxB, connection_type, confidence, "
+    "min_distance_angstrom, max_distance_angstrom, comment, restraint_id. "
+    "Three connection types: "
+    "'contact' — residue-to-residue distance restraint: "
+    "A,C387,B,Y101,contact,1.0,0.0,5.5,interface contact,r1. "
+    "'pocket' — any residue to a target residue (leave res_idxA empty): "
+    "A,,B,Y101,pocket,1.0,0.0,8.0,binding pocket,r2. "
+    "'covalent' — atom-level bond using RESIDUE@ATOM notation: "
+    "A,N437@N,B,@C1,covalent,1.0,0.0,0.0,glycan bond,r3. "
+    "For covalent bonds, protein residues use NUMBER@ATOM (e.g., N437@N), "
+    "ligands use @ATOM (e.g., @C1). Chain IDs are assigned alphabetically "
+    "by FASTA entity order.",
+    # Complete example
+    "Complete example — protein-ligand FASTA:\\n"
+    ">protein|name=A\\n"
+    "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQQIAATG\\n"
+    ">ligand|name=B\\n"
+    "CC(=O)NC1=CC=C(O)C=C1",
+    # Raw override
+    "For full control over the native FASTA format, provide the complete "
+    "FASTA content via extra['chai_fasta'] (as a string). This bypasses "
+    "automatic FASTA generation from the sequences dict.",
+)
+
+_CHAI_NOTES = (
     # MSA options
     "MSA generation via ColabFold's MMSeqs2 server is ENABLED BY DEFAULT "
     "(use_msa_server=true). This avoids needing >1TB of local sequence "
@@ -360,4 +387,5 @@ TOOL_REGISTRY["chai1"] = ToolEntry(
     ),
     version="1.0.0",
     notes=_CHAI_NOTES,
+    input_format=_CHAI_INPUT_FORMAT,
 )
