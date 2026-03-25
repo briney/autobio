@@ -239,11 +239,16 @@ def standardize(workspace: Path) -> None:
         config = json.loads(config_path.read_text())
         mode = config.get("mode", "generate")
 
-    raw_designs = _find_designs(raw_dir)
+    # Search for designs in inference/ subdirectory only. The evaluation_results/
+    # directory (design mode) contains PDB copies that should not be counted as
+    # separate designs.
+    inference_dir = raw_dir / "inference"
+    search_dir = inference_dir if inference_dir.is_dir() else raw_dir
+    raw_designs = _find_designs(search_dir)
 
     if not raw_designs:
         raise RuntimeError(
-            f"No Proteina-Complexa design outputs (.pdb) found in {raw_dir}. "
+            f"No Proteina-Complexa design outputs (.pdb) found in {search_dir}. "
             f"Check logs/tool.log for execution errors."
         )
 

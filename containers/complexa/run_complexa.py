@@ -249,6 +249,68 @@ def _build_ame_overrides(
     return overrides
 
 
+def _mirror_target_dict_for_evaluate(
+    overrides: list[str],
+    variant: str,
+    spec_name: str,
+    spec: dict,
+) -> None:
+    """Mirror target_dict_cfg entries under ``generation.`` for the evaluate step.
+
+    In the pipeline config, ``binder_generate`` is loaded at ``@generation``,
+    placing ``target_dict_cfg`` at ``generation.target_dict_cfg``.  The evaluate
+    step accesses this nested path explicitly.  The top-level overrides (set by
+    the variant builders) work for generate mode via Hydra interpolation, but
+    the evaluate step needs the nested path to find custom targets.
+    """
+    cfg_key = "target_dict_cfg" if variant != "ame" else "motif_target_dict_cfg"
+    prefix = f"++generation.{cfg_key}.{spec_name}"
+
+    overrides.append(f"{prefix}.source=custom")
+    overrides.append(f"{prefix}.target_filename={spec_name}")
+    overrides.append(f"{prefix}.target_path={spec.get('input', '')}")
+
+    # Copy variant-relevant fields
+    if variant != "ame":
+        overrides.append(
+            f"{prefix}.target_input={spec.get('target_input', '')}"
+        )
+        overrides.append(f"{prefix}.pdb_id={spec.get('pdb_id', '')}")
+        hs = spec.get("hotspot_residues", [])
+        if hs:
+            overrides.append(
+                f"{prefix}.hotspot_residues={_hydra_list(hs)}"
+            )
+        bl = spec.get("binder_length", [])
+        if bl:
+            overrides.append(f"{prefix}.binder_length={_hydra_list(bl)}")
+
+    if variant == "ligand_binder":
+        ligand = spec.get("ligand", spec.get("ligand_chain", ""))
+        overrides.append(f"{prefix}.ligand={ligand}")
+        overrides.append(
+            f"{prefix}.ligand_only={spec.get('ligand_only', True)}"
+        )
+        overrides.append(
+            f"{prefix}.use_bonds_from_file="
+            f"{spec.get('use_bonds_from_file', True)}"
+        )
+        smiles = spec.get("smiles", "")
+        overrides.append(f"{prefix}.SMILES='{smiles}'")
+
+    if variant == "ame":
+        contig = spec.get("contig_atoms", "")
+        if contig:
+            overrides.append(f"{prefix}.contig_atoms='{contig}'")
+        bl = spec.get("binder_length", [])
+        if bl:
+            overrides.append(f"{prefix}.binder_length={_hydra_list(bl)}")
+        ligand = spec.get("ligand", "")
+        overrides.append(
+            f"{prefix}.ligand={ligand if ligand else 'null'}"
+        )
+
+
 def _build_overrides(
     config: dict,
     spec_name: str,
@@ -313,6 +375,32 @@ def _build_overrides(
             overrides.append("++eval_njobs=1")
         if "gen_njobs" in config:
             overrides.append(f"++gen_njobs={config['gen_njobs']}")
+
+        # The generate step creates output at
+        #   {config}_{task_name}_{run_name}
+        # but the evaluate step constructs sample_storage_path as
+        #   {config}_{run_name}
+        # When task_name == run_name, the paths diverge. Explicitly set
+        # both sample_storage_path and output_dir so the evaluate step's
+        # path-construction block is skipped entirely.
+        pipeline_config = config.get(
+            "pipeline_config", _PIPELINE_CONFIGS[variant]
+        )
+        sample_dir = (
+            f"./inference/{pipeline_config}_{spec_name}_{spec_name}"
+        )
+        eval_out_dir = (
+            f"./evaluation_results/{pipeline_config}_{spec_name}"
+        )
+        overrides.append(f"++sample_storage_path={sample_dir}")
+        overrides.append(f"++output_dir={eval_out_dir}")
+
+        # The evaluate step accesses cfg.generation.target_dict_cfg
+        # (nested under generation), but the variant-specific builders set
+        # target_dict_cfg at the top level (which works for generate mode
+        # via Hydra interpolation). Mirror the target config at the nested
+        # path so evaluate can resolve it.
+        _mirror_target_dict_for_evaluate(overrides, variant, spec_name, spec)
 
     # -- Hydra output directory → workspace logs ---------------------------
     overrides.append("++hydra.run.dir=/workspace/logs/hydra_outputs")
