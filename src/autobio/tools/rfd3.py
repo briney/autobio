@@ -97,7 +97,7 @@ class RFD3Runner(ToolRunner):
                 spec_name=d["spec_name"],
                 batch_index=d["batch_index"],
                 design_index=d["design_index"],
-                structure_path=Path(d["structure_path"]),
+                structure_path=self._resolve_container_path(d["structure_path"], workspace),
                 diffusion_metadata=d.get("diffusion_metadata"),
             )
             for d in data["designs"]
@@ -116,6 +116,22 @@ class RFD3Runner(ToolRunner):
             metadata=self._build_metadata(workspace, 0.0, [], ""),
             raw_output_path=workspace.raw_output_dir,
         )
+
+    @staticmethod
+    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
+        """Map a container-internal ``/workspace/...`` path to the host workspace.
+
+        The standardize.py script inside the container writes absolute paths
+        rooted at ``/workspace``. This method strips that prefix and resolves
+        the remainder against the host-side workspace root.
+        """
+        container_path = Path(container_path_str)
+        try:
+            relative = container_path.relative_to("/workspace")
+        except ValueError:
+            # Not a container path — return as-is
+            return container_path
+        return workspace.root / relative
 
     @staticmethod
     def _validate_inputs(input_data: StructureDesignInput) -> None:

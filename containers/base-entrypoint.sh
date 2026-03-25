@@ -80,8 +80,9 @@ fi
 # ─── Phase 2: Tool execution ────────────────────────────────────────────
 echo '{"phase":"execution"}' > "$PHASE_FILE"
 echo "[autobio] Phase 2: Executing tool..."
-if ! /opt/tool/run.sh "$WORKSPACE"; then
-    RUN_EXIT=$?
+RUN_EXIT=0
+/opt/tool/run.sh "$WORKSPACE" || RUN_EXIT=$?
+if [ $RUN_EXIT -ne 0 ]; then
     echo "[autobio] ERROR: Tool execution failed with exit code $RUN_EXIT." >&2
     write_result "failed" "execution" "Tool exited with code $RUN_EXIT" "$RUN_EXIT"
     exit $RUN_EXIT
