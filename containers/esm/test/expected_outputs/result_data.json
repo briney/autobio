@@ -1,0 +1,13 @@
+{
+  "embeddings": [
+    {
+      "sequence_id": "crambin",
+      "embedding_path": "/workspace/outputs/standardized/crambin.npy",
+      "dimension": 1280,
+      "layer": 33,
+      "pooling": "mean"
+    }
+  ],
+  "model_name": "esm2_t33_650M_UR50D",
+  "embedding_dimension": 1280
+}

@@ -1,0 +1,6 @@
+{
+    "model_name": "facebook/esmfold_v1",
+    "input_fasta": "/workspace/inputs/sequences.fasta",
+    "output_dir": "/workspace/outputs/raw",
+    "hf_cache": "/app/esmfold/hf_cache"
+}

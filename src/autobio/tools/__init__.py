@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from autobio.tools.boltz import BoltzRunner
 from autobio.tools.chai import ChaiRunner
 from autobio.tools.complexa import ComplexaRunner
+from autobio.tools.esm import ESMRunner
+from autobio.tools.esmfold import ESMFoldRunner
 from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.rfd3 import RFD3Runner
@@ -16,6 +18,9 @@ if TYPE_CHECKING:
     from autobio.tools.base import ToolRunner
 
 TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
+    "esm1b": ESMRunner,
+    "esm2": ESMRunner,
+    "esmfold": ESMFoldRunner,
     "proteinmpnn": MPNNRunner,
     "ligandmpnn": MPNNRunner,
     "rfd3": RFD3Runner,

@@ -1,0 +1,18 @@
+{
+  "structures": [
+    {
+      "model_rank": 1,
+      "structure_path": "/workspace/outputs/standardized/prediction.pdb",
+      "plddt_per_residue": [],
+      "plddt_mean": 0.0,
+      "ptm": 0.0,
+      "iptm": null,
+      "chain_mapping": null
+    }
+  ],
+  "confidence": {
+    "best_plddt_mean": 0.0,
+    "best_ptm": 0.0,
+    "best_iptm": null
+  }
+}
