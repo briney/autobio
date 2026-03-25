@@ -29,6 +29,7 @@ warn() {
 VALID_SPEC_KEYS=(
     input target_input hotspot_residues binder_length
     binder_center pdb_id ligand_chain motif_residues
+    ligand ligand_only smiles use_bonds_from_file contig_atoms
 )
 
 # Top-level config keys
@@ -36,7 +37,7 @@ VALID_TOP_KEYS=(
     variant pipeline_config ckpt_name ae_ckpt_name weights_dir
     design_specs n_batches out_dir
     batch_size n_samples_per_length binder_length_samples
-    search_algorithm seed gen_njobs
+    search_algorithm seed gen_njobs eval_njobs mode
 )
 
 # Valid variants
@@ -60,6 +61,22 @@ else
     done
     if [ "$valid_variant" = false ]; then
         error "variant must be one of: ${VALID_VARIANTS[*]}; got '$VARIANT'"
+    fi
+fi
+
+# mode must be 'generate' or 'design' (defaults to 'generate' if absent)
+MODE=$(jq -r '.mode // "generate"' "$CONFIG_FILE" 2>/dev/null || true)
+if [ "$MODE" != "generate" ] && [ "$MODE" != "design" ]; then
+    error "mode must be 'generate' or 'design'; got '$MODE'"
+fi
+
+# In design mode, verify community model weights are available
+if [ "$MODE" = "design" ]; then
+    if [ -z "$AF2_DIR" ] || [ ! -d "$AF2_DIR" ]; then
+        error "mode=design requires AF2 weights. AF2_DIR='${AF2_DIR:-<unset>}' is empty or does not exist. Use the full image (not generate-only)."
+    fi
+    if [ -z "$RF3_CKPT_PATH" ] || [ ! -f "$RF3_CKPT_PATH" ]; then
+        error "mode=design requires RF3 checkpoint. RF3_CKPT_PATH='${RF3_CKPT_PATH:-<unset>}' is empty or does not exist. Use the full image (not generate-only)."
     fi
 fi
 

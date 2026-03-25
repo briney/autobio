@@ -76,8 +76,15 @@ _VALID_SPEC_KEYS = frozenset(
         "binder_length",
         "binder_center",
         "pdb_id",
-        "ligand_chain",
+        # Ligand binder fields
+        "ligand_chain",  # backward compat alias for 'ligand'
+        "ligand",  # 3-letter residue name of ligand (e.g., "BEN", "OQO")
+        "ligand_only",  # design around ligand only (default True)
+        "smiles",  # SMILES string for ligand
+        "use_bonds_from_file",  # use bonds from PDB file (default True)
+        # AME fields
         "motif_residues",
+        "contig_atoms",  # per-residue atom spec for motif scaffolding
     }
 )
 
@@ -160,6 +167,7 @@ class ComplexaRunner(ToolRunner):
                 design_index=d["design_index"],
                 structure_path=self._resolve_container_path(d["structure_path"], workspace),
                 diffusion_metadata=d.get("diffusion_metadata"),
+                evaluation_metrics=d.get("evaluation_metrics"),
             )
             for d in data["designs"]
         ]
@@ -233,7 +241,9 @@ _COMPLEXA_INPUT_FORMAT = (
     "'target_input' (chain and residue range, e.g., 'A1-115'). Recommended: "
     "'hotspot_residues' (list of target residues to contact, e.g., "
     "['A37', 'A39', 'A49', 'A98']), 'binder_length' ([min, max] residue "
-    "count, e.g., [64, 155]).",
+    "count, e.g., [64, 155]). Pass 'mode': 'design' in the extra dict to "
+    "run the full pipeline with evaluation (AF2, RF3, MPNN). Default mode "
+    "is 'generate' (generation only).",
     # Hotspot format
     "Hotspot residues are specified as a list of strings, each being a chain "
     "letter followed by a residue number: ['A37', 'A39', 'A49']. These guide "
@@ -251,37 +261,47 @@ _COMPLEXA_INPUT_FORMAT = (
 )
 
 _COMPLEXA_NOTES = (
+    # Design mode
+    "Set 'mode' to 'design' in the extra dict to run the full pipeline: "
+    "generate -> filter -> evaluate -> analyze. This uses AF2 and RF3 for "
+    "structure prediction evaluation, MPNN for sequence design, and returns "
+    "evaluation_metrics on each DesignedStructure. Requires the full "
+    "container image (with community model weights). Default mode is "
+    "'generate' (generation only, no evaluation).",
     # Search algorithms
     "By default, generation uses 'single-pass' search (no reward model "
     "needed). For higher quality at the cost of more compute, set "
     "'search_algorithm' to 'best-of-n' or 'beam-search' in the extra dict. "
-    "Note: 'best-of-n' and 'beam-search' require an external reward model "
-    "(not included in this container) and will fall back to the built-in "
-    "reward if unavailable.",
+    "In generate mode, 'best-of-n' and 'beam-search' will fall back to the "
+    "built-in reward if no external reward model is available. In design "
+    "mode, the full reward model (AF2/RF3) is automatically used.",
     # Generation parameters
     "Key generation parameters (pass via extra dict): 'batch_size' (int, "
     "default 16, samples per batch), 'n_samples_per_length' (int, default 4, "
     "samples at each length), 'binder_length_samples' (int, default 4, "
-    "number of lengths to sample from the range), 'seed' (int, default 42).",
+    "number of lengths to sample from the range), 'seed' (int, default 42). "
+    "For design mode: 'eval_njobs' (int, default 1, parallel evaluation "
+    "jobs), 'gen_njobs' (int, default 1, parallel generation jobs).",
     # GPU memory
     "Proteina-Complexa requires a GPU with at least 16 GB VRAM. For longer "
     "binders (>100 residues), 24+ GB is recommended. Reduce batch_size to "
-    "avoid OOM errors.",
+    "avoid OOM errors. Design mode requires additional GPU memory for "
+    "evaluation models (AF2, RF3).",
     # Output format
     "Output structures are PDB files containing the designed binder chain "
     "alongside the target. The diffusion_metadata dict on each "
     "DesignedStructure includes generation metrics (total_reward, sample_type) "
-    "when available.",
+    "when available. In design mode, evaluation_metrics contains AF2 "
+    "iPTM/pTM/pLDDT, RF3 scores, MPNN recovery metrics, and scRMSD.",
     # Multi-spec efficiency
     "Multiple design specifications run sequentially within one container. "
-    "Each spec triggers a separate generation pass. For parallel execution "
+    "Each spec triggers a separate pass. For parallel execution "
     "across specs, submit separate autobio runs.",
-    # Downstream workflow
-    "Generated binders should be validated downstream: use a structure "
-    "prediction tool (e.g., boltz2, chai1, openfold3) to refold the "
-    "binder-target complex, then score with proteinmpnn for sequence "
-    "optimization. High-confidence refolding (pTM > 0.5, iPTM > 0.6) "
-    "indicates a designable binder.",
+    # Downstream workflow (generate mode)
+    "In generate mode, binders should be validated downstream: use a "
+    "structure prediction tool (e.g., boltz2, chai1, openfold3) to refold "
+    "the binder-target complex, then score with proteinmpnn for sequence "
+    "optimization. In design mode, this evaluation is done automatically.",
 )
 
 _COMPLEXA_LIGAND_INPUT_FORMAT = (
@@ -302,15 +322,16 @@ _COMPLEXA_LIGAND_INPUT_FORMAT = (
 )
 
 _COMPLEXA_LIGAND_NOTES = (
-    _COMPLEXA_NOTES[0],  # search algorithms
-    _COMPLEXA_NOTES[1],  # generation parameters
-    _COMPLEXA_NOTES[2],  # GPU memory
+    _COMPLEXA_NOTES[0],  # design mode
+    _COMPLEXA_NOTES[1],  # search algorithms
+    _COMPLEXA_NOTES[2],  # generation parameters
+    _COMPLEXA_NOTES[3],  # GPU memory
     # Ligand-specific output note
     "Output structures are PDB files containing the designed binder, target "
     "protein, and ligand. The model is trained on protein-ligand complexes "
     "from the PLINDER database.",
-    _COMPLEXA_NOTES[4],  # multi-spec efficiency
-    _COMPLEXA_NOTES[5],  # downstream workflow
+    _COMPLEXA_NOTES[5],  # multi-spec efficiency
+    _COMPLEXA_NOTES[6],  # downstream workflow
 )
 
 _COMPLEXA_AME_INPUT_FORMAT = (
@@ -331,77 +352,81 @@ _COMPLEXA_AME_INPUT_FORMAT = (
 )
 
 _COMPLEXA_AME_NOTES = (
-    _COMPLEXA_NOTES[0],  # search algorithms
-    _COMPLEXA_NOTES[1],  # generation parameters
-    _COMPLEXA_NOTES[2],  # GPU memory
+    _COMPLEXA_NOTES[0],  # design mode
+    _COMPLEXA_NOTES[1],  # search algorithms
+    _COMPLEXA_NOTES[2],  # generation parameters
+    _COMPLEXA_NOTES[3],  # GPU memory
     # AME-specific output note
     "Output structures are PDB files containing the designed scaffold with "
     "the motif embedded. The diffusion_metadata includes motif RMSD when "
     "available, indicating how well the designed scaffold preserves the "
     "original motif geometry.",
-    _COMPLEXA_NOTES[4],  # multi-spec efficiency
-    _COMPLEXA_NOTES[5],  # downstream workflow
+    _COMPLEXA_NOTES[5],  # multi-spec efficiency
+    _COMPLEXA_NOTES[6],  # downstream workflow
 )
 
 TOOL_REGISTRY["complexa"] = ToolEntry(
-    image_tag="complexa:1.0.0",
+    image_tag="complexa:2.0.0",
     category=ToolCategory.STRUCTURE_DESIGN,
     requires_gpu=True,
     gpu_count=1,
     input_schema=StructureDesignInput,
     output_schema=StructureDesignOutput,
-    default_timeout=7200,
+    default_timeout=43200,
     supports_batch=True,
     description=(
         "Design novel protein binders for protein targets using "
         "Proteina-Complexa. Generates binder sequences and all-atom 3D "
         "structures simultaneously via flow-matching generative modeling. "
-        "Provide target structure, hotspot residues, and binder length "
-        "constraints via design_specs."
+        "Supports generate-only mode (default) and full design pipeline "
+        "mode with AF2/RF3/MPNN evaluation. Provide target structure, "
+        "hotspot residues, and binder length constraints via design_specs."
     ),
-    version="1.0.0",
+    version="2.0.0",
     notes=_COMPLEXA_NOTES,
     input_format=_COMPLEXA_INPUT_FORMAT,
 )
 
 TOOL_REGISTRY["complexa_ligand"] = ToolEntry(
-    image_tag="complexa:1.0.0",
+    image_tag="complexa:2.0.0",
     category=ToolCategory.STRUCTURE_DESIGN,
     requires_gpu=True,
     gpu_count=1,
     input_schema=StructureDesignInput,
     output_schema=StructureDesignOutput,
-    default_timeout=7200,
+    default_timeout=43200,
     supports_batch=True,
     description=(
         "Design novel protein binders for small-molecule ligand targets using "
         "Proteina-Complexa. Generates binder sequences and all-atom 3D "
-        "structures for proteins that bind near a specified ligand. Provide "
-        "a protein-ligand complex PDB with hotspot residues and binder length "
-        "constraints via design_specs."
+        "structures for proteins that bind near a specified ligand. Supports "
+        "generate-only mode (default) and full design pipeline mode with "
+        "evaluation. Provide a protein-ligand complex PDB with hotspot "
+        "residues and binder length constraints via design_specs."
     ),
-    version="1.0.0",
+    version="2.0.0",
     notes=_COMPLEXA_LIGAND_NOTES,
     input_format=_COMPLEXA_LIGAND_INPUT_FORMAT,
 )
 
 TOOL_REGISTRY["complexa_ame"] = ToolEntry(
-    image_tag="complexa:1.0.0",
+    image_tag="complexa:2.0.0",
     category=ToolCategory.STRUCTURE_DESIGN,
     requires_gpu=True,
     gpu_count=1,
     input_schema=StructureDesignInput,
     output_schema=StructureDesignOutput,
-    default_timeout=7200,
+    default_timeout=43200,
     supports_batch=True,
     description=(
         "Scaffold functional motifs into complete proteins using "
         "Proteina-Complexa AME (Atomistic Motif Extension). Designs a "
         "scaffold protein around a provided structural motif, preserving "
-        "the motif geometry. Useful for enzyme active site design and "
-        "functional domain scaffolding."
+        "the motif geometry. Supports generate-only mode (default) and "
+        "full design pipeline mode with evaluation. Useful for enzyme "
+        "active site design and functional domain scaffolding."
     ),
-    version="1.0.0",
+    version="2.0.0",
     notes=_COMPLEXA_AME_NOTES,
     input_format=_COMPLEXA_AME_INPUT_FORMAT,
 )

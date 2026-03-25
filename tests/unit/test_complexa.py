@@ -255,6 +255,43 @@ class TestComplexaPrepareWorkspace:
         # Original input_data should still reference host path
         assert input_data.design_specs["test"]["input"] == original_path
 
+    def test_mode_design_passed_through(self, runner: ComplexaRunner, tmp_path: Path) -> None:
+        """extra={'mode': 'design'} appears in config.json."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructureDesignInput(
+            design_specs={"test": {"target_input": "A1-50"}},
+            extra={"mode": "design"},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["mode"] == "design"
+
+    def test_mode_generate_default(self, runner: ComplexaRunner, tmp_path: Path) -> None:
+        """No mode in extra → no mode key in config (container defaults to generate)."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructureDesignInput(
+            design_specs={"test": {"target_input": "A1-50"}},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert "mode" not in cfg
+
+    def test_design_mode_eval_njobs(self, runner: ComplexaRunner, tmp_path: Path) -> None:
+        """Design mode extra keys (eval_njobs, gen_njobs) pass through to config."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = StructureDesignInput(
+            design_specs={"test": {"target_input": "A1-50"}},
+            extra={"mode": "design", "eval_njobs": 4, "gen_njobs": 2},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["mode"] == "design"
+        assert cfg["eval_njobs"] == 4
+        assert cfg["gen_njobs"] == 2
+
 
 # ---------------------------------------------------------------------------
 # TestComplexaHostValidation
@@ -323,6 +360,26 @@ _SINGLE_DESIGN_RESULT = {
             "diffusion_metadata": {
                 "binder_length": 80,
                 "rewards": {"total_reward": "2.5"},
+            },
+        },
+    ],
+    "spec_summary": {"pdl1": 1},
+}
+
+_DESIGN_MODE_RESULT = {
+    "designs": [
+        {
+            "spec_name": "pdl1",
+            "batch_index": 0,
+            "design_index": 0,
+            "structure_path": "/workspace/outputs/standardized/pdl1_b0_d0.pdb",
+            "diffusion_metadata": {"binder_length": 80},
+            "evaluation_metrics": {
+                "self_complex_i_pAE": 5.2,
+                "self_binder_pLDDT": 0.92,
+                "self_binder_scRMSD_ca": 1.1,
+                "mpnn_complex_i_pAE": 4.8,
+                "mpnn_binder_scRMSD_ca": 1.3,
             },
         },
     ],
@@ -429,6 +486,34 @@ class TestComplexaParseOutput:
         output = runner.parse_output(workspace)
         assert output.raw_output_path == workspace.raw_output_dir
 
+    def test_parse_output_with_evaluation_metrics(
+        self, runner: ComplexaRunner, tmp_path: Path
+    ) -> None:
+        """Design mode result_data.json with evaluation_metrics is parsed correctly."""
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_DESIGN_MODE_RESULT))
+
+        output = runner.parse_output(workspace)
+        assert len(output.designs) == 1
+        d = output.designs[0]
+        assert d.evaluation_metrics is not None
+        assert d.evaluation_metrics["self_complex_i_pAE"] == 5.2
+        assert d.evaluation_metrics["self_binder_pLDDT"] == 0.92
+        assert d.evaluation_metrics["mpnn_complex_i_pAE"] == 4.8
+
+    def test_parse_output_without_evaluation_metrics(
+        self, runner: ComplexaRunner, tmp_path: Path
+    ) -> None:
+        """Generate mode results (no evaluation_metrics key) parse with None."""
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(
+            json.dumps(_SINGLE_DESIGN_RESULT)
+        )
+
+        output = runner.parse_output(workspace)
+        d = output.designs[0]
+        assert d.evaluation_metrics is None
+
 
 # ---------------------------------------------------------------------------
 # TestComplexaRegistration
@@ -483,14 +568,22 @@ class TestComplexaRegistration:
     def test_shared_image_tag(self, tool_name: str) -> None:
         """All three variants share the same container image."""
         entry = TOOL_REGISTRY[tool_name]
-        assert entry.image_tag == "complexa:1.0.0"
+        assert entry.image_tag == "complexa:2.0.0"
 
     @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
     def test_default_timeout(self, tool_name: str) -> None:
         entry = TOOL_REGISTRY[tool_name]
-        assert entry.default_timeout == 7200
+        assert entry.default_timeout == 43200
 
     @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
     def test_supports_batch(self, tool_name: str) -> None:
         entry = TOOL_REGISTRY[tool_name]
         assert entry.supports_batch is True
+
+    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
+    def test_design_mode_documented_in_notes(self, tool_name: str) -> None:
+        """All variants document design mode in their notes."""
+        entry = TOOL_REGISTRY[tool_name]
+        all_notes = " ".join(entry.notes).lower()
+        assert "design" in all_notes
+        assert "mode" in all_notes

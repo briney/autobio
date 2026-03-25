@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Standardize Proteina-Complexa outputs into autobio schema format.
 
-Walks the raw output directory for PDB files produced by ``complexa generate``,
-copies them to ``outputs/standardized/``, and produces ``result_data.json``
-conforming to the ``StructureDesignOutput`` schema.
+Walks the raw output directory for PDB files produced by ``complexa generate``
+or ``complexa design``, copies them to ``outputs/standardized/``, and produces
+``result_data.json`` conforming to the ``StructureDesignOutput`` schema.
 
-Proteina-Complexa output structure::
+Proteina-Complexa output structure (generate mode)::
 
     <out_dir>/inference/<config_name>_<task_name>[_<run_name>]/
         job_<job_id>_n_<length>_id_<idx>/
             job_<job_id>_n_<length>_id_<idx>.pdb
         rewards_<config_name>_<job_id>.csv
+
+In design mode, the same structure exists plus evaluation CSVs with per-design
+metrics from AF2, RF3, and MPNN evaluation steps.
 """
 
 from __future__ import annotations
@@ -48,6 +51,72 @@ def _load_rewards(raw_dir: Path) -> dict[str, dict]:
             continue
 
     return rewards
+
+
+def _load_evaluation_metrics(raw_dir: Path) -> dict[str, dict]:
+    """Load evaluation metrics from CSV files produced by ``complexa design``.
+
+    The evaluate step produces CSV files with per-design metrics including AF2
+    iPTM/pTM/pLDDT, RF3 scores, MPNN recovery, and scRMSD. These are distinct
+    from the ``rewards_*.csv`` files produced during generation.
+
+    Returns a dict mapping PDB path (or design identifier) to its metrics dict.
+    """
+    metrics: dict[str, dict] = {}
+
+    # Evaluation CSVs are produced by the evaluate/analyze steps and typically
+    # live alongside or below the inference output directory. They contain
+    # columns like: id_gen, pdb_path, self_complex_i_pAE, self_binder_pLDDT,
+    # self_binder_scRMSD_ca, mpnn_complex_i_pAE, etc.
+    for csv_path in sorted(raw_dir.rglob("*.csv")):
+        # Skip rewards CSVs (handled separately) and filter CSVs
+        if csv_path.name.startswith("rewards_"):
+            continue
+
+        try:
+            with open(csv_path) as f:
+                reader = csv.DictReader(f)
+                if reader.fieldnames is None:
+                    continue
+
+                # Only process CSVs that look like evaluation output
+                # (contain metric-like columns)
+                metric_indicators = {
+                    "i_pAE", "pLDDT", "scRMSD", "iPTM", "pTM", "ipae",
+                    "iptm", "ptm", "plddt",
+                }
+                has_metrics = any(
+                    any(ind in col for ind in metric_indicators)
+                    for col in reader.fieldnames
+                )
+                if not has_metrics:
+                    continue
+
+                for row in reader:
+                    # Key by pdb_path if available, else by id_gen
+                    key = row.get("pdb_path", "") or row.get("id_gen", "")
+                    if not key:
+                        continue
+
+                    # Collect all non-identifier columns as metrics
+                    skip_cols = {"pdb_path", "id_gen", "run_name", "L"}
+                    entry: dict = {}
+                    for k, v in row.items():
+                        if k in skip_cols:
+                            continue
+                        # Try to parse numeric values
+                        try:
+                            entry[k] = float(v)
+                        except (ValueError, TypeError):
+                            entry[k] = v
+
+                    if entry:
+                        metrics[key] = entry
+
+        except (csv.Error, OSError):
+            continue
+
+    return metrics
 
 
 def _find_designs(raw_dir: Path) -> list[dict]:
@@ -124,11 +193,51 @@ def _build_dir_to_spec_map(workspace: Path) -> dict[str, str]:
     return mapping
 
 
+def _match_evaluation_metrics(
+    design: dict,
+    eval_metrics: dict[str, dict],
+) -> dict | None:
+    """Match evaluation metrics to a design by PDB path or identifier.
+
+    Tries multiple key strategies since evaluation CSVs may reference designs
+    by full path, relative path, or design identifier.
+    """
+    if not eval_metrics:
+        return None
+
+    raw_pdb_path = design["raw_pdb_path"]
+    raw_pdb_str = str(raw_pdb_path)
+
+    # Try exact path match
+    if raw_pdb_str in eval_metrics:
+        return eval_metrics[raw_pdb_str]
+
+    # Try filename match
+    for key, metrics in eval_metrics.items():
+        if Path(key).name == raw_pdb_path.name:
+            return metrics
+
+    # Try stem match (without .pdb extension)
+    stem = raw_pdb_path.stem
+    for key, metrics in eval_metrics.items():
+        if Path(key).stem == stem:
+            return metrics
+
+    return None
+
+
 def standardize(workspace: Path) -> None:
     """Transform raw Proteina-Complexa outputs into standardized result_data.json."""
     raw_dir = workspace / "outputs" / "raw"
     std_dir = workspace / "outputs" / "standardized"
     std_dir.mkdir(parents=True, exist_ok=True)
+
+    # Read mode from config
+    config_path = workspace / "config.json"
+    mode = "generate"
+    if config_path.exists():
+        config = json.loads(config_path.read_text())
+        mode = config.get("mode", "generate")
 
     raw_designs = _find_designs(raw_dir)
 
@@ -147,6 +256,16 @@ def standardize(workspace: Path) -> None:
 
     # Load reward data for metadata
     rewards = _load_rewards(raw_dir)
+
+    # Load evaluation metrics if in design mode
+    eval_metrics: dict[str, dict] = {}
+    if mode == "design":
+        eval_metrics = _load_evaluation_metrics(raw_dir)
+        if eval_metrics:
+            print(
+                f"[complexa-standardize] Loaded evaluation metrics for "
+                f"{len(eval_metrics)} design(s)."
+            )
 
     designs: list[dict] = []
     spec_summary: dict[str, int] = {}
@@ -172,13 +291,21 @@ def standardize(workspace: Path) -> None:
         if reward_data:
             diffusion_metadata["rewards"] = reward_data
 
-        designs.append({
+        design_entry: dict = {
             "spec_name": d["spec_name"],
             "batch_index": d["batch_index"],
             "design_index": d["design_index"],
             "structure_path": str(dest_path),
             "diffusion_metadata": diffusion_metadata,
-        })
+        }
+
+        # Attach evaluation metrics if available (design mode)
+        if mode == "design":
+            matched_metrics = _match_evaluation_metrics(d, eval_metrics)
+            if matched_metrics:
+                design_entry["evaluation_metrics"] = matched_metrics
+
+        designs.append(design_entry)
 
         spec_summary[d["spec_name"]] = spec_summary.get(d["spec_name"], 0) + 1
 
@@ -190,7 +317,7 @@ def standardize(workspace: Path) -> None:
 
     print(
         f"[complexa-standardize] Standardized {len(designs)} designs "
-        f"across {len(spec_summary)} spec(s)."
+        f"across {len(spec_summary)} spec(s) (mode={mode})."
     )
 
 

@@ -57,6 +57,14 @@ class DesignedStructure(BaseModel):
             "specification echo-back, etc.)."
         ),
     )
+    evaluation_metrics: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Per-design evaluation metrics from the full design pipeline. "
+            "Includes AF2 iPTM/pTM/pLDDT, RF3 scores, MPNN recovery metrics, "
+            "and scRMSD. None when mode='generate'."
+        ),
+    )
 
 
 class StructureDesignOutput(BaseOutput):
