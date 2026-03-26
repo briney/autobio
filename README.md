@@ -2,7 +2,7 @@
 
 Tools for autonomous biological research.
 
-Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, and more. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
+Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, structure design, and scoring. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
 
 Autobio is designed for both direct human use and as the computational backbone for AI agents performing autonomous biological research. All commands support `--format json` for structured, machine-readable output.
 
@@ -157,12 +157,47 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 
 ## Available tools
 
-| Tool | Category | GPU | Description |
-|------|----------|-----|-------------|
-| `proteinmpnn` | inverse-folding | Yes | Fixed-backbone sequence design with ProteinMPNN |
-| `ligandmpnn` | inverse-folding | Yes | Ligand-aware sequence design with LigandMPNN |
+### Structure prediction
 
-More tools (structure prediction, embeddings, scoring) are in development.
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `boltz1` | Yes | Predict biomolecular structures using Boltz-1 (proteins, DNA, RNA, ligand complexes) |
+| `boltz2` | Yes | Predict biomolecular structures and binding affinity using Boltz-2 |
+| `chai1` | Yes | Predict biomolecular structures using Chai-1 (proteins, DNA, RNA, ligands, glycans) |
+| `esmfold` | Yes | Predict protein structure from a single sequence using ESMFold (no MSA needed) |
+| `openfold3` | Yes | Predict biomolecular structures using OpenFold3 (open-source AlphaFold3) |
+
+### Inverse folding
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `proteinmpnn` | Yes | Fixed-backbone sequence design with ProteinMPNN |
+| `ligandmpnn` | Yes | Ligand-aware sequence design with LigandMPNN |
+
+### Structure design
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `rfd3` | Yes | Generate novel protein backbone structures using RFDiffusion3 |
+| `complexa` | Yes | Design novel protein binders for protein targets using Proteina-Complexa |
+| `complexa_ligand` | Yes | Design protein binders for small-molecule ligand targets using Proteina-Complexa |
+| `complexa_ame` | Yes | Scaffold functional motifs into complete proteins using Proteina-Complexa AME |
+
+### Embedding
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `esm1b` | Yes | Extract protein sequence embeddings using ESM-1b (650M parameters) |
+| `esm2` | Yes | Extract protein sequence embeddings using ESM-2 (selectable 8M–15B parameters) |
+
+### Scoring
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `rosetta_score` | No | Score a protein structure using Rosetta's energy function |
+| `rosetta_relax` | No | Relax a protein structure using Rosetta's FastRelax protocol |
+| `rosetta_minimize` | No | Minimize a protein structure using gradient-based energy minimization |
+| `rosetta_flexddg` | No | Predict binding ΔΔG at protein-protein interfaces using flex-ddG |
 
 ## How it works
 
