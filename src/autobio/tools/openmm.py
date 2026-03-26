@@ -1,16 +1,18 @@
-"""OpenMM tool runners — energy minimization and future MD tools.
+"""OpenMM tool runners — energy minimization, relaxation, and MD simulation.
 
 All OpenMM tools share a single ``OpenMMRunner`` class that dispatches by
 ``tool_name`` using the ``_VARIANT_CONFIG`` dict.  Each tool maps to a
 different Docker image (thin layer on top of the shared
 ``autobio-openmm-base`` image).
 
-OpenMM tools are **CPU-only** for minimization. Future MD tools may require GPU.
-
 Supported tools:
 
 - ``openmm_amber_minimize`` — Amber force field energy minimization with
   iterative violation checking (AlphaFold-style).
+- ``openmm_amber_relax`` — Full relaxation with explicit solvent (default),
+  including solvation, heating, NVT/NPT equilibration, and short production.
+- ``openmm_md_simulate`` — Production molecular dynamics simulation with
+  trajectory and energy time series output.
 """
 
 from __future__ import annotations
@@ -22,8 +24,14 @@ from typing import TYPE_CHECKING, Any
 
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
 from autobio.core.result import AutobioError
-from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
+from autobio.schemas.base import BaseInput, BaseOutput  # noqa: TC001 - needed at runtime
 from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.simulation import (
+    EnergyRecord,
+    SimulationInput,
+    SimulationOutput,
+    SimulationSummary,
+)
 from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
@@ -45,26 +53,101 @@ _VARIANT_CONFIG: dict[str, dict[str, Any]] = {
         "default_implicit_solvent": True,
         "default_max_outer_iterations": 20,
     },
+    "openmm_amber_relax": {
+        "protocol": "amber_relax",
+        "produces_structure": True,
+        "default_force_field": "amber14-all.xml",
+        "default_implicit_solvent": False,
+        "default_water_model": "tip3p",
+        "default_box_shape": "cubic",
+        "default_box_padding": 1.0,
+        "default_ion_type": "NaCl",
+        "default_ion_concentration": 0.15,
+        "default_temperature": 300.0,
+        "default_pressure": 1.0,
+        "default_restraint_set": "heavy_atoms",
+        "default_restraint_stiffness": 10.0,
+        "default_timestep": 2.0,
+        "default_minimize_max_iterations": 0,
+        "default_heating_steps": 25000,
+        "default_nvt_steps": 25000,
+        "default_npt_steps": 50000,
+        "default_production_steps": 25000,
+    },
+    "openmm_md_simulate": {
+        "protocol": "md_simulate",
+        "produces_structure": True,
+        "produces_trajectory": True,
+        "default_force_field": "amber14-all.xml",
+        "default_implicit_solvent": False,
+        "default_water_model": "tip3p",
+        "default_box_shape": "cubic",
+        "default_box_padding": 1.0,
+        "default_ion_type": "NaCl",
+        "default_ion_concentration": 0.15,
+        "default_temperature": 300.0,
+        "default_pressure": 1.0,
+        "default_timestep": 2.0,
+        "default_total_time_ns": 10.0,
+        "default_reporting_interval_steps": 5000,
+        "default_trajectory_format": "dcd",
+        "default_restraint_set": "none",
+        "default_restraint_stiffness": 10.0,
+        "default_minimize_max_iterations": 0,
+        "default_equilibration_nvt_steps": 50000,
+        "default_equilibration_npt_steps": 100000,
+        "default_platform": "CUDA",
+    },
 }
 
 # Keys in ``extra`` that are consumed by the runner and should NOT be
 # flat-merged into config.json.
 _CONSUMED_EXTRA_KEYS = frozenset(
     {
+        # Shared
         "force_field",
-        "tolerance",
-        "max_iterations",
         "restraint_set",
         "restraint_stiffness",
         "implicit_solvent",
+        # Minimize-specific
+        "tolerance",
+        "max_iterations",
         "max_outer_iterations",
         "violation_tolerance",
+        # Solvation (relax + md_simulate)
+        "water_model",
+        "box_shape",
+        "box_padding",
+        "ion_type",
+        "ion_concentration",
+        # Dynamics (relax + md_simulate)
+        "temperature",
+        "pressure",
+        "timestep",
+        "minimize_max_iterations",
+        # Relax-specific
+        "heating_steps",
+        "nvt_steps",
+        "npt_steps",
+        "production_steps",
+        # MD-specific
+        "total_time_ns",
+        "n_steps",
+        "reporting_interval_steps",
+        "trajectory_format",
+        "equilibration_nvt_steps",
+        "equilibration_npt_steps",
+        "platform",
     }
 )
 
 # Allowed values for validated extra keys
 _ALLOWED_FORCE_FIELDS = frozenset({"amber14-all.xml", "amber99sb.xml", "charmm36.xml"})
 _ALLOWED_RESTRAINT_SETS = frozenset({"none", "ca", "heavy_atoms"})
+_ALLOWED_WATER_MODELS = frozenset({"tip3p", "tip4pew", "spce"})
+_ALLOWED_BOX_SHAPES = frozenset({"cubic", "dodecahedron", "truncated_octahedron"})
+_ALLOWED_ION_TYPES = frozenset({"NaCl", "KCl"})
+_ALLOWED_TRAJECTORY_FORMATS = frozenset({"dcd", "xtc", "pdb"})
 
 
 # ---------------------------------------------------------------------------
@@ -75,56 +158,60 @@ _ALLOWED_RESTRAINT_SETS = frozenset({"none", "ca", "heavy_atoms"})
 class OpenMMRunner(ToolRunner):
     """Runner for OpenMM molecular simulation tools.
 
-    ``prepare_workspace`` validates inputs on the host side, copies the input
-    structure into the workspace, and writes ``config.json``.
-
-    ``parse_output`` reads the standardised ``result_data.json`` produced by
-    the container's ``standardize.py`` script.
+    Dispatches by ``tool_name`` to support minimize, relax, and MD simulate
+    variants. Scoring-type tools (minimize, relax) use
+    :class:`ScoringInput`/:class:`ScoringOutput`. The MD simulation tool uses
+    :class:`SimulationInput`/:class:`SimulationOutput`.
     """
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
-
-        # -- Host-side validation (fail fast before container launch) --------
-        self._validate_inputs(input_data)
-
-        # -- Resolve variant config -----------------------------------------
         variant_cfg = _VARIANT_CONFIG[self.tool_name]
 
-        # -- Copy input structure into workspace ----------------------------
+        if variant_cfg.get("produces_trajectory"):
+            assert isinstance(input_data, SimulationInput)
+            self._validate_simulation_inputs(input_data)
+            self._prepare_simulation_workspace(input_data, workspace, variant_cfg)
+        else:
+            assert isinstance(input_data, ScoringInput)
+            self._validate_scoring_inputs(input_data)
+            self._prepare_scoring_workspace(input_data, workspace, variant_cfg)
+
+    def parse_output(self, workspace: Workspace) -> BaseOutput:
+        """Read standardised outputs and return the appropriate output model."""
+        variant_cfg = _VARIANT_CONFIG[self.tool_name]
+
+        if variant_cfg.get("produces_trajectory"):
+            return self._parse_simulation_output(workspace)
+        return self._parse_scoring_output(workspace)
+
+    # -- Scoring workspace (minimize + relax) --------------------------------
+
+    def _prepare_scoring_workspace(
+        self,
+        input_data: ScoringInput,
+        workspace: Workspace,
+        variant_cfg: dict[str, Any],
+    ) -> None:
+        """Build config.json for scoring-type tools (minimize, relax)."""
+        # Copy input structure into workspace
         src_path = input_data.structure_path
         dest_name = src_path.name
         shutil.copy2(src_path, workspace.inputs_dir / dest_name)
         container_structure_path = f"/workspace/inputs/{dest_name}"
 
-        # -- Build config.json ----------------------------------------------
+        # Base config
         config: dict[str, Any] = {
             "protocol": variant_cfg["protocol"],
             "structure_path": container_structure_path,
             "out_dir": "/workspace/outputs/raw",
         }
 
-        # Parameters with defaults from variant config
-        config["force_field"] = input_data.extra.get(
-            "force_field", variant_cfg["default_force_field"]
-        )
-        config["tolerance"] = input_data.extra.get("tolerance", variant_cfg["default_tolerance"])
-        config["max_iterations"] = input_data.extra.get(
-            "max_iterations", variant_cfg["default_max_iterations"]
-        )
-        config["restraint_set"] = input_data.extra.get(
-            "restraint_set", variant_cfg["default_restraint_set"]
-        )
-        config["restraint_stiffness"] = input_data.extra.get(
-            "restraint_stiffness", variant_cfg["default_restraint_stiffness"]
-        )
-        config["implicit_solvent"] = input_data.extra.get(
-            "implicit_solvent", variant_cfg["default_implicit_solvent"]
-        )
-        config["max_outer_iterations"] = input_data.extra.get(
-            "max_outer_iterations", variant_cfg["default_max_outer_iterations"]
-        )
+        # Extract all variant defaults, overridden by extra dict
+        for key, default in variant_cfg.items():
+            if key.startswith("default_"):
+                param_name = key.removeprefix("default_")
+                config[param_name] = input_data.extra.get(param_name, default)
 
         # Flat-merge extra dict (excluding consumed keys)
         for key, value in input_data.extra.items():
@@ -133,8 +220,8 @@ class OpenMMRunner(ToolRunner):
 
         workspace.write_config(config)
 
-    def parse_output(self, workspace: Workspace) -> ScoringOutput:
-        """Read standardised outputs and return a ``ScoringOutput``."""
+    def _parse_scoring_output(self, workspace: Workspace) -> ScoringOutput:
+        """Read standardised scoring output."""
         result_data_path = workspace.std_output_dir / "result_data.json"
         data = json.loads(result_data_path.read_text())
 
@@ -156,9 +243,77 @@ class OpenMMRunner(ToolRunner):
                 )
             )
 
-        # Placeholder metadata — overwritten by base class run()
         return ScoringOutput(
             scores=scores,
+            metadata=self._build_metadata(workspace, 0.0, [], ""),
+            raw_output_path=workspace.raw_output_dir,
+        )
+
+    # -- Simulation workspace (md_simulate) ----------------------------------
+
+    def _prepare_simulation_workspace(
+        self,
+        input_data: SimulationInput,
+        workspace: Workspace,
+        variant_cfg: dict[str, Any],
+    ) -> None:
+        """Build config.json for simulation-type tools (md_simulate)."""
+        # Copy input structure into workspace
+        src_path = input_data.structure_path
+        dest_name = src_path.name
+        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+        container_structure_path = f"/workspace/inputs/{dest_name}"
+
+        # Base config
+        config: dict[str, Any] = {
+            "protocol": variant_cfg["protocol"],
+            "structure_path": container_structure_path,
+            "out_dir": "/workspace/outputs/raw",
+        }
+
+        # Extract all variant defaults, overridden by extra dict
+        for key, default in variant_cfg.items():
+            if key.startswith("default_"):
+                param_name = key.removeprefix("default_")
+                config[param_name] = input_data.extra.get(param_name, default)
+
+        # Allow n_steps as alternative to total_time_ns
+        if "n_steps" in input_data.extra:
+            config["n_steps"] = input_data.extra["n_steps"]
+
+        # Flat-merge extra dict (excluding consumed keys)
+        for key, value in input_data.extra.items():
+            if key not in _CONSUMED_EXTRA_KEYS:
+                config[key] = value
+
+        workspace.write_config(config)
+
+    def _parse_simulation_output(self, workspace: Workspace) -> SimulationOutput:
+        """Read standardised simulation output."""
+        result_data_path = workspace.std_output_dir / "result_data.json"
+        data = json.loads(result_data_path.read_text())
+
+        # Parse trajectory path
+        trajectory_path = self._resolve_container_path(data["trajectory_path"], workspace)
+
+        # Parse final structure path
+        final_structure_path = None
+        if data.get("final_structure_path"):
+            final_structure_path = self._resolve_container_path(
+                data["final_structure_path"], workspace
+            )
+
+        # Parse energy timeseries
+        energy_timeseries = [EnergyRecord(**record) for record in data["energy_timeseries"]]
+
+        # Parse summary
+        summary = SimulationSummary(**data["summary"])
+
+        return SimulationOutput(
+            trajectory_path=trajectory_path,
+            final_structure_path=final_structure_path,
+            energy_timeseries=energy_timeseries,
+            summary=summary,
             metadata=self._build_metadata(workspace, 0.0, [], ""),
             raw_output_path=workspace.raw_output_dir,
         )
@@ -175,26 +330,103 @@ class OpenMMRunner(ToolRunner):
             return container_path
         return workspace.root / relative
 
-    def _validate_inputs(self, input_data: ScoringInput) -> None:
-        """Host-side validation — catch errors before container launch."""
+    def _validate_scoring_inputs(self, input_data: ScoringInput) -> None:
+        """Host-side validation for scoring tools (minimize, relax)."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
 
-        # Validate force field if specified
-        force_field = input_data.extra.get("force_field")
+        self._validate_common_enums(input_data.extra)
+        self._validate_solvation_params(input_data.extra)
+
+    def _validate_simulation_inputs(self, input_data: SimulationInput) -> None:
+        """Host-side validation for simulation tools (md_simulate)."""
+        if not input_data.structure_path.exists():
+            raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
+
+        self._validate_common_enums(input_data.extra)
+        self._validate_solvation_params(input_data.extra)
+
+        # Simulation-specific validations
+        total_time_ns = input_data.extra.get("total_time_ns")
+        if total_time_ns is not None and total_time_ns <= 0:
+            raise AutobioError(f"total_time_ns must be positive, got {total_time_ns}")
+
+        n_steps = input_data.extra.get("n_steps")
+        if n_steps is not None and n_steps <= 0:
+            raise AutobioError(f"n_steps must be positive, got {n_steps}")
+
+        reporting_interval = input_data.extra.get("reporting_interval_steps")
+        if reporting_interval is not None and reporting_interval <= 0:
+            raise AutobioError(
+                f"reporting_interval_steps must be positive, got {reporting_interval}"
+            )
+
+        trajectory_format = input_data.extra.get("trajectory_format")
+        if trajectory_format is not None and trajectory_format not in _ALLOWED_TRAJECTORY_FORMATS:
+            raise AutobioError(
+                f"Invalid trajectory_format {trajectory_format!r}. "
+                f"Allowed: {', '.join(sorted(_ALLOWED_TRAJECTORY_FORMATS))}"
+            )
+
+    @staticmethod
+    def _validate_common_enums(extra: dict[str, Any]) -> None:
+        """Validate enum-type parameters shared across tools."""
+        force_field = extra.get("force_field")
         if force_field is not None and force_field not in _ALLOWED_FORCE_FIELDS:
             raise AutobioError(
                 f"Invalid force_field {force_field!r}. "
                 f"Allowed: {', '.join(sorted(_ALLOWED_FORCE_FIELDS))}"
             )
 
-        # Validate restraint set if specified
-        restraint_set = input_data.extra.get("restraint_set")
+        restraint_set = extra.get("restraint_set")
         if restraint_set is not None and restraint_set not in _ALLOWED_RESTRAINT_SETS:
             raise AutobioError(
                 f"Invalid restraint_set {restraint_set!r}. "
                 f"Allowed: {', '.join(sorted(_ALLOWED_RESTRAINT_SETS))}"
             )
+
+    @staticmethod
+    def _validate_solvation_params(extra: dict[str, Any]) -> None:
+        """Validate solvation-related parameters."""
+        water_model = extra.get("water_model")
+        if water_model is not None and water_model not in _ALLOWED_WATER_MODELS:
+            raise AutobioError(
+                f"Invalid water_model {water_model!r}. "
+                f"Allowed: {', '.join(sorted(_ALLOWED_WATER_MODELS))}"
+            )
+
+        box_shape = extra.get("box_shape")
+        if box_shape is not None and box_shape not in _ALLOWED_BOX_SHAPES:
+            raise AutobioError(
+                f"Invalid box_shape {box_shape!r}. "
+                f"Allowed: {', '.join(sorted(_ALLOWED_BOX_SHAPES))}"
+            )
+
+        ion_type = extra.get("ion_type")
+        if ion_type is not None and ion_type not in _ALLOWED_ION_TYPES:
+            raise AutobioError(
+                f"Invalid ion_type {ion_type!r}. Allowed: {', '.join(sorted(_ALLOWED_ION_TYPES))}"
+            )
+
+        temperature = extra.get("temperature")
+        if temperature is not None and temperature <= 0:
+            raise AutobioError(f"temperature must be positive, got {temperature}")
+
+        pressure = extra.get("pressure")
+        if pressure is not None and pressure <= 0:
+            raise AutobioError(f"pressure must be positive, got {pressure}")
+
+        box_padding = extra.get("box_padding")
+        if box_padding is not None and box_padding <= 0:
+            raise AutobioError(f"box_padding must be positive, got {box_padding}")
+
+        ion_concentration = extra.get("ion_concentration")
+        if ion_concentration is not None and ion_concentration < 0:
+            raise AutobioError(f"ion_concentration must be non-negative, got {ion_concentration}")
+
+        timestep = extra.get("timestep")
+        if timestep is not None and (timestep < 0.5 or timestep > 4.0):
+            raise AutobioError(f"timestep must be between 0.5 and 4.0 fs, got {timestep}")
 
 
 # ---------------------------------------------------------------------------
@@ -248,4 +480,110 @@ TOOL_REGISTRY["openmm_amber_minimize"] = ToolEntry(
     version="1.0.0",
     notes=_AMBER_MINIMIZE_NOTES,
     input_format=_AMBER_MINIMIZE_INPUT_FORMAT,
+)
+
+# ---------------------------------------------------------------------------
+
+_AMBER_RELAX_NOTES = (
+    "Full relaxation protocol with explicit solvent (default) or implicit "
+    "solvent. Includes energy minimization, gradual heating, NVT and NPT "
+    "equilibration, and a short production run. Returns a refined, solvent-"
+    "stripped protein structure with energy in kJ/mol.",
+    "Default solvent: explicit TIP3P water in a cubic box with 1.0 nm "
+    "padding and 0.15 M NaCl. Override with extra['water_model'] "
+    "('tip3p', 'tip4pew', 'spce'), extra['box_shape'] ('cubic', "
+    "'dodecahedron', 'truncated_octahedron'), extra['box_padding'], "
+    "extra['ion_type'] ('NaCl', 'KCl'), extra['ion_concentration'].",
+    "For faster processing, set extra['implicit_solvent'] = True to use "
+    "OBC2 implicit solvent instead of explicit solvation.",
+    "Default temperature is 300 K and pressure is 1 atm. Override with "
+    "extra['temperature'] and extra['pressure']. Heating ramp goes from "
+    "10 K to target temperature over extra['heating_steps'] (default 25000).",
+    "Heavy-atom restraints (10.0 kJ/mol/nm^2) are applied during heating "
+    "and NVT equilibration, then gradually released during NPT. Override "
+    "with extra['restraint_set'] and extra['restraint_stiffness'].",
+    "Protocol step counts: extra['heating_steps'] (50 ps), "
+    "extra['nvt_steps'] (50 ps), extra['npt_steps'] (100 ps), "
+    "extra['production_steps'] (50 ps). All at 2 fs timestep by default.",
+)
+
+_AMBER_RELAX_INPUT_FORMAT = (
+    "Provide a PDB file via structure_path. The structure should have "
+    "standard amino acid residues. Missing hydrogens, solvent, and ions "
+    "are added automatically. Non-standard residues or ligands are not "
+    "supported in the current Amber force field workflow.",
+)
+
+TOOL_REGISTRY["openmm_amber_relax"] = ToolEntry(
+    image_tag="openmm-amber-relax:1.0.0",
+    category=ToolCategory.SCORING,
+    requires_gpu=False,
+    gpu_count=0,
+    input_schema=ScoringInput,
+    output_schema=ScoringOutput,
+    default_timeout=3600,
+    supports_batch=False,
+    description=(
+        "Fully relax a protein structure using OpenMM with the Amber force "
+        "field and explicit solvent. Builds a solvated system with counter-"
+        "ions, minimizes energy, heats gradually, equilibrates under NVT and "
+        "NPT ensembles, and runs a short production simulation. Returns a "
+        "refined, solvent-stripped protein structure with energy in kJ/mol."
+    ),
+    version="1.0.0",
+    notes=_AMBER_RELAX_NOTES,
+    input_format=_AMBER_RELAX_INPUT_FORMAT,
+)
+
+# ---------------------------------------------------------------------------
+
+_MD_SIMULATE_NOTES = (
+    "Production molecular dynamics simulation using the Amber force field "
+    "with explicit solvent. Builds a solvated system, minimizes, "
+    "equilibrates (NVT + NPT), and runs production MD. Produces a DCD "
+    "trajectory, energy time series, and a final protein-only PDB.",
+    "Default: 10 ns production at 300 K and 1 atm with TIP3P water in "
+    "a cubic box (1.0 nm padding, 0.15 M NaCl). Override via extra dict.",
+    "Trajectory format: extra['trajectory_format'] — 'dcd' (default), "
+    "'xtc', or 'pdb'. Reporting interval: extra['reporting_interval_steps'] "
+    "(default 5000, i.e., every 10 ps at 2 fs timestep).",
+    "Solvation control: extra['water_model'] ('tip3p', 'tip4pew', 'spce'), "
+    "extra['box_shape'] ('cubic', 'dodecahedron', 'truncated_octahedron'), "
+    "extra['box_padding'] (nm), extra['ion_type'] ('NaCl', 'KCl'), "
+    "extra['ion_concentration'] (M).",
+    "Simulation length: extra['total_time_ns'] (default 10.0) or "
+    "extra['n_steps'] for exact step count. Timestep: extra['timestep'] "
+    "(default 2.0 fs).",
+    "GPU (CUDA) is required by default. The OPENMM_DEFAULT_PLATFORM "
+    "environment variable is set to CUDA in the container image.",
+    "Equilibration: extra['equilibration_nvt_steps'] (default 50000) and "
+    "extra['equilibration_npt_steps'] (default 100000).",
+)
+
+_MD_SIMULATE_INPUT_FORMAT = (
+    "Provide a PDB file via structure_path. Ideally a pre-relaxed "
+    "structure (e.g., from openmm_amber_relax), but the tool handles "
+    "raw structures with PDBFixer cleanup and full solvation. Non-standard "
+    "residues or ligands are not supported.",
+)
+
+TOOL_REGISTRY["openmm_md_simulate"] = ToolEntry(
+    image_tag="openmm-md-simulate:1.0.0",
+    category=ToolCategory.SIMULATION,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=SimulationInput,
+    output_schema=SimulationOutput,
+    default_timeout=86400,
+    supports_batch=False,
+    description=(
+        "Run production molecular dynamics using OpenMM with the Amber "
+        "force field and explicit solvent. Builds a solvated system, "
+        "equilibrates, and runs production MD. Produces a DCD trajectory, "
+        "energy time series with temperature and pressure data, and a "
+        "final protein-only PDB structure."
+    ),
+    version="1.0.0",
+    notes=_MD_SIMULATE_NOTES,
+    input_format=_MD_SIMULATE_INPUT_FORMAT,
 )

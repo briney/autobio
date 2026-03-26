@@ -18,6 +18,7 @@ class ToolCategory(StrEnum):
     INVERSE_FOLDING = "inverse-folding"
     SCORING = "scoring"
     STRUCTURE_DESIGN = "structure-design"
+    SIMULATION = "simulation"
 
 
 @dataclass

@@ -23,17 +23,19 @@ from typing import Any
 import openmm
 from openmm import unit
 from openmm.app import (
-    ForceField,
     HBonds,
-    Modeller,
     NoCutoff,
     PDBFile,
     Simulation,
 )
-from pdbfixer import PDBFixer
 
-# Implicit solvent model XML (included with OpenMM)
-_IMPLICIT_SOLVENT_XML = "implicit/obc2.xml"
+from openmm_utils import (
+    add_hydrogens,
+    add_restraints,
+    cleanup_structure,
+    create_forcefield,
+    get_energy_decomposition,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -209,101 +211,6 @@ def _violating_residues(violations: list[dict[str, Any]]) -> set[int]:
 
 
 # ---------------------------------------------------------------------------
-# Restraint setup
-# ---------------------------------------------------------------------------
-
-
-def _add_restraints(
-    system: openmm.System,
-    topology: openmm.app.Topology,
-    positions: list[openmm.Vec3],
-    restraint_set: str,
-    stiffness_kj_per_nm2: float,
-    exclusions: set[int],
-) -> None:
-    """Add harmonic positional restraints to the system.
-
-    Args:
-        system: OpenMM system to add the force to.
-        topology: Molecular topology.
-        positions: Reference positions for restraints.
-        restraint_set: Which atoms to restrain: "ca" or "heavy_atoms".
-        stiffness_kj_per_nm2: Spring constant in kJ/mol/nm^2.
-        exclusions: Residue indices to exclude from restraints.
-    """
-    if restraint_set == "none":
-        return
-
-    force = openmm.CustomExternalForce(
-        "0.5 * k * periodicdistance(x, y, z, x0, y0, z0)^2"
-    )
-    force.addGlobalParameter("k", stiffness_kj_per_nm2)
-    force.addPerParticleParameter("x0")
-    force.addPerParticleParameter("y0")
-    force.addPerParticleParameter("z0")
-
-    for atom in topology.atoms():
-        if atom.residue.index in exclusions:
-            continue
-
-        include = False
-        if restraint_set == "ca":
-            include = atom.name == "CA"
-        elif restraint_set == "heavy_atoms":
-            include = atom.element.symbol != "H"
-
-        if include:
-            pos = positions[atom.index]
-            force.addParticle(
-                atom.index,
-                [
-                    pos[0].value_in_unit(unit.nanometer),
-                    pos[1].value_in_unit(unit.nanometer),
-                    pos[2].value_in_unit(unit.nanometer),
-                ],
-            )
-
-    if force.getNumParticles() > 0:
-        system.addForce(force)
-
-
-# ---------------------------------------------------------------------------
-# Energy decomposition
-# ---------------------------------------------------------------------------
-
-
-def _get_energy_decomposition(
-    simulation: Simulation,
-    system: openmm.System,
-) -> dict[str, float]:
-    """Get per-force-type energy breakdown.
-
-    Assigns each force to its own group, then queries energy for each group.
-
-    Args:
-        simulation: Active simulation with current positions set.
-        system: OpenMM system.
-
-    Returns:
-        Dict mapping force class name to energy in kJ/mol.
-    """
-    # Assign each force to its own group
-    for i, force in enumerate(system.getForces()):
-        force.setForceGroup(i)
-
-    # Reinitialize context to pick up the new force groups
-    simulation.context.reinitialize(preserveState=True)
-
-    breakdown: dict[str, float] = {}
-    for i, force in enumerate(system.getForces()):
-        state = simulation.context.getState(getEnergy=True, groups={i})
-        energy = state.getPotentialEnergy().value_in_unit(unit.kilojoules_per_mole)
-        force_name = type(force).__name__
-        breakdown[force_name] = energy
-    return breakdown
-
-
-# ---------------------------------------------------------------------------
 # Main minimization
 # ---------------------------------------------------------------------------
 
@@ -311,7 +218,7 @@ def _get_energy_decomposition(
 def _create_system_and_minimize(
     topology: openmm.app.Topology,
     positions: list[openmm.Vec3],
-    forcefield: ForceField,
+    forcefield: openmm.app.ForceField,
     config: dict[str, Any],
     exclusions: set[int],
 ) -> tuple[Simulation, openmm.System, list[openmm.Vec3]]:
@@ -338,7 +245,7 @@ def _create_system_and_minimize(
     restraint_set = config.get("restraint_set", "none")
     stiffness = config.get("restraint_stiffness", 10.0)
     if restraint_set != "none":
-        _add_restraints(system, topology, positions, restraint_set, stiffness, exclusions)
+        add_restraints(system, topology, positions, restraint_set, stiffness, exclusions)
 
     # Create integrator (0 K — pure minimization, no dynamics)
     integrator = openmm.LangevinMiddleIntegrator(
@@ -376,27 +283,18 @@ def minimize(workspace: Path) -> None:
     out_dir = Path(config.get("out_dir", str(workspace / "outputs" / "raw")))
 
     # Clean and prepare structure using PDBFixer
-    # Handles: missing residues/atoms, non-standard residues, waters, ions
-    print("[openmm-amber-minimize] Cleaning structure with PDBFixer...")
-    fixer = PDBFixer(filename=structure_path)
-    fixer.removeHeterogens(keepWater=False)
-    fixer.findMissingResidues()
-    fixer.findMissingAtoms()
-    fixer.addMissingAtoms()
+    raw_topology, raw_positions = cleanup_structure(structure_path)
 
-    # Set up force field (include implicit solvent XML if enabled)
+    # Set up force field
     force_field_name = config.get("force_field", "amber14-all.xml")
     implicit_solvent = config.get("implicit_solvent", True)
-    if implicit_solvent:
-        forcefield = ForceField(force_field_name, _IMPLICIT_SOLVENT_XML)
-        print(f"[openmm-amber-minimize] Force field: {force_field_name} + {_IMPLICIT_SOLVENT_XML}")
-    else:
-        forcefield = ForceField(force_field_name)
-        print(f"[openmm-amber-minimize] Force field: {force_field_name} (vacuum)")
+    forcefield = create_forcefield(
+        force_field_name,
+        implicit_solvent=implicit_solvent,
+    )
 
     # Add hydrogens (predicted structures often lack them)
-    modeller = Modeller(fixer.topology, fixer.positions)
-    modeller.addHydrogens(forcefield)
+    modeller = add_hydrogens(raw_topology, raw_positions, forcefield)
     topology = modeller.topology
     positions = modeller.positions
 
@@ -462,7 +360,7 @@ def minimize(workspace: Path) -> None:
     final_energy = final_state.getPotentialEnergy().value_in_unit(
         unit.kilojoules_per_mole
     )
-    energy_terms = _get_energy_decomposition(simulation, system)
+    energy_terms = get_energy_decomposition(simulation, system)
 
     # Write minimized PDB
     out_dir.mkdir(parents=True, exist_ok=True)

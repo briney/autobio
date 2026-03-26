@@ -38,6 +38,8 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "rosetta_minimize": RosettaRunner,
     "rosetta_flexddg": RosettaRunner,
     "openmm_amber_minimize": OpenMMRunner,
+    "openmm_amber_relax": OpenMMRunner,
+    "openmm_md_simulate": OpenMMRunner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 

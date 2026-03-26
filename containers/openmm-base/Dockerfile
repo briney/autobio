@@ -24,6 +24,10 @@ RUN mamba install -y -c conda-forge \
         cudatoolkit \
     && mamba clean -afy
 
+# --- Shared OpenMM utilities used by all derived containers ----------------
+COPY openmm-base/openmm_utils.py /opt/openmm/openmm_utils.py
+ENV PYTHONPATH="/opt/openmm"
+
 # Default to CPU platform — derived GPU containers can override to CUDA
 ENV OPENMM_DEFAULT_PLATFORM=CPU
 
