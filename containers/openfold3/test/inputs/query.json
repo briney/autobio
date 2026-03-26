@@ -1,0 +1,13 @@
+{
+  "queries": {
+    "query_1": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "MQIFVKTLTGKTITLEVEPS"
+        }
+      ]
+    }
+  }
+}

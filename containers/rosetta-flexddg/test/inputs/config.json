@@ -1,0 +1,11 @@
+{
+    "binary": "rosetta_scripts",
+    "protocol": "flexddg",
+    "structure_path": "/workspace/inputs/complex.pdb",
+    "database_path": "/usr/local/lib/python3.8/dist-packages/pyrosetta/database",
+    "mutations": ["A42F"],
+    "chains_to_move": "B",
+    "nstruct": 3,
+    "backrub_trials": 1000,
+    "max_minimization_iter": 100
+}

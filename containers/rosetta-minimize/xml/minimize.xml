@@ -1,0 +1,12 @@
+<ROSETTASCRIPTS>
+    <SCOREFXNS>
+        <ScoreFunction name="ref2015" weights="ref2015"/>
+    </SCOREFXNS>
+    <MOVERS>
+        <MinMover name="minimize" scorefxn="ref2015" type="lbfgs_armijo_nonmonotone"
+                  tolerance="0.01" max_iter="5000" bb="true" chi="true"/>
+    </MOVERS>
+    <PROTOCOLS>
+        <Add mover="minimize"/>
+    </PROTOCOLS>
+</ROSETTASCRIPTS>

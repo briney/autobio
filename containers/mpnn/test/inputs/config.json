@@ -1,0 +1,8 @@
+{
+  "model_type": "protein_mpnn",
+  "checkpoint_path": "/app/foundry/checkpoints/proteinmpnn_v_48_020.pt",
+  "is_legacy_weights": true,
+  "structure_path": "/workspace/inputs/test.pdb",
+  "number_of_batches": 2,
+  "temperature": 0.1
+}

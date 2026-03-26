@@ -1,0 +1,30 @@
+<ROSETTASCRIPTS>
+    <!--
+    Backrub ensemble generation for flex-ddG protocol.
+
+    Runs backrub Monte Carlo sampling on the input structure to generate
+    an ensemble of backbone conformations. No mutations are applied.
+    The output PDBs serve as starting points for both WT and mutant
+    scoring in the multi-step flex-ddG workflow.
+
+    Script variables (set via -parser:script_vars):
+      - number_backrub_trials: backrub sampling intensity (default 35000)
+    -->
+
+    <SCOREFXNS>
+        <ScoreFunction name="ref2015_soft" weights="ref2015_soft"/>
+    </SCOREFXNS>
+
+    <MOVERS>
+        <Backrub name="backrub"/>
+
+        <GenericMonteCarlo name="backrub_mc" mover_name="backrub"
+                           scorefxn_name="ref2015_soft"
+                           trials="%%number_backrub_trials%%"
+                           temperature="1.2" recover_low="true"/>
+    </MOVERS>
+
+    <PROTOCOLS>
+        <Add mover="backrub_mc"/>
+    </PROTOCOLS>
+</ROSETTASCRIPTS>

@@ -1,0 +1,8 @@
+{
+    "model_name": "facebook/esm2_t33_650M_UR50D",
+    "input_fasta": "/workspace/inputs/sequences.fasta",
+    "output_dir": "/workspace/outputs/raw",
+    "layer": null,
+    "pooling": "mean",
+    "hf_cache": "/app/esm/hf_cache"
+}

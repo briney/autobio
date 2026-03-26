@@ -1,0 +1,18 @@
+{
+  "structures": [
+    {
+      "model_rank": 1,
+      "structure_path": "/workspace/outputs/standardized/model_1.cif",
+      "plddt_per_residue": null,
+      "plddt_mean": null,
+      "ptm": null,
+      "iptm": null,
+      "chain_mapping": null
+    }
+  ],
+  "confidence": {
+    "best_plddt_mean": null,
+    "best_ptm": null,
+    "best_iptm": null
+  }
+}

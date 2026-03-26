@@ -1,0 +1,13 @@
+{
+  "design_specs": {
+    "unconditioned_test": {
+      "length": "50",
+      "is_non_loopy": true,
+      "plddt_enhanced": true
+    }
+  },
+  "n_batches": 1,
+  "out_dir": "/workspace/outputs/raw",
+  "diffusion_batch_size": 2,
+  "num_timesteps": 50
+}

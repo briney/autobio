@@ -1,0 +1,9 @@
+{
+    "input_path": "/workspace/inputs/input.yaml",
+    "model": "boltz2",
+    "output_dir": "/workspace/outputs/raw",
+    "cache_dir": "/app/boltz/cache",
+    "use_msa_server": true,
+    "diffusion_samples": 1,
+    "output_format": "mmcif"
+}

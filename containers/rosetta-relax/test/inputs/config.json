@@ -1,0 +1,9 @@
+{
+    "binary": "rosetta_scripts",
+    "protocol": "relax",
+    "structure_path": "/workspace/inputs/1ubq.pdb",
+    "database_path": "/usr/local/lib/python3.8/dist-packages/pyrosetta/database",
+    "xml_path": "/opt/tool/xml/relax.xml",
+    "score_function": "ref2015",
+    "nstruct": 1
+}
