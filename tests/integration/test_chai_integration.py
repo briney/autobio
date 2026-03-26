@@ -161,9 +161,7 @@ class TestChai1MultiChain:
 class TestChai1ProteinLigand:
     """Chai-1 prediction with a protein and small molecule ligand."""
 
-    def test_protein_ligand_complex(
-        self, autobio_config: AutobioConfig, tmp_path: Path
-    ) -> None:
+    def test_protein_ligand_complex(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Predict a protein-ligand complex using SMILES notation."""
         # Ibuprofen SMILES
         ibuprofen = "CC(C)Cc1ccc(cc1)C(C)C(O)=O"
@@ -192,9 +190,7 @@ class TestChai1ProteinLigand:
 class TestChai1Restraints:
     """Chai-1 prediction with contact restraints."""
 
-    def test_with_contact_restraint(
-        self, autobio_config: AutobioConfig, tmp_path: Path
-    ) -> None:
+    def test_with_contact_restraint(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Predict a 2-chain complex with a contact restraint."""
         csv_content = (
             "chainA,res_idxA,chainB,res_idxB,connection_type,confidence,"
@@ -226,9 +222,7 @@ class TestChai1Restraints:
 class TestChai1RawFASTA:
     """Verify that raw FASTA passthrough works end-to-end."""
 
-    def test_raw_fasta_prediction(
-        self, autobio_config: AutobioConfig, tmp_path: Path
-    ) -> None:
+    def test_raw_fasta_prediction(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Provide a raw Chai-1 FASTA and verify prediction."""
         fasta = f">protein|name=A\n{_CRAMBIN_SEQ}\n"
         input_data = StructurePredictionInput(

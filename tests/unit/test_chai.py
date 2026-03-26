@@ -83,9 +83,7 @@ class TestChaiPrepareWorkspace:
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["num_diffn_samples"] == 5
 
-    def test_num_models_default_sets_one(
-        self, runner: ChaiRunner, tmp_path: Path
-    ) -> None:
+    def test_num_models_default_sets_one(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """When num_models=1 (default), num_diffn_samples=1 to override Chai-1's default of 5."""
         workspace = Workspace.create(tmp_path / "ws")
         input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
