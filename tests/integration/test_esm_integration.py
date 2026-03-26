@@ -11,15 +11,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pytest
 
-from autobio.core.config import AutobioConfig
-from autobio.schemas.embedding import (
+np = pytest.importorskip("numpy")
+
+from autobio.core.config import AutobioConfig  # noqa: E402
+from autobio.schemas.embedding import (  # noqa: E402
     EmbeddingInput,
     EmbeddingOutput,
 )
-from autobio.tools import get_runner
+from autobio.tools import get_runner  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path
