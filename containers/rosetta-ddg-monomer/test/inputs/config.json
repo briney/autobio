@@ -1,0 +1,8 @@
+{
+    "binary": "ddg_monomer",
+    "protocol": "ddg_monomer",
+    "structure_path": "/workspace/inputs/complex.pdb",
+    "database_path": "/usr/local/lib/python3.8/dist-packages/pyrosetta/database",
+    "mutations": ["A42F"],
+    "mutation_list": ["A42F"]
+}

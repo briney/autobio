@@ -42,6 +42,21 @@ class ScoredStructure(BaseModel):
         default=None,
         description="Units of the score (e.g., 'REU' for Rosetta energy units, 'kcal/mol').",
     )
+    structure_path: Path | None = Field(
+        default=None,
+        description="Path to the scored/refined structure file, if the tool produces one.",
+    )
+    ddg: float | None = Field(
+        default=None,
+        description=(
+            "Delta-delta-G: change in binding free energy upon mutation "
+            "(kcal/mol or REU). Positive values indicate destabilization."
+        ),
+    )
+    mutations: list[str] | None = Field(
+        default=None,
+        description="Mutations scored, e.g., ['A42F', 'L55W'].",
+    )
 
 
 class ScoringOutput(BaseOutput):

@@ -1,0 +1,18 @@
+{
+  "scores": [
+    {
+      "total_score": -195.800,
+      "score_breakdown": {
+        "fa_atr": -318.00,
+        "fa_rep": 44.20,
+        "fa_sol": 188.00
+      },
+      "units": "REU",
+      "description": "1ubq_0001",
+      "structure_path": "/workspace/outputs/standardized/1ubq_0001.pdb",
+      "per_residue_scores": null,
+      "ddg": null,
+      "mutations": null
+    }
+  ]
+}

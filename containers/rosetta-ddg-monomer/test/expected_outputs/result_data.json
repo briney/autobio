@@ -1,0 +1,16 @@
+{
+  "scores": [
+    {
+      "total_score": 2.5,
+      "score_breakdown": {
+        "wt_score": -200.0,
+        "mut_score": -197.5
+      },
+      "units": "REU",
+      "per_residue_scores": null,
+      "structure_path": null,
+      "ddg": 2.5,
+      "mutations": ["A42F"]
+    }
+  ]
+}

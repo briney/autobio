@@ -1,0 +1,11 @@
+<ROSETTASCRIPTS>
+    <SCOREFXNS>
+        <ScoreFunction name="ref2015" weights="ref2015"/>
+    </SCOREFXNS>
+    <MOVERS>
+        <FastRelax name="fast_relax" scorefxn="ref2015" repeats="5"/>
+    </MOVERS>
+    <PROTOCOLS>
+        <Add mover="fast_relax"/>
+    </PROTOCOLS>
+</ROSETTASCRIPTS>

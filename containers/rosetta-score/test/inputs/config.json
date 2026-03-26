@@ -1,0 +1,5 @@
+{
+    "structure_path": "/workspace/inputs/1ubq.pdb",
+    "database_path": "/usr/local/lib/python3.8/dist-packages/pyrosetta/database",
+    "score_function": "ref2015"
+}

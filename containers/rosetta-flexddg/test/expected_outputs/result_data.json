@@ -1,0 +1,19 @@
+{
+  "scores": [
+    {
+      "total_score": 1.8,
+      "score_breakdown": {
+        "ddg_mean": 1.8,
+        "ddg_std": 0.5,
+        "n_samples": 3,
+        "ddg_values": [1.3, 2.0, 2.1],
+        "chains_to_move": "B"
+      },
+      "units": "REU",
+      "per_residue_scores": null,
+      "structure_path": null,
+      "ddg": 1.8,
+      "mutations": ["A42F"]
+    }
+  ]
+}

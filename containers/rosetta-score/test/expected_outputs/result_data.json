@@ -1,0 +1,33 @@
+{
+  "scores": [
+    {
+      "total_score": -198.432,
+      "score_breakdown": {
+        "fa_atr": -320.12,
+        "fa_rep": 45.67,
+        "fa_sol": 189.32,
+        "fa_intra_rep": 1.23,
+        "fa_elec": -55.40,
+        "pro_close": 0.45,
+        "hbond_sr_bb": -12.30,
+        "hbond_lr_bb": -8.90,
+        "hbond_bb_sc": -5.60,
+        "hbond_sc": -3.20,
+        "dslf_fa13": 0.00,
+        "omega": 2.10,
+        "fa_dun": 150.80,
+        "p_aa_pp": -22.50,
+        "yhh_planarity": 0.03,
+        "ref": -41.92,
+        "rama_prepro": -7.55,
+        "lk_ball_wtd": -110.55
+      },
+      "units": "REU",
+      "description": "1ubq_0001",
+      "structure_path": null,
+      "per_residue_scores": null,
+      "ddg": null,
+      "mutations": null
+    }
+  ]
+}

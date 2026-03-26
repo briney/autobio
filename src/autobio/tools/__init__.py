@@ -12,6 +12,7 @@ from autobio.tools.esmfold import ESMFoldRunner
 from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.rfd3 import RFD3Runner
+from autobio.tools.rosetta import RosettaRunner
 
 if TYPE_CHECKING:
     from autobio.core.config import AutobioConfig
@@ -31,6 +32,10 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "boltz2": BoltzRunner,
     "chai1": ChaiRunner,
     "openfold3": OpenFold3Runner,
+    "rosetta_score": RosettaRunner,
+    "rosetta_relax": RosettaRunner,
+    "rosetta_minimize": RosettaRunner,
+    "rosetta_flexddg": RosettaRunner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 
