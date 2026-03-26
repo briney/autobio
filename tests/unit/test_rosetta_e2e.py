@@ -79,16 +79,21 @@ _RELAX_SCORE_SC = (
 # DDG monomer output
 _DDG_PREDICTIONS_OUT = "ddG: mut_A42F 2.340 -42.310 -39.970 -42.310 -39.970\n"
 
-# Flex-ddG score file with WT and mutant entries
-_FLEXDDG_SCORE_SC = (
+# Flex-ddG score files — separate WT and mutant (produced by multi-step workflow)
+_FLEXDDG_WT_SCORE_SC = (
     "SEQUENCE: \n"
     "SCORE:     total_score     fa_atr     fa_rep  description\n"
-    "SCORE:       -42.310    -68.500     12.300  wt_backrub_0001\n"
-    "SCORE:       -39.970    -66.200     13.100  mut_backrub_0001\n"
-    "SCORE:       -43.100    -69.200     11.800  wt_backrub_0002\n"
-    "SCORE:       -40.800    -67.100     12.500  mut_backrub_0002\n"
-    "SCORE:       -41.900    -68.100     12.600  wt_backrub_0003\n"
-    "SCORE:       -40.100    -66.800     13.000  mut_backrub_0003\n"
+    "SCORE:       -42.310    -68.500     12.300  wt_backrub_input_0001\n"
+    "SCORE:       -43.100    -69.200     11.800  wt_backrub_input_0002\n"
+    "SCORE:       -41.900    -68.100     12.600  wt_backrub_input_0003\n"
+)
+
+_FLEXDDG_MUT_SCORE_SC = (
+    "SEQUENCE: \n"
+    "SCORE:     total_score     fa_atr     fa_rep  description\n"
+    "SCORE:       -39.970    -66.200     13.100  mut_backrub_input_0001\n"
+    "SCORE:       -40.800    -67.100     12.500  mut_backrub_input_0002\n"
+    "SCORE:       -40.100    -66.800     13.000  mut_backrub_input_0003\n"
 )
 
 
@@ -415,7 +420,10 @@ class TestRosettaFlexddGE2E:
             container_dir_name="rosetta-flexddg",
             config=config,
             input_data=input_data,
-            raw_output_files={"score.sc": _FLEXDDG_SCORE_SC},
+            raw_output_files={
+                "wt_score.sc": _FLEXDDG_WT_SCORE_SC,
+                "mut_score.sc": _FLEXDDG_MUT_SCORE_SC,
+            },
             tmp_path=tmp_path,
         )
 
@@ -473,7 +481,7 @@ class TestRosettaFlexddGE2E:
         assert cfg["nstruct"] == 10
         assert cfg["backrub_trials"] == 5000
         assert cfg["max_minimization_iter"] == 2000
-        assert cfg["xml_path"] == "/opt/tool/xml/ddG-backrub.xml"
+        assert "xml_path" not in cfg
 
     def test_flexddg_missing_chains_fails(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path

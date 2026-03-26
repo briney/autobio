@@ -73,8 +73,7 @@ _VARIANT_CONFIG: dict[str, dict[str, Any]] = {
     "rosetta_flexddg": {
         "binary": "rosetta_scripts",
         "protocol": "flexddg",
-        "uses_xml": True,
-        "xml_path": "/opt/tool/xml/ddG-backrub.xml",
+        "uses_xml": False,
         "produces_structure": False,
         "requires_mutations": True,
         "default_nstruct": 35,

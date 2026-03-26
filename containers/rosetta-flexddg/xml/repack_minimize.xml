@@ -1,0 +1,40 @@
+<ROSETTASCRIPTS>
+    <!--
+    Repack and minimize protocol for flex-ddG scoring.
+
+    Used for both WT and mutant scoring steps. Mutation-agnostic: the
+    resfile (NATAA for WT, PIKAA for mutant) is supplied via the
+    -resfile command-line flag.
+
+    Script variables (set via -parser:script_vars):
+      - max_minimization_iter: gradient descent steps (default 5000)
+    -->
+
+    <SCOREFXNS>
+        <ScoreFunction name="ref2015" weights="ref2015"/>
+    </SCOREFXNS>
+
+    <TASKOPERATIONS>
+        <InitializeFromCommandline name="init"/>
+        <RestrictToRepacking name="repack_only"/>
+    </TASKOPERATIONS>
+
+    <MOVERS>
+        <PackRotamersMover name="repack" scorefxn="ref2015"
+                           task_operations="init,repack_only"/>
+
+        <MinMover name="min_sc" scorefxn="ref2015"
+                  type="lbfgs_armijo_nonmonotone" tolerance="0.01"
+                  max_iter="%%max_minimization_iter%%" chi="true" bb="false"/>
+
+        <MinMover name="min_all" scorefxn="ref2015"
+                  type="lbfgs_armijo_nonmonotone" tolerance="0.01"
+                  max_iter="%%max_minimization_iter%%" chi="true" bb="true"/>
+    </MOVERS>
+
+    <PROTOCOLS>
+        <Add mover="repack"/>
+        <Add mover="min_sc"/>
+        <Add mover="min_all"/>
+    </PROTOCOLS>
+</ROSETTASCRIPTS>

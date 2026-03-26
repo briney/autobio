@@ -11,7 +11,7 @@ error() {
 }
 
 # Required fields
-for field in structure_path database_path xml_path mutations chains_to_move; do
+for field in structure_path database_path mutations chains_to_move; do
     if ! jq -e ".$field" "$CONFIG_FILE" > /dev/null 2>&1; then
         error "config.json missing required field '$field'"
     fi
@@ -38,12 +38,6 @@ if [ -n "$DATABASE_PATH" ] && [ "$DATABASE_PATH" != "null" ]; then
     fi
 fi
 
-XML_PATH=$(jq -r '.xml_path // empty' "$CONFIG_FILE" 2>/dev/null || true)
-if [ -n "$XML_PATH" ] && [ "$XML_PATH" != "null" ]; then
-    if [ ! -f "$XML_PATH" ]; then
-        error "XML protocol file not found: $XML_PATH"
-    fi
-fi
 
 if [ "$ERRORS" -gt 0 ]; then
     echo "Config validation failed with $ERRORS error(s)." >&2
