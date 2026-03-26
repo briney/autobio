@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -164,7 +164,9 @@ class BoltzRunner(ToolRunner):
             raw_output_path=workspace.raw_output_dir,
         )
 
-    def _build_boltz_yaml(self, input_data: StructurePredictionInput, workspace: Workspace) -> dict:
+    def _build_boltz_yaml(
+        self, input_data: StructurePredictionInput, workspace: Workspace
+    ) -> dict[str, Any]:
         """Generate a Boltz YAML input dict from structured input fields.
 
         Each entry in ``sequences`` becomes an entity in the YAML. The default
@@ -175,8 +177,8 @@ class BoltzRunner(ToolRunner):
         - A string: ``"protein"``, ``"dna"``, ``"rna"``
         - A dict for ligands: ``{"smiles": "CC(=O)..."}`` or ``{"ccd": "ATP"}``
         """
-        entity_types: dict = input_data.extra.get("entity_types", {})
-        sequences_section: list[dict] = []
+        entity_types: dict[str, Any] = input_data.extra.get("entity_types", {})
+        sequences_section: list[dict[str, Any]] = []
 
         for chain_id, sequence in input_data.sequences.items():
             etype = entity_types.get(chain_id, "protein")
@@ -206,7 +208,7 @@ class BoltzRunner(ToolRunner):
                     f"({{'smiles': '...'}} or {{'ccd': '...'}})."
                 )
 
-        yaml_data: dict = {"version": 1, "sequences": sequences_section}
+        yaml_data: dict[str, Any] = {"version": 1, "sequences": sequences_section}
 
         # Add optional sections from extra
         for section in ("constraints", "properties", "modifications"):

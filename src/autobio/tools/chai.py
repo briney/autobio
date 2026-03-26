@@ -183,7 +183,7 @@ class ChaiRunner(ToolRunner):
         For ligands specified as the string ``"ligand"``, the sequence value in
         the ``sequences`` dict is used as the SMILES string.
         """
-        entity_types: dict = input_data.extra.get("entity_types", {})
+        entity_types: dict[str, object] = input_data.extra.get("entity_types", {})
         lines: list[str] = []
 
         # Sort by chain ID so Chai-1's alphabetical chain assignment aligns

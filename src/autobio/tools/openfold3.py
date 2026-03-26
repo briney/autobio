@@ -156,7 +156,7 @@ class OpenFold3Runner(ToolRunner):
         )
 
     @staticmethod
-    def _build_query_json(input_data: StructurePredictionInput) -> dict:
+    def _build_query_json(input_data: StructurePredictionInput) -> dict[str, object]:
         """Generate an OpenFold3 query JSON dict from structured input fields.
 
         Each entry in ``sequences`` becomes a chain in the query.  The default
@@ -171,15 +171,15 @@ class OpenFold3Runner(ToolRunner):
         as a dict mapping chain IDs to dicts of 1-based position → CCD code:
         ``{"A": {"3": "MHO", "5": "SEP"}}``.
         """
-        entity_types: dict = input_data.extra.get("entity_types", {})
-        non_canonical: dict = input_data.extra.get("non_canonical_residues", {})
-        chains: list[dict] = []
+        entity_types: dict[str, object] = input_data.extra.get("entity_types", {})
+        non_canonical: dict[str, object] = input_data.extra.get("non_canonical_residues", {})
+        chains: list[dict[str, object]] = []
 
         for chain_id, sequence in input_data.sequences.items():
             etype = entity_types.get(chain_id, "protein")
 
             if isinstance(etype, str) and etype in ("protein", "dna", "rna"):
-                chain: dict = {
+                chain: dict[str, object] = {
                     "molecule_type": etype,
                     "chain_ids": chain_id,
                     "sequence": sequence,
@@ -191,7 +191,7 @@ class OpenFold3Runner(ToolRunner):
 
             elif isinstance(etype, dict):
                 # Structured ligand type: {"smiles": "CC..."} or {"ccd": "ATP"}
-                ligand_chain: dict = {
+                ligand_chain: dict[str, object] = {
                     "molecule_type": "ligand",
                     "chain_ids": chain_id,
                 }

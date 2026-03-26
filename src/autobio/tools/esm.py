@@ -158,7 +158,7 @@ class ESMRunner(ToolRunner):
                 )
 
         # Validate layer is in range for this model
-        num_layers = model_cfg["num_layers"]
+        num_layers = int(model_cfg["num_layers"])
         if input_data.layer is not None and not (0 <= input_data.layer <= num_layers):
             raise AutobioError(
                 f"layer must be between 0 and {num_layers} for "
