@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from autobio.tools.baddg import BAddGRunner
 from autobio.tools.boltz import BoltzRunner
 from autobio.tools.chai import ChaiRunner
 from autobio.tools.complexa import ComplexaRunner
@@ -42,6 +43,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "openmm_amber_relax": OpenMMRunner,
     "openmm_md_simulate": OpenMMRunner,
     "stabddg": StaBddGRunner,
+    "baddg": BAddGRunner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 
