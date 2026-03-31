@@ -12,7 +12,7 @@ import argparse
 import json
 from pathlib import Path
 
-import pandas as pd
+import csv
 
 
 def standardize(workspace: Path) -> None:
@@ -33,57 +33,62 @@ def standardize(workspace: Path) -> None:
             f"Files present: {[f.name for f in raw_dir.iterdir() if f.is_file()]}"
         )
 
-    df = pd.read_csv(csv_files[0])
+    with open(csv_files[0], newline="") as fh:
+        reader = csv.DictReader(fh)
+        columns = reader.fieldnames or []
 
-    # Find prediction columns (pred_1, pred_2, ...)
-    pred_cols = sorted(
-        [c for c in df.columns if c.startswith("pred_")],
-        key=lambda c: int(c.split("_")[1]),
-    )
-    if not pred_cols:
-        raise RuntimeError(
-            f"No prediction columns (pred_*) found in CSV. Columns: {list(df.columns)}"
+        # Find prediction columns (pred_1, pred_2, ...)
+        pred_cols = sorted(
+            [c for c in columns if c.startswith("pred_")],
+            key=lambda c: int(c.split("_")[1]),
         )
+        if not pred_cols:
+            raise RuntimeError(
+                f"No prediction columns (pred_*) found in CSV. Columns: {columns}"
+            )
 
-    scores = []
-    for _, row in df.iterrows():
-        # Extract per-trial predictions
-        trial_values = {col: float(row[col]) for col in pred_cols}
+        scores = []
+        for row in reader:
+            # Extract per-trial predictions
+            trial_values = {col: float(row[col]) for col in pred_cols}
 
-        # Primary ddG: mean across trials
-        ddg_values = list(trial_values.values())
-        ddg_mean = sum(ddg_values) / len(ddg_values)
+            # Primary ddG: mean across trials
+            ddg_values = list(trial_values.values())
+            ddg_mean = sum(ddg_values) / len(ddg_values)
 
-        # Build score breakdown
-        score_breakdown: dict = {
-            "chains": chains,
-        }
-        if len(pred_cols) > 1:
-            score_breakdown["trial_values"] = trial_values
-            score_breakdown["n_trials"] = len(pred_cols)
-
-        # Include mutation string from CSV if present.
-        # StaB-ddG writes Mutation column as Python list repr (e.g., "['EA63Q']")
-        # so we need to clean brackets and quotes before splitting.
-        row_mutations = mutations_list
-        if "Mutation" in row:
-            csv_mutation = str(row["Mutation"]).strip()
-            if csv_mutation and csv_mutation != "nan":
-                # Strip Python list repr brackets and quotes
-                cleaned = csv_mutation.strip("[]").replace("'", "").replace('"', "")
-                row_mutations = [m.strip() for m in cleaned.split(",") if m.strip()]
-
-        scores.append(
-            {
-                "total_score": ddg_mean,
-                "score_breakdown": score_breakdown,
-                "units": "kcal/mol",
-                "per_residue_scores": None,
-                "structure_path": None,
-                "ddg": ddg_mean,
-                "mutations": row_mutations,
+            # Build score breakdown
+            score_breakdown: dict = {
+                "chains": chains,
             }
-        )
+            if len(pred_cols) > 1:
+                score_breakdown["trial_values"] = trial_values
+                score_breakdown["n_trials"] = len(pred_cols)
+
+            # Include mutation string from CSV if present.
+            # StaB-ddG writes Mutation column as Python list repr (e.g., "['EA63Q']")
+            # so we need to clean brackets and quotes before splitting.
+            row_mutations = mutations_list
+            csv_mutation = row.get("Mutation", "")
+            if csv_mutation:
+                csv_mutation = csv_mutation.strip()
+                if csv_mutation and csv_mutation != "nan":
+                    # Strip Python list repr brackets and quotes
+                    cleaned = csv_mutation.strip("[]").replace("'", "").replace('"', "")
+                    row_mutations = [
+                        m.strip() for m in cleaned.split(",") if m.strip()
+                    ]
+
+            scores.append(
+                {
+                    "total_score": ddg_mean,
+                    "score_breakdown": score_breakdown,
+                    "units": "kcal/mol",
+                    "per_residue_scores": None,
+                    "structure_path": None,
+                    "ddg": ddg_mean,
+                    "mutations": row_mutations,
+                }
+            )
 
     result_data = {"scores": scores}
     (std_dir / "result_data.json").write_text(json.dumps(result_data, indent=2))
