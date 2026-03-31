@@ -198,6 +198,7 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `rosetta_relax` | No | Relax a protein structure using Rosetta's FastRelax protocol |
 | `rosetta_minimize` | No | Minimize a protein structure using gradient-based energy minimization |
 | `rosetta_flexddg` | No | Predict binding ΔΔG at protein-protein interfaces using flex-ddG |
+| `stabddg` | Yes | Predict binding ΔΔG from mutations using StaB-ddG (ML-based, ProteinMPNN architecture) |
 
 ## How it works
 
