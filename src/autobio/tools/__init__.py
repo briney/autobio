@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from autobio.tools.baddg import BAddGRunner
 from autobio.tools.boltz import BoltzRunner
 from autobio.tools.chai import ChaiRunner
 from autobio.tools.complexa import ComplexaRunner
 from autobio.tools.esm import ESMRunner
 from autobio.tools.esmfold import ESMFoldRunner
+from autobio.tools.evoef2 import EvoEF2Runner
 from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.openmm import OpenMMRunner
@@ -42,6 +44,10 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "openmm_amber_relax": OpenMMRunner,
     "openmm_md_simulate": OpenMMRunner,
     "stabddg": StaBddGRunner,
+    "baddg": BAddGRunner,
+    "evoef2_repair": EvoEF2Runner,
+    "evoef2_binding": EvoEF2Runner,
+    "evoef2_build_mutant": EvoEF2Runner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 
