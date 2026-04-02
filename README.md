@@ -189,6 +189,14 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 |------|-----|-------------|
 | `esm1b` | Yes | Extract protein sequence embeddings using ESM-1b (650M parameters) |
 | `esm2` | Yes | Extract protein sequence embeddings using ESM-2 (selectable 8M–15B parameters) |
+| `currab` | Yes | Extract antibody sequence embeddings using CurrAb (650M parameters). Paired and unpaired. |
+| `currab_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using CurrAb |
+| `ft_esm` | Yes | Extract antibody sequence embeddings using ft-ESM (fine-tuned ESM-2, 650M parameters) |
+| `ft_esm_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using ft-ESM |
+| `balm_paired` | Yes | Extract paired antibody sequence embeddings using BALM-paired (304M parameters) |
+| `balm_paired_pll` | Yes | Compute pseudo log-likelihood for paired antibody sequences using BALM-paired |
+| `balm_unpaired` | Yes | Extract single-chain antibody sequence embeddings using BALM-unpaired (304M parameters) |
+| `balm_unpaired_pll` | Yes | Compute pseudo log-likelihood for single-chain antibody sequences using BALM-unpaired |
 
 ### Scoring
 

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 AMINO_ACIDS: frozenset[str] = frozenset("ACDEFGHIKLMNPQRSTVWY")
+ANTIBODY_AMINO_ACIDS: frozenset[str] = frozenset("ACDEFGHIKLMNPQRSTVWYBOUXZ")
 DNA_BASES: frozenset[str] = frozenset("ACGT")
 RNA_BASES: frozenset[str] = frozenset("ACGU")
 
@@ -79,6 +80,15 @@ def write_fasta(sequences: dict[str, str], path: Path) -> None:
 def validate_protein_sequence(seq: str) -> bool:
     """Return ``True`` if *seq* contains only standard amino acid characters."""
     return len(seq) > 0 and set(seq.upper()) <= AMINO_ACIDS
+
+
+def validate_antibody_sequence(seq: str) -> bool:
+    """Return ``True`` if *seq* contains only amino acid characters valid for antibody LMs.
+
+    Accepts the 20 standard amino acids plus ambiguous residue codes
+    (B, O, U, X, Z) recognised by CurrAb and BALM tokenizers.
+    """
+    return len(seq) > 0 and set(seq.upper()) <= ANTIBODY_AMINO_ACIDS
 
 
 def validate_nucleotide_sequence(

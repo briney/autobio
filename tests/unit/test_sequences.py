@@ -6,9 +6,11 @@ from pathlib import Path  # noqa: TC003 - used in fixture type hints
 
 from autobio.utils.sequences import (
     AMINO_ACIDS,
+    ANTIBODY_AMINO_ACIDS,
     DNA_BASES,
     RNA_BASES,
     parse_fasta,
+    validate_antibody_sequence,
     validate_nucleotide_sequence,
     validate_protein_sequence,
     write_fasta,
@@ -105,9 +107,41 @@ class TestNucleotideValidation:
         assert validate_nucleotide_sequence("acgt", "DNA") is True
 
 
+class TestAntibodyValidation:
+    def test_standard_aa_accepted(self) -> None:
+        assert validate_antibody_sequence("EVQLVESGGGLVQPGG") is True
+
+    def test_ambiguous_residues_accepted(self) -> None:
+        assert validate_antibody_sequence("EVQLXBZ") is True
+
+    def test_lowercase_accepted(self) -> None:
+        assert validate_antibody_sequence("evqlv") is True
+
+    def test_invalid_character_rejected(self) -> None:
+        assert validate_antibody_sequence("EVQL@V") is False
+
+    def test_numbers_rejected(self) -> None:
+        assert validate_antibody_sequence("EVQL123") is False
+
+    def test_empty_string_rejected(self) -> None:
+        assert validate_antibody_sequence("") is False
+
+    def test_all_ambiguous_codes(self) -> None:
+        """All ambiguous residue codes (B, O, U, X, Z) are accepted."""
+        assert validate_antibody_sequence("BOUXZ") is True
+
+
 class TestAlphabets:
     def test_amino_acids_count(self) -> None:
         assert len(AMINO_ACIDS) == 20
+
+    def test_antibody_amino_acids_superset(self) -> None:
+        """Antibody alphabet is a superset of the standard alphabet."""
+        assert AMINO_ACIDS < ANTIBODY_AMINO_ACIDS
+
+    def test_antibody_amino_acids_includes_ambiguous(self) -> None:
+        for code in "BOUXZ":
+            assert code in ANTIBODY_AMINO_ACIDS
 
     def test_dna_bases_count(self) -> None:
         assert len(DNA_BASES) == 4

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from autobio.schemas.antibody import (
+    AntibodyInput,
+    AntibodyPLLOutput,
+    AntibodySequence,
+    SequencePLL,
+)
 from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
 from autobio.schemas.embedding import EmbeddingInput, EmbeddingOutput, SequenceEmbedding
 from autobio.schemas.inverse_folding import (
@@ -29,6 +35,11 @@ from autobio.schemas.structure_prediction import (
 )
 
 __all__ = [
+    # antibody
+    "AntibodyInput",
+    "AntibodyPLLOutput",
+    "AntibodySequence",
+    "SequencePLL",
     # base
     "BaseInput",
     "BaseOutput",
