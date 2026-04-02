@@ -59,6 +59,26 @@ def balm_unpaired_runner(config: AutobioConfig) -> AntibodyLMRunner:
     return _make_runner("balm_unpaired", config)
 
 
+@pytest.fixture()
+def ablang2_runner(config: AutobioConfig) -> AntibodyLMRunner:
+    return _make_runner("ablang2", config)
+
+
+@pytest.fixture()
+def ablang2_pll_runner(config: AutobioConfig) -> AntibodyLMRunner:
+    return _make_runner("ablang2_pll", config)
+
+
+@pytest.fixture()
+def antiberta2_runner(config: AutobioConfig) -> AntibodyLMRunner:
+    return _make_runner("antiberta2", config)
+
+
+@pytest.fixture()
+def antiberta2_pll_runner(config: AutobioConfig) -> AntibodyLMRunner:
+    return _make_runner("antiberta2_pll", config)
+
+
 # Sample sequences — Trastuzumab VH/VL fragments
 _VH = "EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIH"
 _VL = "DIQMTQSPSSLSASVGDRVTITCRASQDVNTAVA"
@@ -112,6 +132,8 @@ class TestAntibodyLMPrepareWorkspace:
             ("ft_esm", "brineylab/ft-ESM"),
             ("balm_paired", "brineylab/BALM-paired"),
             ("balm_unpaired", "brineylab/BALM-unpaired"),
+            ("ablang2", "ablang2-paired"),
+            ("antiberta2", "alchemab/antiberta2"),
         ],
     )
     def test_model_name_per_tool(
@@ -154,6 +176,8 @@ class TestAntibodyLMPrepareWorkspace:
             ("ft_esm", "esm", "double_cls"),
             ("balm_paired", "roberta", "sep"),
             ("balm_unpaired", "roberta", "none"),
+            ("ablang2", "ablang2", "pipe"),
+            ("antiberta2", "roformer", "sep_prefixed"),
         ],
     )
     def test_model_family_and_separator_in_config(
@@ -352,6 +376,66 @@ class TestAntibodyLMHostValidation:
         input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLXBZ")])
         currab_runner.prepare_workspace(input_data, workspace)
 
+    def test_invalid_layer_ablang2(self, ablang2_runner: AntibodyLMRunner, tmp_path: Path) -> None:
+        """AbLang2 has 12 layers — layer=20 should fail."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=20
+        )
+        with pytest.raises(AutobioError, match="layer must be between 0 and 12"):
+            ablang2_runner.prepare_workspace(input_data, workspace)
+
+    def test_invalid_layer_antiberta2(
+        self, antiberta2_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        """AntiBERTa2 has 16 layers — layer=20 should fail."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=20
+        )
+        with pytest.raises(AutobioError, match="layer must be between 0 and 16"):
+            antiberta2_runner.prepare_workspace(input_data, workspace)
+
+    def test_sequence_too_long_antiberta2(
+        self, antiberta2_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        """AntiBERTa2 max is 250 tokens — 260 residues should fail."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="A" * 260)])
+        with pytest.raises(AutobioError, match="exceeds maximum"):
+            antiberta2_runner.prepare_workspace(input_data, workspace)
+
+    def test_cache_path_ablang2(self, ablang2_runner: AntibodyLMRunner, tmp_path: Path) -> None:
+        """AbLang2 config.json should contain its custom cache path."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        ablang2_runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["hf_cache"] == "/app/ablang2/weights"
+
+    def test_cache_path_antiberta2(
+        self, antiberta2_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        """AntiBERTa2 config.json should contain its custom cache path."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        antiberta2_runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["hf_cache"] == "/app/antiberta2/hf_cache"
+
+    def test_cache_path_existing_models_unchanged(
+        self, currab_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        """Existing models should still use the original HF cache path."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        currab_runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["hf_cache"] == "/app/antibody-lm/hf_cache"
+
 
 # ---------------------------------------------------------------------------
 # TestAntibodyLMParseOutput
@@ -501,10 +585,21 @@ _ALL_TOOLS = [
     "balm_paired_pll",
     "balm_unpaired",
     "balm_unpaired_pll",
+    "ablang2",
+    "ablang2_pll",
+    "antiberta2",
+    "antiberta2_pll",
 ]
 
-_EMBEDDING_TOOLS = ["currab", "ft_esm", "balm_paired", "balm_unpaired"]
-_PLL_TOOLS = ["currab_pll", "ft_esm_pll", "balm_paired_pll", "balm_unpaired_pll"]
+_EMBEDDING_TOOLS = ["currab", "ft_esm", "balm_paired", "balm_unpaired", "ablang2", "antiberta2"]
+_PLL_TOOLS = [
+    "currab_pll",
+    "ft_esm_pll",
+    "balm_paired_pll",
+    "balm_unpaired_pll",
+    "ablang2_pll",
+    "antiberta2_pll",
+]
 
 
 class TestAntibodyLMRegistration:
@@ -533,7 +628,7 @@ class TestAntibodyLMRegistration:
     def test_distinct_image_tags(self) -> None:
         """Each model has its own container image tag."""
         tags = {TOOL_REGISTRY[t].image_tag for t in _EMBEDDING_TOOLS}
-        assert len(tags) == 4
+        assert len(tags) == 6
 
     @pytest.mark.parametrize("tool_name", _EMBEDDING_TOOLS)
     def test_embedding_timeout(self, tool_name: str) -> None:

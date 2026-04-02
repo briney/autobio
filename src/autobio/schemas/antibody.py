@@ -1,10 +1,10 @@
 """Input/output schemas for antibody language model tools.
 
-Shared by CurrAb, BALM-paired, BALM-unpaired, and ft-ESM.  Each model
-has two tool variants (embedding and pseudo log-likelihood), all using
-``AntibodyInput`` as input.  Embedding tools reuse ``EmbeddingOutput``
-from :mod:`autobio.schemas.embedding`; PLL tools return
-``AntibodyPLLOutput``.
+Shared by CurrAb, BALM-paired, BALM-unpaired, ft-ESM, AbLang2, and
+AntiBERTa2.  Each model has two tool variants (embedding and pseudo
+log-likelihood), all using ``AntibodyInput`` as input.  Embedding tools
+reuse ``EmbeddingOutput`` from :mod:`autobio.schemas.embedding`; PLL
+tools return ``AntibodyPLLOutput``.
 """
 
 from __future__ import annotations
@@ -42,7 +42,8 @@ class AntibodyInput(BaseInput):
     """Input schema for antibody language model tools.
 
     Used by all antibody LM tools (CurrAb, BALM-paired, BALM-unpaired,
-    ft-ESM) for both embedding extraction and pseudo log-likelihood.
+    ft-ESM, AbLang2, AntiBERTa2) for both embedding extraction and pseudo
+    log-likelihood.
     """
 
     sequences: list[AntibodySequence] = Field(

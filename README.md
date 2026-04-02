@@ -197,6 +197,10 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `balm_paired_pll` | Yes | Compute pseudo log-likelihood for paired antibody sequences using BALM-paired |
 | `balm_unpaired` | Yes | Extract single-chain antibody sequence embeddings using BALM-unpaired (304M parameters) |
 | `balm_unpaired_pll` | Yes | Compute pseudo log-likelihood for single-chain antibody sequences using BALM-unpaired |
+| `ablang2` | Yes | Extract antibody sequence embeddings using AbLang2 (45M parameters). Paired and unpaired. |
+| `ablang2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AbLang2 |
+| `antiberta2` | Yes | Extract antibody sequence embeddings using AntiBERTa2 (202M parameters). Paired and unpaired. |
+| `antiberta2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 |
 
 ### Scoring
 

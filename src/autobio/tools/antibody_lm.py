@@ -1,9 +1,10 @@
 """Antibody language model embedding and pseudo log-likelihood runners.
 
-Supports CurrAb, BALM-paired, BALM-unpaired, and ft-ESM.  Each model has
-two tool variants: one for embedding extraction and one for pseudo
-log-likelihood (PLL) scoring.  All eight tools share a single runner
-class (``AntibodyLMRunner``), dispatching on ``self.tool_name``.
+Supports CurrAb, BALM-paired, BALM-unpaired, ft-ESM, AbLang2, and
+AntiBERTa2.  Each model has two tool variants: one for embedding
+extraction and one for pseudo log-likelihood (PLL) scoring.  All twelve
+tools share a single runner class (``AntibodyLMRunner``), dispatching on
+``self.tool_name``.
 
 Additional tool-specific parameters (``batch_size``, ``seed``, etc.) are
 passed through the ``extra`` dict on ``AntibodyInput``.
@@ -31,8 +32,6 @@ if TYPE_CHECKING:
 # Model configuration
 # ---------------------------------------------------------------------------
 
-_HF_CACHE = "/app/antibody-lm/hf_cache"
-
 _VALID_POOLING = frozenset({"mean", "cls", "per_residue"})
 
 # Keys in ``extra`` consumed by the runner and NOT flat-merged into config.json.
@@ -47,10 +46,11 @@ class _ModelSpec:
     num_layers: int
     embedding_dim: int
     max_tokens: int
-    model_family: str  # "esm" or "roberta"
-    chain_separator: str  # "single_cls", "double_cls", "sep", "none"
+    model_family: str  # "esm", "roberta", "ablang2", "roformer"
+    chain_separator: str  # "single_cls", "double_cls", "sep", "pipe", "sep_prefixed", "none"
     supports_paired: bool
     supports_unpaired: bool
+    cache_path: str = "/app/antibody-lm/hf_cache"
 
 
 _MODEL_CONFIG: dict[str, _ModelSpec] = {
@@ -138,6 +138,52 @@ _MODEL_CONFIG: dict[str, _ModelSpec] = {
         False,
         True,
     ),
+    # AbLang2 — custom ESM-2-derived architecture with RoPE + SwiGLU, pipe separator
+    "ablang2": _ModelSpec(
+        "ablang2-paired",
+        12,
+        480,
+        512,
+        "ablang2",
+        "pipe",
+        True,
+        True,
+        "/app/ablang2/weights",
+    ),
+    "ablang2_pll": _ModelSpec(
+        "ablang2-paired",
+        12,
+        480,
+        512,
+        "ablang2",
+        "pipe",
+        True,
+        True,
+        "/app/ablang2/weights",
+    ),
+    # AntiBERTa2 — RoFormer with chain-prefix tokens and [SEP] separator
+    "antiberta2": _ModelSpec(
+        "alchemab/antiberta2",
+        16,
+        1024,
+        250,
+        "roformer",
+        "sep_prefixed",
+        True,
+        True,
+        "/app/antiberta2/hf_cache",
+    ),
+    "antiberta2_pll": _ModelSpec(
+        "alchemab/antiberta2",
+        16,
+        1024,
+        250,
+        "roformer",
+        "sep_prefixed",
+        True,
+        True,
+        "/app/antiberta2/hf_cache",
+    ),
 }
 
 
@@ -187,7 +233,7 @@ class AntibodyLMRunner(ToolRunner):
             "layer": input_data.layer,
             "pooling": input_data.pooling or "mean",
             "per_position": input_data.extra.get("per_position", False),
-            "hf_cache": _HF_CACHE,
+            "hf_cache": spec.cache_path,
         }
 
         # Flat-merge extra (excluding consumed keys)
@@ -502,6 +548,82 @@ TOOL_REGISTRY["balm_unpaired_pll"] = ToolEntry(
     description=(
         "Compute pseudo log-likelihood for single-chain antibody sequences using "
         "BALM-unpaired (304M parameters, 24 layers). Accepts one chain per sequence."
+    ),
+    version="1.0.0",
+    notes=_ANTIBODY_NOTES + _PLL_NOTES,
+    input_format=_ANTIBODY_INPUT_FORMAT,
+)
+
+# -- AbLang2 ---------------------------------------------------------------
+
+TOOL_REGISTRY["ablang2"] = ToolEntry(
+    image_tag="ablang2:1.0.0",
+    category=ToolCategory.EMBEDDING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=AntibodyInput,
+    output_schema=EmbeddingOutput,
+    default_timeout=600,
+    supports_batch=True,
+    description=(
+        "Extract antibody sequence embeddings using AbLang2 "
+        "(45M parameters, 12 layers, 480-dim). Supports paired and unpaired sequences."
+    ),
+    version="1.0.0",
+    notes=_ANTIBODY_NOTES,
+    input_format=_ANTIBODY_INPUT_FORMAT,
+)
+
+TOOL_REGISTRY["ablang2_pll"] = ToolEntry(
+    image_tag="ablang2:1.0.0",
+    category=ToolCategory.EMBEDDING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=AntibodyInput,
+    output_schema=AntibodyPLLOutput,
+    default_timeout=1800,
+    supports_batch=True,
+    description=(
+        "Compute pseudo log-likelihood for antibody sequences using AbLang2 "
+        "(45M parameters, 12 layers). Supports paired and unpaired sequences."
+    ),
+    version="1.0.0",
+    notes=_ANTIBODY_NOTES + _PLL_NOTES,
+    input_format=_ANTIBODY_INPUT_FORMAT,
+)
+
+# -- AntiBERTa2 ------------------------------------------------------------
+
+TOOL_REGISTRY["antiberta2"] = ToolEntry(
+    image_tag="antiberta2:1.0.0",
+    category=ToolCategory.EMBEDDING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=AntibodyInput,
+    output_schema=EmbeddingOutput,
+    default_timeout=600,
+    supports_batch=True,
+    description=(
+        "Extract antibody sequence embeddings using AntiBERTa2 "
+        "(202M parameters, 16 layers, 1024-dim). Supports paired and unpaired sequences."
+    ),
+    version="1.0.0",
+    notes=_ANTIBODY_NOTES,
+    input_format=_ANTIBODY_INPUT_FORMAT,
+)
+
+TOOL_REGISTRY["antiberta2_pll"] = ToolEntry(
+    image_tag="antiberta2:1.0.0",
+    category=ToolCategory.EMBEDDING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=AntibodyInput,
+    output_schema=AntibodyPLLOutput,
+    default_timeout=1800,
+    supports_batch=True,
+    description=(
+        "Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 "
+        "(202M parameters, 16 layers). Supports paired and unpaired sequences."
     ),
     version="1.0.0",
     notes=_ANTIBODY_NOTES + _PLL_NOTES,
