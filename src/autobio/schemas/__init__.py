@@ -9,6 +9,11 @@ from autobio.schemas.antibody import (
     SequencePLL,
 )
 from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
+from autobio.schemas.binding_affinity import (
+    BindingAffinityInput,
+    BindingAffinityOutput,
+    BindingAffinityPrediction,
+)
 from autobio.schemas.embedding import EmbeddingInput, EmbeddingOutput, SequenceEmbedding
 from autobio.schemas.inverse_folding import (
     DesignedSequence,
@@ -35,6 +40,10 @@ from autobio.schemas.structure_prediction import (
 )
 
 __all__ = [
+    # binding affinity
+    "BindingAffinityInput",
+    "BindingAffinityOutput",
+    "BindingAffinityPrediction",
     # antibody
     "AntibodyInput",
     "AntibodyPLLOutput",
