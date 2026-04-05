@@ -2,7 +2,7 @@
 
 Tools for autonomous biological research.
 
-Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, structure design, and scoring. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
+Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, structure design, mutant structure building, scoring, and molecular dynamics simulation. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
 
 Autobio is designed for both direct human use and as the computational backbone for AI agents performing autonomous biological research. All commands support `--format json` for structured, machine-readable output.
 
@@ -189,6 +189,25 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 |------|-----|-------------|
 | `esm1b` | Yes | Extract protein sequence embeddings using ESM-1b (650M parameters) |
 | `esm2` | Yes | Extract protein sequence embeddings using ESM-2 (selectable 8M–15B parameters) |
+| `currab` | Yes | Extract antibody sequence embeddings using CurrAb (650M parameters). Paired and unpaired. |
+| `currab_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using CurrAb |
+| `ft_esm` | Yes | Extract antibody sequence embeddings using ft-ESM (fine-tuned ESM-2, 650M parameters) |
+| `ft_esm_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using ft-ESM |
+| `balm_paired` | Yes | Extract paired antibody sequence embeddings using BALM-paired (304M parameters) |
+| `balm_paired_pll` | Yes | Compute pseudo log-likelihood for paired antibody sequences using BALM-paired |
+| `balm_unpaired` | Yes | Extract single-chain antibody sequence embeddings using BALM-unpaired (304M parameters) |
+| `balm_unpaired_pll` | Yes | Compute pseudo log-likelihood for single-chain antibody sequences using BALM-unpaired |
+| `ablang2` | Yes | Extract antibody sequence embeddings using AbLang2 (45M parameters). Paired and unpaired. |
+| `ablang2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AbLang2 |
+| `antiberta2` | Yes | Extract antibody sequence embeddings using AntiBERTa2 (202M parameters). Paired and unpaired. |
+| `antiberta2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 |
+
+### Mutate structures
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `evoef2_build_mutant` | No | Build mutant protein structures and repack sidechains using EvoEF2's physics-based rotamer library |
+| `ligandmpnn_build_mutant` | Yes | Build mutant protein structures and repack sidechains using LigandMPNN's neural network sidechain packing model |
 
 ### Scoring
 
@@ -199,6 +218,17 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `rosetta_minimize` | No | Minimize a protein structure using gradient-based energy minimization |
 | `rosetta_flexddg` | No | Predict binding ΔΔG at protein-protein interfaces using flex-ddG |
 | `stabddg` | Yes | Predict binding ΔΔG from mutations using StaB-ddG (ML-based, ProteinMPNN architecture) |
+| `baddg` | Yes | Predict binding ΔΔG at protein-protein interfaces using BA-ddG (Boltzmann-aligned inverse folding) |
+| `evoef2_repair` | No | Repair protein structures by rebuilding incomplete side chains using EvoEF2 |
+| `evoef2_binding` | No | Compute protein-protein binding energy using EvoEF2's physics-based energy function |
+| `openmm_amber_minimize` | No | Minimize a protein structure using OpenMM with the Amber force field (AlphaFold-style) |
+| `openmm_amber_relax` | No | Relax a protein structure using OpenMM with Amber force field and explicit solvent |
+
+### Simulation
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `openmm_md_simulate` | Yes | Run production molecular dynamics using OpenMM with Amber force field and explicit solvent |
 
 ## How it works
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from autobio.tools.antibody_lm import AntibodyLMRunner
 from autobio.tools.baddg import BAddGRunner
 from autobio.tools.boltz import BoltzRunner
 from autobio.tools.chai import ChaiRunner
@@ -11,6 +12,7 @@ from autobio.tools.complexa import ComplexaRunner
 from autobio.tools.esm import ESMRunner
 from autobio.tools.esmfold import ESMFoldRunner
 from autobio.tools.evoef2 import EvoEF2Runner
+from autobio.tools.ligandmpnn_packer import LigandMPNNPackerRunner
 from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.openmm import OpenMMRunner
@@ -23,6 +25,18 @@ if TYPE_CHECKING:
     from autobio.tools.base import ToolRunner
 
 TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
+    "currab": AntibodyLMRunner,
+    "currab_pll": AntibodyLMRunner,
+    "ft_esm": AntibodyLMRunner,
+    "ft_esm_pll": AntibodyLMRunner,
+    "balm_paired": AntibodyLMRunner,
+    "balm_paired_pll": AntibodyLMRunner,
+    "balm_unpaired": AntibodyLMRunner,
+    "balm_unpaired_pll": AntibodyLMRunner,
+    "ablang2": AntibodyLMRunner,
+    "ablang2_pll": AntibodyLMRunner,
+    "antiberta2": AntibodyLMRunner,
+    "antiberta2_pll": AntibodyLMRunner,
     "esm1b": ESMRunner,
     "esm2": ESMRunner,
     "esmfold": ESMFoldRunner,
@@ -48,6 +62,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "evoef2_repair": EvoEF2Runner,
     "evoef2_binding": EvoEF2Runner,
     "evoef2_build_mutant": EvoEF2Runner,
+    "ligandmpnn_build_mutant": LigandMPNNPackerRunner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 

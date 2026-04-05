@@ -9,6 +9,12 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from autobio.schemas.antibody import (
+    AntibodyInput,
+    AntibodyPLLOutput,
+    AntibodySequence,
+    SequencePLL,
+)
 from autobio.schemas.embedding import EmbeddingInput, EmbeddingOutput, SequenceEmbedding
 from autobio.schemas.inverse_folding import (
     DesignedSequence,
@@ -253,6 +259,121 @@ class TestEmbeddingOutput:
                 metadata=_METADATA,  # type: ignore[arg-type]
                 raw_output_path=Path("/tmp"),
                 # missing embeddings, model_name, embedding_dimension
+            )  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------------------------------
+# Antibody
+# ---------------------------------------------------------------------------
+
+
+class TestAntibodySequence:
+    def test_paired_sequence(self) -> None:
+        seq = AntibodySequence(id="ab1", heavy_chain="EVQLV", light_chain="DIQMT")
+        assert seq.heavy_chain == "EVQLV"
+        assert seq.light_chain == "DIQMT"
+
+    def test_heavy_only(self) -> None:
+        seq = AntibodySequence(id="ab1", heavy_chain="EVQLV")
+        assert seq.heavy_chain == "EVQLV"
+        assert seq.light_chain is None
+
+    def test_light_only(self) -> None:
+        seq = AntibodySequence(id="ab1", light_chain="DIQMT")
+        assert seq.heavy_chain is None
+        assert seq.light_chain == "DIQMT"
+
+    def test_neither_chain_raises(self) -> None:
+        with pytest.raises(ValidationError, match="at least one"):
+            AntibodySequence(id="ab1")
+
+    def test_round_trip(self) -> None:
+        seq = AntibodySequence(id="ab1", heavy_chain="EVQLV", light_chain="DIQMT")
+        dumped = seq.model_dump()
+        restored = AntibodySequence.model_validate(dumped)
+        assert restored == seq
+
+
+class TestAntibodyInput:
+    def test_required_sequences(self) -> None:
+        inp = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")])
+        assert len(inp.sequences) == 1
+        assert inp.layer is None
+        assert inp.pooling is None
+
+    def test_optional_fields(self) -> None:
+        inp = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")],
+            layer=10,
+            pooling="mean",
+        )
+        assert inp.layer == 10
+        assert inp.pooling == "mean"
+
+    def test_extra_passthrough(self) -> None:
+        inp = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")],
+            extra={"per_position": True, "batch_size": 8},
+        )
+        assert inp.extra["per_position"] is True
+        assert inp.extra["batch_size"] == 8
+
+    def test_round_trip(self) -> None:
+        inp = AntibodyInput(
+            sequences=[
+                AntibodySequence(id="ab1", heavy_chain="EVQLV", light_chain="DIQMT"),
+                AntibodySequence(id="ab2", heavy_chain="QVQLV"),
+            ],
+            layer=20,
+            pooling="per_residue",
+        )
+        dumped = inp.model_dump()
+        restored = AntibodyInput.model_validate(dumped)
+        assert len(restored.sequences) == 2
+        assert restored.layer == 20
+
+
+class TestSequencePLL:
+    def test_required_fields(self) -> None:
+        s = SequencePLL(sequence_id="ab1", pll=-45.23, sequence_length=100)
+        assert s.pll == -45.23
+        assert s.per_position_pll is None
+
+    def test_optional_per_position(self) -> None:
+        s = SequencePLL(
+            sequence_id="ab1",
+            pll=-3.5,
+            per_position_pll=[-1.2, -0.8, -1.5],
+            sequence_length=3,
+        )
+        assert s.per_position_pll == [-1.2, -0.8, -1.5]
+
+    def test_round_trip(self) -> None:
+        s = SequencePLL(sequence_id="ab1", pll=-45.0, sequence_length=100)
+        dumped = s.model_dump()
+        restored = SequencePLL.model_validate(dumped)
+        assert restored == s
+
+
+class TestAntibodyPLLOutput:
+    def test_round_trip(self) -> None:
+        out = AntibodyPLLOutput(
+            metadata=_METADATA,  # type: ignore[arg-type]
+            raw_output_path=Path("/tmp/ws/outputs/raw"),
+            scores=[SequencePLL(sequence_id="ab1", pll=-45.0, sequence_length=100)],
+            model_name="CurrAb",
+        )
+        dumped = out.model_dump()
+        restored = AntibodyPLLOutput.model_validate(dumped)
+        assert len(restored.scores) == 1
+        assert restored.model_name == "CurrAb"
+
+    def test_missing_required_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            AntibodyPLLOutput(
+                metadata=_METADATA,  # type: ignore[arg-type]
+                raw_output_path=Path("/tmp"),
+                # missing scores and model_name
             )  # type: ignore[call-arg]
 
 
@@ -575,8 +696,19 @@ class TestStructureDesignOutput:
         (InverseFoldingInput, {"structure_path": Path("/x.pdb")}),
         (ScoringInput, {"structure_path": Path("/x.pdb")}),
         (StructureDesignInput, {"design_specs": {"t": {"length": "50"}}}),
+        (
+            AntibodyInput,
+            {"sequences": [AntibodySequence(id="ab1", heavy_chain="EVQLV")]},
+        ),
     ],
-    ids=["structure_prediction", "embedding", "inverse_folding", "scoring", "structure_design"],
+    ids=[
+        "structure_prediction",
+        "embedding",
+        "inverse_folding",
+        "scoring",
+        "structure_design",
+        "antibody",
+    ],
 )
 class TestInputInheritance:
     def test_has_extra_field(self, input_cls: type, kwargs: dict[str, Any]) -> None:
@@ -646,8 +778,22 @@ class TestInputInheritance:
                 "spec_summary": {"t": 1},
             },
         ),
+        (
+            AntibodyPLLOutput,
+            {
+                "scores": [SequencePLL(sequence_id="ab1", pll=-45.0, sequence_length=100)],
+                "model_name": "CurrAb",
+            },
+        ),
     ],
-    ids=["structure_prediction", "embedding", "inverse_folding", "scoring", "structure_design"],
+    ids=[
+        "structure_prediction",
+        "embedding",
+        "inverse_folding",
+        "scoring",
+        "structure_design",
+        "antibody_pll",
+    ],
 )
 class TestOutputInheritance:
     def test_has_metadata_and_raw_output_path(
