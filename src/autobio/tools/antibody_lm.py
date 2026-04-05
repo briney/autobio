@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
 from autobio.core.result import AutobioError
@@ -258,7 +258,7 @@ class AntibodyLMRunner(ToolRunner):
 
     def _parse_embedding_output(
         self,
-        data: dict,
+        data: dict[str, Any],
         workspace: Workspace,
     ) -> EmbeddingOutput:
         """Parse embedding results from result_data.json."""
@@ -283,7 +283,7 @@ class AntibodyLMRunner(ToolRunner):
 
     def _parse_pll_output(
         self,
-        data: dict,
+        data: dict[str, Any],
         workspace: Workspace,
     ) -> AntibodyPLLOutput:
         """Parse pseudo log-likelihood results from result_data.json."""
