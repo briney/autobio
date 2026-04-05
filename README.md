@@ -2,7 +2,7 @@
 
 Tools for autonomous biological research.
 
-Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, structure design, scoring, and molecular dynamics simulation. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
+Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, structure design, mutant structure building, scoring, and molecular dynamics simulation. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
 
 Autobio is designed for both direct human use and as the computational backbone for AI agents performing autonomous biological research. All commands support `--format json` for structured, machine-readable output.
 
@@ -202,6 +202,13 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `antiberta2` | Yes | Extract antibody sequence embeddings using AntiBERTa2 (202M parameters). Paired and unpaired. |
 | `antiberta2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 |
 
+### Mutant structures
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `evoef2_build_mutant` | No | Build mutant protein structures and repack sidechains using EvoEF2's physics-based rotamer library |
+| `ligandmpnn_build_mutant` | Yes | Build mutant protein structures and repack sidechains using LigandMPNN's neural network sidechain packing model |
+
 ### Scoring
 
 | Tool | GPU | Description |
@@ -214,7 +221,6 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `baddg` | Yes | Predict binding ΔΔG at protein-protein interfaces using BA-ddG (Boltzmann-aligned inverse folding) |
 | `evoef2_repair` | No | Repair protein structures by rebuilding incomplete side chains using EvoEF2 |
 | `evoef2_binding` | No | Compute protein-protein binding energy using EvoEF2's physics-based energy function |
-| `evoef2_build_mutant` | No | Build mutant protein structures with amino acid substitutions using EvoEF2 |
 | `openmm_amber_minimize` | No | Minimize a protein structure using OpenMM with the Amber force field (AlphaFold-style) |
 | `openmm_amber_relax` | No | Relax a protein structure using OpenMM with Amber force field and explicit solvent |
 
