@@ -12,6 +12,7 @@ from autobio.tools.complexa import ComplexaRunner
 from autobio.tools.esm import ESMRunner
 from autobio.tools.esmfold import ESMFoldRunner
 from autobio.tools.evoef2 import EvoEF2Runner
+from autobio.tools.ligandmpnn_packer import LigandMPNNPackerRunner
 from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.openmm import OpenMMRunner
@@ -61,6 +62,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "evoef2_repair": EvoEF2Runner,
     "evoef2_binding": EvoEF2Runner,
     "evoef2_build_mutant": EvoEF2Runner,
+    "ligandmpnn_build_mutant": LigandMPNNPackerRunner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
 
