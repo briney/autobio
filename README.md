@@ -202,7 +202,7 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `antiberta2` | Yes | Extract antibody sequence embeddings using AntiBERTa2 (202M parameters). Paired and unpaired. |
 | `antiberta2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 |
 
-### Mutant structures
+### Mutate structures
 
 | Tool | GPU | Description |
 |------|-----|-------------|
