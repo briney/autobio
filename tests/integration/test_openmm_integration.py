@@ -1,11 +1,10 @@
 """Integration tests for OpenMM tools.
 
-These tests require Docker (no GPU — amber minimize is CPU-only). They
-download PDB structures from RCSB, run the autobio-openmm containers, and
-verify end-to-end output.
+These tests require Docker and GPU. They download PDB structures from RCSB,
+run the autobio-openmm containers, and verify end-to-end output.
 
 Run with:
-    pytest tests/integration/test_openmm_integration.py -v -m docker
+    pytest tests/integration/test_openmm_integration.py -v -m "docker and gpu"
 """
 
 from __future__ import annotations
@@ -23,8 +22,8 @@ from autobio.tools import get_runner
 if TYPE_CHECKING:
     from pathlib import Path
 
-# All tests in this module require Docker and are slow
-pytestmark = [pytest.mark.docker, pytest.mark.slow]
+# All tests in this module require Docker, GPU, and are slow
+pytestmark = [pytest.mark.docker, pytest.mark.gpu, pytest.mark.slow]
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +63,7 @@ class TestOpenMMAmberMinimize:
         """Minimize ubiquitin with default settings (implicit solvent, no restraints)."""
         input_data = ScoringInput(structure_path=rcsb_1ubq)
         runner = get_runner("openmm_amber_minimize", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_default")
+        output = runner.run(input_data, output_dir=tmp_path / "ws_default")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
@@ -106,7 +105,7 @@ class TestOpenMMAmberMinimize:
             },
         )
         runner = get_runner("openmm_amber_minimize", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_ca")
+        output = runner.run(input_data, output_dir=tmp_path / "ws_ca")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
@@ -129,7 +128,7 @@ class TestOpenMMAmberMinimize:
             },
         )
         runner = get_runner("openmm_amber_minimize", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_vacuum")
+        output = runner.run(input_data, output_dir=tmp_path / "ws_vacuum")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
@@ -153,7 +152,7 @@ class TestOpenMMAmberMinimize:
             },
         )
         runner = get_runner("openmm_amber_minimize", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_heavy")
+        output = runner.run(input_data, output_dir=tmp_path / "ws_heavy")
 
         assert isinstance(output, ScoringOutput)
         s = output.scores[0]
@@ -177,7 +176,7 @@ class TestOpenMMAmberRelax:
         """Relax ubiquitin with default explicit solvent settings."""
         input_data = ScoringInput(structure_path=rcsb_1ubq)
         runner = get_runner("openmm_amber_relax", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_relax")
+        output = runner.run(input_data, output_dir=tmp_path / "ws_relax")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
@@ -198,7 +197,7 @@ class TestOpenMMAmberRelax:
             extra={"implicit_solvent": True},
         )
         runner = get_runner("openmm_amber_relax", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_relax_implicit")
+        output = runner.run(input_data, output_dir=tmp_path / "ws_relax_implicit")
 
         assert isinstance(output, ScoringOutput)
         assert output.scores[0].structure_path is not None
@@ -216,7 +215,7 @@ class TestOpenMMAmberRelax:
             },
         )
         runner = get_runner("openmm_amber_relax", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_relax_custom")
+        output = runner.run(input_data, output_dir=tmp_path / "ws_relax_custom")
 
         assert isinstance(output, ScoringOutput)
 
@@ -228,8 +227,6 @@ class TestOpenMMAmberRelax:
 
 class TestOpenMMSimulate:
     """Run production MD simulation with OpenMM."""
-
-    pytestmark = pytest.mark.gpu
 
     def test_simulate_1ubq_short(
         self, rcsb_1ubq: Path, autobio_config: AutobioConfig, tmp_path: Path

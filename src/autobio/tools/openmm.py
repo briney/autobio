@@ -451,6 +451,8 @@ _AMBER_MINIMIZE_NOTES = (
     "initial_energy for comparison, and violation-checking metadata.",
     "Force field alternatives: extra['force_field'] accepts 'amber99sb.xml' "
     "(legacy, used by AlphaFold) or 'charmm36.xml'.",
+    "GPU (CUDA) is required. OpenMM 8.5 runs the energy minimizer entirely "
+    "on GPU for dramatically faster performance.",
 )
 
 _AMBER_MINIMIZE_INPUT_FORMAT = (
@@ -461,10 +463,10 @@ _AMBER_MINIMIZE_INPUT_FORMAT = (
 )
 
 TOOL_REGISTRY["openmm_amber_minimize"] = ToolEntry(
-    image_tag="openmm-amber-minimize:1.0.0",
+    image_tag="openmm-amber-minimize:1.1.0",
     category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
+    requires_gpu=True,
+    gpu_count=1,
     input_schema=ScoringInput,
     output_schema=ScoringOutput,
     default_timeout=600,
@@ -477,7 +479,7 @@ TOOL_REGISTRY["openmm_amber_minimize"] = ToolEntry(
         "at each iteration. Reports final energy in kJ/mol with a "
         "per-force-type breakdown. Produces a refined PDB structure."
     ),
-    version="1.0.0",
+    version="1.1.0",
     notes=_AMBER_MINIMIZE_NOTES,
     input_format=_AMBER_MINIMIZE_INPUT_FORMAT,
 )
@@ -505,6 +507,8 @@ _AMBER_RELAX_NOTES = (
     "Protocol step counts: extra['heating_steps'] (50 ps), "
     "extra['nvt_steps'] (50 ps), extra['npt_steps'] (100 ps), "
     "extra['production_steps'] (50 ps). All at 2 fs timestep by default.",
+    "GPU (CUDA) is required. OpenMM 8.5 runs energy minimization and "
+    "dynamics entirely on GPU for dramatically faster performance.",
 )
 
 _AMBER_RELAX_INPUT_FORMAT = (
@@ -515,10 +519,10 @@ _AMBER_RELAX_INPUT_FORMAT = (
 )
 
 TOOL_REGISTRY["openmm_amber_relax"] = ToolEntry(
-    image_tag="openmm-amber-relax:1.0.0",
+    image_tag="openmm-amber-relax:1.1.0",
     category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
+    requires_gpu=True,
+    gpu_count=1,
     input_schema=ScoringInput,
     output_schema=ScoringOutput,
     default_timeout=3600,
@@ -530,7 +534,7 @@ TOOL_REGISTRY["openmm_amber_relax"] = ToolEntry(
         "NPT ensembles, and runs a short production simulation. Returns a "
         "refined, solvent-stripped protein structure with energy in kJ/mol."
     ),
-    version="1.0.0",
+    version="1.1.0",
     notes=_AMBER_RELAX_NOTES,
     input_format=_AMBER_RELAX_INPUT_FORMAT,
 )
@@ -568,7 +572,7 @@ _MD_SIMULATE_INPUT_FORMAT = (
 )
 
 TOOL_REGISTRY["openmm_md_simulate"] = ToolEntry(
-    image_tag="openmm-md-simulate:1.0.0",
+    image_tag="openmm-md-simulate:1.1.0",
     category=ToolCategory.SIMULATION,
     requires_gpu=True,
     gpu_count=1,
@@ -583,7 +587,7 @@ TOOL_REGISTRY["openmm_md_simulate"] = ToolEntry(
         "energy time series with temperature and pressure data, and a "
         "final protein-only PDB structure."
     ),
-    version="1.0.0",
+    version="1.1.0",
     notes=_MD_SIMULATE_NOTES,
     input_format=_MD_SIMULATE_INPUT_FORMAT,
 )

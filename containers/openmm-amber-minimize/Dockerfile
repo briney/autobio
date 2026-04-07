@@ -5,11 +5,11 @@
 # refines geometry, and reports energy in kJ/mol.
 #
 # Build context: containers/
-#   docker build -f containers/openmm-amber-minimize/Dockerfile containers/ -t autobio-openmm-amber-minimize:1.0.0
+#   docker build -f containers/openmm-amber-minimize/Dockerfile containers/ -t autobio-openmm-amber-minimize:1.1.0
 #
-# Requires autobio-openmm-base:8.2.0 to be built first.
+# Requires autobio-openmm-base:8.5.0 to be built first.
 
-FROM autobio-openmm-base:8.2.0
+FROM autobio-openmm-base:8.5.0
 
 # --- Shared entrypoint --------------------------------------------------------
 COPY base-entrypoint.sh /opt/autobio/base-entrypoint.sh
