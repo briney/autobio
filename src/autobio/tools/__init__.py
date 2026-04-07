@@ -19,6 +19,7 @@ from autobio.tools.ligandmpnn_packer import LigandMPNNPackerRunner
 from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.openmm import OpenMMRunner
+from autobio.tools.prodigy import ProdigyRunner
 from autobio.tools.rfd3 import RFD3Runner
 from autobio.tools.rosetta import RosettaRunner
 from autobio.tools.stabddg import StaBddGRunner
@@ -62,6 +63,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "rosetta_relax": RosettaRunner,
     "rosetta_minimize": RosettaRunner,
     "rosetta_flexddg": RosettaRunner,
+    "prodigy": ProdigyRunner,
     "openmm_amber_minimize": OpenMMRunner,
     "openmm_amber_relax": OpenMMRunner,
     "openmm_md_simulate": OpenMMRunner,

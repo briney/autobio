@@ -20,6 +20,11 @@ from autobio.schemas.inverse_folding import (
     InverseFoldingInput,
     InverseFoldingOutput,
 )
+from autobio.schemas.protein_binding_affinity import (
+    ProteinBindingAffinityInput,
+    ProteinBindingAffinityOutput,
+    ProteinBindingAffinityPrediction,
+)
 from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
 from autobio.schemas.simulation import (
     EnergyRecord,
@@ -66,6 +71,10 @@ __all__ = [
     "DesignedSequence",
     "InverseFoldingInput",
     "InverseFoldingOutput",
+    # protein binding affinity
+    "ProteinBindingAffinityInput",
+    "ProteinBindingAffinityOutput",
+    "ProteinBindingAffinityPrediction",
     # scoring
     "ScoredStructure",
     "ScoringInput",
