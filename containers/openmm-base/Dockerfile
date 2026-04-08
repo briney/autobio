@@ -17,10 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends jq bc \
     && rm -rf /var/lib/apt/lists/*
 
 # --- OpenMM 8.5 with CUDA support + PDBFixer for structure cleanup ---
-# --- OpenMM 8.5 with CUDA support + PDBFixer for structure cleanup ---
-# Requires NVIDIA driver 575+ (CUDA 12.9 support) on the host.
+# Requires NVIDIA driver 575+ (CUDA 12.9) on the host.
+# Pin cuda-version to 12.x so the solver selects CUDA libraries
+# compatible with the host driver (575 supports up to CUDA 12.9).
 RUN mamba install -y -c conda-forge \
         openmm=8.5.0 \
+        "cuda-version>=12,<13" \
         pdbfixer \
     && mamba clean -afy
 
