@@ -4,14 +4,11 @@
 # NVT/NPT equilibration, and production MD with trajectory and energy output.
 #
 # Build context: containers/
-#   docker build -f containers/openmm-md-simulate/Dockerfile containers/ -t autobio-openmm-md-simulate:1.0.0
+#   docker build -f containers/openmm-md-simulate/Dockerfile containers/ -t autobio-openmm-md-simulate:1.1.0
 #
-# Requires autobio-openmm-base:8.2.0 to be built first.
+# Requires autobio-openmm-base:8.5.0 to be built first.
 
-FROM autobio-openmm-base:8.2.0
-
-# Default to GPU acceleration; falls back to CPU if unavailable
-ENV OPENMM_DEFAULT_PLATFORM=CUDA
+FROM autobio-openmm-base:8.5.0
 
 # --- Shared entrypoint --------------------------------------------------------
 COPY base-entrypoint.sh /opt/autobio/base-entrypoint.sh

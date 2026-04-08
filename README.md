@@ -209,6 +209,12 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `evoef2_build_mutant` | No | Build mutant protein structures and repack sidechains using EvoEF2's physics-based rotamer library |
 | `ligandmpnn_build_mutant` | Yes | Build mutant protein structures and repack sidechains using LigandMPNN's neural network sidechain packing model |
 
+### Binding affinity
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `antipasti` | No | Predict antibody-antigen binding affinity (log10 Kd) from a 3D complex structure using ANTIPASTI |
+
 ### Scoring
 
 | Tool | GPU | Description |

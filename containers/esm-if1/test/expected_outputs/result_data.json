@@ -1,0 +1,17 @@
+{
+  "designed_sequences": [
+    {
+      "rank": 1,
+      "sequence": {"A": "TTCCPSIVARSNFNVCRLPGTPEAICATYTGCIIIPGATCPGDYAN"},
+      "score": null,
+      "recovery": 0.5652
+    },
+    {
+      "rank": 2,
+      "sequence": {"A": "TVCCPSEEAKKKYEECRKPGTPDEECAKATGCIIIPGTKCPPDYPY"},
+      "score": null,
+      "recovery": 0.4348
+    }
+  ],
+  "native_sequence": {"A": "TTCCPSIVARSNFNVCRLPGTPEAICATYTGCIIIPGATCPGDYAN"}
+}

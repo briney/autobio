@@ -1,0 +1,6 @@
+{
+  "mode": "design",
+  "structure_path": "/workspace/inputs/test.pdb",
+  "num_sequences": 2,
+  "temperature": 0.1
+}

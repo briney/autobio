@@ -1,0 +1,8 @@
+{
+  "structure_path": "/workspace/inputs/complex.pdb",
+  "selection": "A B",
+  "temperature": 25.0,
+  "distance_cutoff": 5.5,
+  "contact_list": false,
+  "output_dir": "/workspace/outputs/raw"
+}

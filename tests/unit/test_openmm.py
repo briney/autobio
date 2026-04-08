@@ -400,8 +400,8 @@ _EXPECTED_CATEGORIES = {
 }
 
 _EXPECTED_GPU_REQUIRED = {
-    "openmm_amber_minimize": False,
-    "openmm_amber_relax": False,
+    "openmm_amber_minimize": True,
+    "openmm_amber_relax": True,
     "openmm_md_simulate": True,
 }
 
