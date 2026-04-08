@@ -2,7 +2,7 @@
 
 Tools for autonomous biological research.
 
-Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, structure design, mutant structure building, scoring, and molecular dynamics simulation. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
+Autobio provides a unified interface to computational biology tools — structure prediction, inverse folding, protein embeddings, structure design, structure utilities, energy minimization, binding affinity, scoring, and molecular dynamics simulation. Each tool runs in its own Docker container, fully isolating heavyweight dependencies (PyTorch, CUDA, tool-specific libraries) from your host environment. The host package is lightweight and has no ML dependencies.
 
 Autobio is designed for both direct human use and as the computational backbone for AI agents performing autonomous biological research. All commands support `--format json` for structured, machine-readable output.
 
@@ -173,6 +173,8 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 |------|-----|-------------|
 | `proteinmpnn` | Yes | Fixed-backbone sequence design with ProteinMPNN |
 | `ligandmpnn` | Yes | Ligand-aware sequence design with LigandMPNN |
+| `antifold` | Yes | Design antibody sequences for given backbone structures using AntiFold |
+| `esm_if1` | Yes | Design protein sequences for given backbone structures using ESM-IF1 |
 
 ### Structure design
 
@@ -202,33 +204,43 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `antiberta2` | Yes | Extract antibody sequence embeddings using AntiBERTa2 (202M parameters). Paired and unpaired. |
 | `antiberta2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 |
 
-### Mutate structures
+### Structure utilities
 
 | Tool | GPU | Description |
 |------|-----|-------------|
 | `evoef2_build_mutant` | No | Build mutant protein structures and repack sidechains using EvoEF2's physics-based rotamer library |
 | `ligandmpnn_build_mutant` | Yes | Build mutant protein structures and repack sidechains using LigandMPNN's neural network sidechain packing model |
+| `evoef2_repair` | No | Repair protein structures by rebuilding incomplete side chains using EvoEF2 |
+
+### Energy minimization
+
+| Tool | GPU | Description |
+|------|-----|-------------|
+| `rosetta_relax` | No | Relax a protein structure using Rosetta's FastRelax protocol |
+| `rosetta_minimize` | No | Minimize a protein structure using gradient-based energy minimization |
+| `openmm_amber_minimize` | Yes | Minimize a protein structure using OpenMM with the Amber force field (AlphaFold-style) |
+| `openmm_amber_relax` | Yes | Relax a protein structure using OpenMM with Amber force field and explicit solvent |
 
 ### Binding affinity
 
 | Tool | GPU | Description |
 |------|-----|-------------|
 | `antipasti` | No | Predict antibody-antigen binding affinity (log10 Kd) from a 3D complex structure using ANTIPASTI |
+| `prodigy` | No | Predict protein-protein binding affinity (delta-G and Kd) from a 3D complex structure using PRODIGY |
 
 ### Scoring
 
 | Tool | GPU | Description |
 |------|-----|-------------|
 | `rosetta_score` | No | Score a protein structure using Rosetta's energy function |
-| `rosetta_relax` | No | Relax a protein structure using Rosetta's FastRelax protocol |
-| `rosetta_minimize` | No | Minimize a protein structure using gradient-based energy minimization |
 | `rosetta_flexddg` | No | Predict binding ΔΔG at protein-protein interfaces using flex-ddG |
 | `stabddg` | Yes | Predict binding ΔΔG from mutations using StaB-ddG (ML-based, ProteinMPNN architecture) |
 | `baddg` | Yes | Predict binding ΔΔG at protein-protein interfaces using BA-ddG (Boltzmann-aligned inverse folding) |
-| `evoef2_repair` | No | Repair protein structures by rebuilding incomplete side chains using EvoEF2 |
 | `evoef2_binding` | No | Compute protein-protein binding energy using EvoEF2's physics-based energy function |
-| `openmm_amber_minimize` | No | Minimize a protein structure using OpenMM with the Amber force field (AlphaFold-style) |
-| `openmm_amber_relax` | No | Relax a protein structure using OpenMM with Amber force field and explicit solvent |
+| `antifold_score` | Yes | Score antibody sequences against backbone structures using AntiFold conditional log-likelihoods |
+| `esm_if1_score` | Yes | Score protein sequences against backbone structures using ESM-IF1 conditional log-likelihood |
+| `freesasa_sasa` | No | Calculate solvent-accessible surface area (SASA) of a protein structure using FreeSASA |
+| `freesasa_bsa` | No | Calculate buried surface area (BSA) at a protein-protein interface using FreeSASA |
 
 ### Simulation
 
