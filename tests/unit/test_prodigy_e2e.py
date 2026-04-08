@@ -57,12 +57,8 @@ _SINGLE_OUTPUT_JSON = json.dumps(
         "polar_polar_contacts": 2.0,
         "polar_apolar_contacts": 8.0,
         "apolar_apolar_contacts": 12.0,
-        "hydrophilic_hydrophilic_contacts": 6.0,
-        "hydrophobic_hydrophilic_contacts": 14.0,
-        "hydrophobic_hydrophobic_contacts": 22.0,
         "pct_apolar_nis": 42.31,
         "pct_charged_nis": 18.46,
-        "pct_polar_nis": 39.23,
         "selection": ["A", "B"],
         "temperature": 25.0,
         "distance_cutoff": 5.5,
@@ -84,12 +80,8 @@ _CUSTOM_TEMP_OUTPUT_JSON = json.dumps(
         "polar_polar_contacts": 2.0,
         "polar_apolar_contacts": 8.0,
         "apolar_apolar_contacts": 12.0,
-        "hydrophilic_hydrophilic_contacts": 6.0,
-        "hydrophobic_hydrophilic_contacts": 14.0,
-        "hydrophobic_hydrophobic_contacts": 22.0,
         "pct_apolar_nis": 42.31,
         "pct_charged_nis": 18.46,
-        "pct_polar_nis": 39.23,
         "selection": ["A", "B"],
         "temperature": 37.0,
         "distance_cutoff": 5.5,
@@ -231,7 +223,6 @@ class TestProdigyBasicE2E:
         assert breakdown is not None
         assert breakdown["pct_apolar_nis"] == pytest.approx(42.31)
         assert breakdown["pct_charged_nis"] == pytest.approx(18.46)
-        assert breakdown["pct_polar_nis"] == pytest.approx(39.23)
 
     def test_chain_selection_in_breakdown(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path

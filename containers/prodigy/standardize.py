@@ -36,12 +36,8 @@ def standardize(workspace: Path) -> None:
         "polar_polar_contacts": data["polar_polar_contacts"],
         "polar_apolar_contacts": data["polar_apolar_contacts"],
         "apolar_apolar_contacts": data["apolar_apolar_contacts"],
-        "hydrophilic_hydrophilic_contacts": data["hydrophilic_hydrophilic_contacts"],
-        "hydrophobic_hydrophilic_contacts": data["hydrophobic_hydrophilic_contacts"],
-        "hydrophobic_hydrophobic_contacts": data["hydrophobic_hydrophobic_contacts"],
         "pct_apolar_nis": data["pct_apolar_nis"],
         "pct_charged_nis": data["pct_charged_nis"],
-        "pct_polar_nis": data["pct_polar_nis"],
         "chain_selection": config.get("selection"),
         "temperature_celsius": data.get("temperature", config.get("temperature", 25.0)),
         "distance_cutoff_angstrom": data.get(

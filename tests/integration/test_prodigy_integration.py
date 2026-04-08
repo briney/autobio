@@ -36,7 +36,8 @@ pytestmark = [pytest.mark.docker, pytest.mark.slow]
 
 @pytest.fixture(scope="session")
 def autobio_config() -> AutobioConfig:
-    return AutobioConfig.resolve()
+    """Config with local image prefix for locally-built containers."""
+    return AutobioConfig.resolve(image_prefix="autobio-")
 
 
 @pytest.fixture(scope="session")
@@ -107,7 +108,6 @@ class TestProdigyPrediction:
         assert "apolar_apolar_contacts" in p.score_breakdown
         assert 0.0 <= p.score_breakdown["pct_apolar_nis"] <= 100.0
         assert 0.0 <= p.score_breakdown["pct_charged_nis"] <= 100.0
-        assert 0.0 <= p.score_breakdown["pct_polar_nis"] <= 100.0
 
     def test_prediction_without_chain_selection(
         self, rcsb_1ppe: Path, autobio_config: AutobioConfig, tmp_path: Path
