@@ -245,6 +245,73 @@ class TestEvoEF2RepairE2E:
 
 
 # ---------------------------------------------------------------------------
+# TestEvoEF2MinimizeE2E
+# ---------------------------------------------------------------------------
+
+
+class TestEvoEF2MinimizeE2E:
+    """End-to-end tests for evoef2_minimize."""
+
+    def test_minimize_full_pipeline(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """Minimize pipeline produces structure and energy score."""
+        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        output = _run_e2e(
+            "evoef2_minimize",
+            config,
+            input_data,
+            raw_files={"complex_Repair.pdb": _REPAIRED_PDB_CONTENT},
+            log_files={"tool.log": _REPAIR_ENERGY_OUTPUT},
+            tmp_path=tmp_path,
+        )
+
+        assert len(output.scores) == 1
+        s = output.scores[0]
+        assert s.total_score == pytest.approx(-73.75)
+        assert s.units == "EvoEF2"
+        assert s.structure_path is not None
+        assert s.structure_path.name == "complex_Repair.pdb"
+        assert s.ddg is None
+        assert s.mutations is None
+
+    def test_minimize_score_breakdown(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """Minimize output includes energy term breakdown."""
+        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        output = _run_e2e(
+            "evoef2_minimize",
+            config,
+            input_data,
+            raw_files={"complex_Repair.pdb": _REPAIRED_PDB_CONTENT},
+            log_files={"tool.log": _REPAIR_ENERGY_OUTPUT},
+            tmp_path=tmp_path,
+        )
+
+        breakdown = output.scores[0].score_breakdown
+        assert breakdown is not None
+        assert breakdown["intraR_vdwatt"] == pytest.approx(-45.30)
+        assert breakdown["interS_electr"] == pytest.approx(-6.80)
+        # "Total" should NOT be in breakdown — it's in total_score
+        assert "Total" not in breakdown
+
+    def test_minimize_config_params(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """Config.json has correct command and default parameters."""
+        runner = _make_runner("evoef2_minimize", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["command"] == "RepairStructure"
+        assert cfg["evoef2_bin"] == "/app/evoef2/EvoEF2"
+        assert cfg["structure_path"].startswith("/workspace/inputs/")
+
+
+# ---------------------------------------------------------------------------
 # TestEvoEF2BindingE2E
 # ---------------------------------------------------------------------------
 

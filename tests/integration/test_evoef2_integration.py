@@ -84,6 +84,37 @@ class TestEvoEF2Repair:
 
 
 # ---------------------------------------------------------------------------
+# evoef2_minimize
+# ---------------------------------------------------------------------------
+
+
+class TestEvoEF2Minimize:
+    """Energy minimization with EvoEF2."""
+
+    def test_minimize_1brs(
+        self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
+    ) -> None:
+        """Minimize barnase-barstar and verify output structure."""
+        input_data = ScoringInput(structure_path=rcsb_1brs)
+        runner = get_runner("evoef2_minimize", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+
+        assert isinstance(output, ScoringOutput)
+        assert len(output.scores) >= 1
+        assert output.metadata.tool_name == "evoef2_minimize"
+        assert output.metadata.wall_time_seconds > 0
+
+        s = output.scores[0]
+        assert s.units == "EvoEF2"
+        assert isinstance(s.total_score, float)
+        assert s.structure_path is not None
+        assert s.structure_path.exists()
+        assert s.structure_path.suffix == ".pdb"
+        content = s.structure_path.read_text()
+        assert "ATOM" in content
+
+
+# ---------------------------------------------------------------------------
 # evoef2_binding
 # ---------------------------------------------------------------------------
 

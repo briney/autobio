@@ -1,4 +1,4 @@
-"""EvoEF2 tool runners — structure repair, binding energy, and mutant building.
+"""EvoEF2 tool runners — structure repair, minimization, binding energy, and mutant building.
 
 All EvoEF2 tools share a single ``EvoEF2Runner`` class that dispatches by
 ``tool_name`` using the ``_VARIANT_CONFIG`` dict.  All variants share a single
@@ -10,6 +10,7 @@ no GPU required, no model weights.
 Supported tools:
 
 - ``evoef2_repair`` — Repair incomplete side chains and optimize hydrogens.
+- ``evoef2_minimize`` — Energy minimization using EvoEF2's rotamer library.
 - ``evoef2_binding`` — Compute protein–protein binding energy (auto-repair by default).
 - ``evoef2_build_mutant`` — Build mutant structures from a mutation specification.
 """
@@ -43,6 +44,12 @@ _EVOEF2_BIN = "/app/evoef2/EvoEF2"
 
 _VARIANT_CONFIG: dict[str, dict[str, Any]] = {
     "evoef2_repair": {
+        "command": "RepairStructure",
+        "produces_structure": True,
+        "requires_mutations": False,
+        "has_auto_repair": False,
+    },
+    "evoef2_minimize": {
         "command": "RepairStructure",
         "produces_structure": True,
         "requires_mutations": False,
@@ -250,6 +257,21 @@ _REPAIR_INPUT_FORMAT = (
     "format — mmCIF files must be converted first.",
 )
 
+_MINIMIZE_NOTES = (
+    "Performs energy minimization on a protein structure using EvoEF2's "
+    "physics-based rotamer library (Dunbrack 2010). Optimizes side-chain "
+    "conformations and hydrogen positions to minimize the total energy.",
+    "This is the same rotamer optimization applied after mutation in "
+    "evoef2_build_mutant, but without introducing any mutations — useful "
+    "for refining structures or preparing them for downstream scoring.",
+    "Output includes the minimized PDB structure and the total energy with a per-term breakdown.",
+)
+
+_MINIMIZE_INPUT_FORMAT = (
+    "Provide a PDB file via structure_path. EvoEF2 only supports PDB "
+    "format — mmCIF files must be converted first.",
+)
+
 _BINDING_NOTES = (
     "Computes the binding energy between protein chains in a complex. "
     "By default, structures are auto-repaired before scoring "
@@ -301,6 +323,26 @@ TOOL_REGISTRY["evoef2_repair"] = ToolEntry(
     version="1.0.0",
     notes=_REPAIR_NOTES,
     input_format=_REPAIR_INPUT_FORMAT,
+)
+
+TOOL_REGISTRY["evoef2_minimize"] = ToolEntry(
+    image_tag="evoef2:1.0.0",
+    category=ToolCategory.SCORING,
+    requires_gpu=False,
+    gpu_count=0,
+    input_schema=ScoringInput,
+    output_schema=ScoringOutput,
+    default_timeout=600,
+    supports_batch=False,
+    description=(
+        "Energy minimization of a protein structure using EvoEF2's "
+        "physics-based rotamer library. Optimizes side-chain conformations "
+        "and hydrogen positions to minimize total energy. Produces a "
+        "minimized PDB and energy breakdown."
+    ),
+    version="1.0.0",
+    notes=_MINIMIZE_NOTES,
+    input_format=_MINIMIZE_INPUT_FORMAT,
 )
 
 TOOL_REGISTRY["evoef2_binding"] = ToolEntry(

@@ -71,6 +71,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "stabddg": StaBddGRunner,
     "baddg": BAddGRunner,
     "evoef2_repair": EvoEF2Runner,
+    "evoef2_minimize": EvoEF2Runner,
     "evoef2_binding": EvoEF2Runner,
     "evoef2_build_mutant": EvoEF2Runner,
     "freesasa_bsa": FreeSASARunner,
