@@ -21,6 +21,7 @@ from autobio.tools.mpnn import MPNNRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.openmm import OpenMMRunner
 from autobio.tools.prodigy import ProdigyRunner
+from autobio.tools.protenix import ProtenixRunner
 from autobio.tools.rfd3 import RFD3Runner
 from autobio.tools.rosetta import RosettaRunner
 from autobio.tools.stabddg import StaBddGRunner
@@ -60,6 +61,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "boltz2": BoltzRunner,
     "chai1": ChaiRunner,
     "openfold3": OpenFold3Runner,
+    "protenix_v2": ProtenixRunner,
     "rosetta_score": RosettaRunner,
     "rosetta_relax": RosettaRunner,
     "rosetta_minimize": RosettaRunner,

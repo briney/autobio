@@ -1,0 +1,16 @@
+[
+  {
+    "name": "test_prediction",
+    "sequences": [
+      {
+        "proteinChain": {
+          "sequence": "MQIFVKTLTGKTITLEVEPS",
+          "count": 1,
+          "id": ["A"]
+        }
+      }
+    ],
+    "covalent_bonds": [],
+    "constraint": {}
+  }
+]

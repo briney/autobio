@@ -1,0 +1,12 @@
+{
+  "input_json_path": "/workspace/inputs/input.json",
+  "output_dir": "/workspace/outputs/raw",
+  "model_name": "protenix-v2",
+  "use_msa": true,
+  "use_template": false,
+  "dtype": "bf16",
+  "seeds": "101",
+  "diffusion_samples": 1,
+  "diffusion_steps": 200,
+  "pairformer_cycles": 10
+}
