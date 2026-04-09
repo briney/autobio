@@ -166,6 +166,7 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `chai1` | Yes | Predict biomolecular structures using Chai-1 (proteins, DNA, RNA, ligands, glycans) |
 | `esmfold` | Yes | Predict protein structure from a single sequence using ESMFold (no MSA needed) |
 | `openfold3` | Yes | Predict biomolecular structures using OpenFold3 (open-source AlphaFold3) |
+| `protenix_v2` | Yes | Predict biomolecular structures using Protenix (proteins, DNA, RNA, ligands, ions) |
 
 ### Inverse folding
 
@@ -218,6 +219,7 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 |------|-----|-------------|
 | `rosetta_relax` | No | Relax a protein structure using Rosetta's FastRelax protocol |
 | `rosetta_minimize` | No | Minimize a protein structure using gradient-based energy minimization |
+| `evoef2_minimize` | No | Minimize a protein structure using EvoEF2's physics-based rotamer optimization |
 | `openmm_amber_minimize` | Yes | Minimize a protein structure using OpenMM with the Amber force field (AlphaFold-style) |
 | `openmm_amber_relax` | Yes | Relax a protein structure using OpenMM with Amber force field and explicit solvent |
 
@@ -239,6 +241,8 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `evoef2_binding` | No | Compute protein-protein binding energy using EvoEF2's physics-based energy function |
 | `antifold_score` | Yes | Score antibody sequences against backbone structures using AntiFold conditional log-likelihoods |
 | `esm_if1_score` | Yes | Score protein sequences against backbone structures using ESM-IF1 conditional log-likelihood |
+| `proteinmpnn_score` | Yes | Score protein sequences against backbone structures using ProteinMPNN conditional log-likelihood |
+| `ligandmpnn_score` | Yes | Score protein sequences against backbone structures using LigandMPNN conditional log-likelihood with ligand-aware context |
 | `freesasa_sasa` | No | Calculate solvent-accessible surface area (SASA) of a protein structure using FreeSASA |
 | `freesasa_bsa` | No | Calculate buried surface area (BSA) at a protein-protein interface using FreeSASA |
 
