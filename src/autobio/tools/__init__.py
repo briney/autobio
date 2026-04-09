@@ -17,7 +17,7 @@ from autobio.tools.esmfold import ESMFoldRunner
 from autobio.tools.evoef2 import EvoEF2Runner
 from autobio.tools.freesasa import FreeSASARunner
 from autobio.tools.ligandmpnn_packer import LigandMPNNPackerRunner
-from autobio.tools.mpnn import MPNNRunner
+from autobio.tools.mpnn import MPNNRunner, MPNNScoreRunner
 from autobio.tools.openfold3 import OpenFold3Runner
 from autobio.tools.openmm import OpenMMRunner
 from autobio.tools.prodigy import ProdigyRunner
@@ -52,7 +52,9 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "esm_if1_score": ESMIF1ScoreRunner,
     "esmfold": ESMFoldRunner,
     "proteinmpnn": MPNNRunner,
+    "proteinmpnn_score": MPNNScoreRunner,
     "ligandmpnn": MPNNRunner,
+    "ligandmpnn_score": MPNNScoreRunner,
     "rfd3": RFD3Runner,
     "complexa": ComplexaRunner,
     "complexa_ligand": ComplexaRunner,

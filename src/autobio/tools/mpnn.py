@@ -21,6 +21,7 @@ from autobio.schemas.inverse_folding import (
     InverseFoldingInput,
     InverseFoldingOutput,
 )
+from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
 from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
@@ -174,4 +175,138 @@ TOOL_REGISTRY["ligandmpnn"] = ToolEntry(
         "name 'CA') may be miscounted as protein residues by external PDB parsers, "
         "but the foundry parser handles them correctly.",
     ),
+)
+
+# ---------------------------------------------------------------------------
+# Scoring runner — conditional log-likelihood scoring
+# ---------------------------------------------------------------------------
+
+_SCORE_CHECKPOINT_DIR = "/app/LigandMPNN/model_params"
+
+_SCORE_MODEL_CONFIG: dict[str, dict[str, str]] = {
+    "proteinmpnn_score": {
+        "model_type": "protein_mpnn",
+        "checkpoint": "proteinmpnn_v_48_020.pt",
+    },
+    "ligandmpnn_score": {
+        "model_type": "ligand_mpnn",
+        "checkpoint": "ligandmpnn_v_32_010_25.pt",
+    },
+}
+
+
+class MPNNScoreRunner(ToolRunner):
+    """Runner for ProteinMPNN/LigandMPNN sequence scoring (conditional log-likelihood).
+
+    Maps ``ScoringInput`` fields to the container's config.json with
+    ``mode="score"`` and parses the standardised ``result_data.json`` back
+    into a ``ScoringOutput``.
+
+    When ``sequences`` is ``None``, the container scores the native sequence
+    extracted from the PDB.
+    """
+
+    def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
+        """Write config.json and copy the input structure into the workspace."""
+        assert isinstance(input_data, ScoringInput)
+        model_cfg = _SCORE_MODEL_CONFIG[self.tool_name]
+
+        # Copy structure file into workspace inputs/
+        src_path = input_data.structure_path
+        dest_name = src_path.name
+        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+
+        # Build config.json for the container
+        config: dict[str, object] = {
+            "mode": "score",
+            "model_type": model_cfg["model_type"],
+            "checkpoint_path": f"{_SCORE_CHECKPOINT_DIR}/{model_cfg['checkpoint']}",
+            "structure_path": f"/workspace/inputs/{dest_name}",
+            "sequences": input_data.sequences,
+        }
+
+        # Flat-merge extra dict for tool-specific params
+        config.update(input_data.extra)
+
+        workspace.write_config(config)
+
+    def parse_output(self, workspace: Workspace) -> ScoringOutput:
+        """Read standardised outputs and return a ``ScoringOutput``."""
+        result_data_path = workspace.std_output_dir / "result_data.json"
+        data = json.loads(result_data_path.read_text())
+
+        scores = [
+            ScoredStructure(
+                total_score=s["total_score"],
+                per_residue_scores=s.get("per_residue_scores"),
+                score_breakdown=s.get("score_breakdown"),
+                units=s.get("units"),
+                structure_path=s.get("structure_path"),
+                ddg=s.get("ddg"),
+                mutations=s.get("mutations"),
+            )
+            for s in data["scores"]
+        ]
+
+        # Placeholder metadata — overwritten by base class run()
+        return ScoringOutput(
+            scores=scores,
+            metadata=self._build_metadata(workspace, 0.0, [], ""),
+            raw_output_path=workspace.raw_output_dir,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Scoring registry entries
+# ---------------------------------------------------------------------------
+
+_MPNN_SCORE_NOTES = (
+    "Computes conditional log-likelihood of a sequence given a backbone structure "
+    "using ProteinMPNN. Returns average negative log-likelihood (lower is better).",
+    "When sequences is None, scores the native sequence from the PDB.",
+    "Accepts PDB input. mmCIF support depends on the LigandMPNN parser.",
+    "The score_breakdown includes per-chain mean NLL and perplexity.",
+)
+
+TOOL_REGISTRY["proteinmpnn_score"] = ToolEntry(
+    image_tag="mpnn-score:1.0.0",
+    category=ToolCategory.SCORING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=ScoringInput,
+    output_schema=ScoringOutput,
+    default_timeout=300,
+    supports_batch=False,
+    description=(
+        "Score protein sequences against backbone structures using ProteinMPNN "
+        "conditional log-likelihood."
+    ),
+    version="1.0.0",
+    notes=_MPNN_SCORE_NOTES,
+)
+
+_LIGANDMPNN_SCORE_NOTES = (
+    "Computes conditional log-likelihood of a sequence given a backbone structure "
+    "using LigandMPNN, with ligand-aware context.",
+    "When sequences is None, scores the native sequence from the PDB.",
+    "For protein-ligand complexes, ligand atoms are included as context for scoring.",
+    "Accepts PDB input. mmCIF support depends on the LigandMPNN parser.",
+    "The score_breakdown includes per-chain mean NLL and perplexity.",
+)
+
+TOOL_REGISTRY["ligandmpnn_score"] = ToolEntry(
+    image_tag="mpnn-score:1.0.0",
+    category=ToolCategory.SCORING,
+    requires_gpu=True,
+    gpu_count=1,
+    input_schema=ScoringInput,
+    output_schema=ScoringOutput,
+    default_timeout=300,
+    supports_batch=False,
+    description=(
+        "Score protein sequences against backbone structures using LigandMPNN "
+        "conditional log-likelihood with ligand-aware context."
+    ),
+    version="1.0.0",
+    notes=_LIGANDMPNN_SCORE_NOTES,
 )
