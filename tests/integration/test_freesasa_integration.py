@@ -1,4 +1,4 @@
-"""Integration tests for FreeSASA SASA and BSA tools.
+"""Integration tests for the FreeSASA Tool (modes: sasa, bsa).
 
 These tests require Docker (no GPU needed — FreeSASA is CPU-only). They
 download a protein-protein complex PDB from RCSB, run the autobio-freesasa
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import FreeSASABSAInput, FreeSASASASAInput, ScoringOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ def rcsb_1ppe(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# freesasa_bsa — buried surface area
+# freesasa (mode="bsa") — buried surface area
 # ---------------------------------------------------------------------------
 
 
@@ -69,16 +69,13 @@ class TestFreeSASABSA:
         Verifies the full pipeline: PDB input -> FreeSASA calculation -> BSA output.
         The expected BSA for 1PPE is approximately 1500-1800 Å².
         """
-        input_data = ScoringInput(
-            structure_path=rcsb_1ppe,
-            extra={"partner1": "E", "partner2": "I"},
-        )
-        runner = get_runner("freesasa_bsa", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_bsa")
+        input_data = FreeSASABSAInput(structure_path=rcsb_1ppe, partner1="E", partner2="I")
+        runner = get_runner("freesasa", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_bsa", mode="bsa")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "freesasa_bsa"
+        assert output.metadata.tool_name == "freesasa"
         assert output.metadata.wall_time_seconds > 0
 
         s = output.scores[0]
@@ -123,16 +120,14 @@ class TestFreeSASABSA:
         self, rcsb_1ppe: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """BSA with Shrake & Rupley algorithm should give a similar result."""
-        input_data = ScoringInput(
+        input_data = FreeSASABSAInput(
             structure_path=rcsb_1ppe,
-            extra={
-                "partner1": "E",
-                "partner2": "I",
-                "algorithm": "ShrakeRupley",
-            },
+            partner1="E",
+            partner2="I",
+            algorithm="ShrakeRupley",
         )
-        runner = get_runner("freesasa_bsa", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_bsa_sr")
+        runner = get_runner("freesasa", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_bsa_sr", mode="bsa")
 
         assert isinstance(output, ScoringOutput)
         s = output.scores[0]
@@ -146,16 +141,14 @@ class TestFreeSASABSA:
         self, rcsb_1ppe: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """BSA with per-residue output enabled."""
-        input_data = ScoringInput(
+        input_data = FreeSASABSAInput(
             structure_path=rcsb_1ppe,
-            extra={
-                "partner1": "E",
-                "partner2": "I",
-                "per_residue": True,
-            },
+            partner1="E",
+            partner2="I",
+            per_residue=True,
         )
-        runner = get_runner("freesasa_bsa", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_bsa_res")
+        runner = get_runner("freesasa", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_bsa_res", mode="bsa")
 
         assert isinstance(output, ScoringOutput)
         s = output.scores[0]
@@ -170,7 +163,7 @@ class TestFreeSASABSA:
 
 
 # ---------------------------------------------------------------------------
-# freesasa_sasa — solvent-accessible surface area
+# freesasa (mode="sasa") — solvent-accessible surface area
 # ---------------------------------------------------------------------------
 
 
@@ -184,13 +177,13 @@ class TestFreeSASASASA:
 
         Verifies the full pipeline: PDB input -> FreeSASA calculation -> SASA output.
         """
-        input_data = ScoringInput(structure_path=rcsb_1ppe)
-        runner = get_runner("freesasa_sasa", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_sasa")
+        input_data = FreeSASASASAInput(structure_path=rcsb_1ppe)
+        runner = get_runner("freesasa", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_sasa", mode="sasa")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "freesasa_sasa"
+        assert output.metadata.tool_name == "freesasa"
         assert output.metadata.wall_time_seconds > 0
 
         s = output.scores[0]
@@ -221,12 +214,11 @@ class TestFreeSASASASA:
         self, rcsb_1ppe: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """SASA with per-residue output enabled."""
-        input_data = ScoringInput(
-            structure_path=rcsb_1ppe,
-            extra={"per_residue": True},
+        input_data = FreeSASASASAInput(structure_path=rcsb_1ppe, per_residue=True)
+        runner = get_runner("freesasa", autobio_config)
+        output = runner.run(
+            input_data, gpu="none", output_dir=tmp_path / "ws_sasa_res", mode="sasa"
         )
-        runner = get_runner("freesasa_sasa", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws_sasa_res")
 
         assert isinstance(output, ScoringOutput)
         s = output.scores[0]
@@ -240,15 +232,16 @@ class TestFreeSASASASA:
         self, rcsb_1ppe: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """SASA with a different probe radius should give a different area."""
-        input_default = ScoringInput(structure_path=rcsb_1ppe)
-        input_large = ScoringInput(
-            structure_path=rcsb_1ppe,
-            extra={"probe_radius": 2.0},
-        )
-        runner = get_runner("freesasa_sasa", autobio_config)
+        input_default = FreeSASASASAInput(structure_path=rcsb_1ppe)
+        input_large = FreeSASASASAInput(structure_path=rcsb_1ppe, probe_radius=2.0)
+        runner = get_runner("freesasa", autobio_config)
 
-        output_default = runner.run(input_default, gpu="none", output_dir=tmp_path / "ws_sasa_d")
-        output_large = runner.run(input_large, gpu="none", output_dir=tmp_path / "ws_sasa_l")
+        output_default = runner.run(
+            input_default, gpu="none", output_dir=tmp_path / "ws_sasa_d", mode="sasa"
+        )
+        output_large = runner.run(
+            input_large, gpu="none", output_dir=tmp_path / "ws_sasa_l", mode="sasa"
+        )
 
         sasa_default = output_default.scores[0].total_score
         sasa_large = output_large.scores[0].total_score

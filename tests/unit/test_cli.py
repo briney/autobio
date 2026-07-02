@@ -490,3 +490,66 @@ def test_run_rejects_mode_for_legacy_tool(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "does not support --mode" in result.output
+
+
+# ---------------------------------------------------------------------------
+# autobio list / info — real merge coverage with the migrated freesasa Tool
+#
+# freesasa is the first real (non-mock) catalog Tool, so these tests exercise
+# the actual `list`/`info` CLI paths with a genuine multi-mode Tool alongside
+# a flat (legacy) tool, instead of only testing the formatters directly.
+# ---------------------------------------------------------------------------
+
+
+def _register_freesasa() -> None:
+    """Re-register the real freesasa Tool into CATALOG after fixture-clearing.
+
+    Importing ``autobio.tools`` registers freesasa once (module import is
+    cached), but the autouse ``_clean_catalog``/``_clean_registry`` fixtures
+    snapshot-clear-restore CATALOG/TOOL_REGISTRY around every test in this
+    file for isolation — so tests that need freesasa present must re-register
+    it explicitly, using the module's own Tool object (not a reconstruction).
+    """
+    import autobio.tools  # noqa: F401 - ensures the module (and its schemas) are importable
+    from autobio.tools.freesasa import FREESASA_TOOL
+
+    if "freesasa" not in CATALOG:
+        register(FREESASA_TOOL)
+
+
+class TestListInfoMergedWithFreesasa:
+    def test_list_json_includes_freesasa_and_flat_tool(self) -> None:
+        _register_freesasa()
+        TOOL_REGISTRY["prodigy"] = _make_entry(category=ToolCategory.SCORING)
+
+        result = runner.invoke(app, ["list", "--format", "json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        names = [row["name"] for row in parsed]
+        assert names.count("freesasa") == 1
+        assert "prodigy" in names
+
+        freesasa_row = next(row for row in parsed if row["name"] == "freesasa")
+        assert freesasa_row["modes"] == ["sasa", "bsa"]
+
+    def test_list_category_filter_includes_freesasa(self) -> None:
+        _register_freesasa()
+
+        result = runner.invoke(app, ["list", "--category", "scoring", "--format", "json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert any(row["name"] == "freesasa" for row in parsed)
+
+    def test_info_freesasa_json_returns_catalog_payload(self) -> None:
+        _register_freesasa()
+
+        result = runner.invoke(app, ["info", "freesasa", "--format", "json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert [mode["name"] for mode in parsed["modes"]] == ["sasa", "bsa"]
+        for mode in parsed["modes"]:
+            assert "input_schema" in mode
+            assert "output_schema" in mode

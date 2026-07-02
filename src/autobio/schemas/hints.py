@@ -42,7 +42,7 @@ def ui(
     step: float | None = None,
     enum_labels: dict[str, str] | None = None,
     flavor: str | None = None,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, Any]:
     """Build an ``x-autobio`` hint object for ``Field(json_schema_extra=...)``.
 
     Only the arguments you pass appear in the result; ``Tier``/``Widget`` enums

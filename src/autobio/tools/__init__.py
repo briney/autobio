@@ -73,8 +73,7 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "evoef2_repair": EvoEF2Runner,
     "evoef2_binding": EvoEF2Runner,
     "evoef2_build_mutant": EvoEF2Runner,
-    "freesasa_bsa": FreeSASARunner,
-    "freesasa_sasa": FreeSASARunner,
+    "freesasa": FreeSASARunner,
     "ligandmpnn_build_mutant": LigandMPNNPackerRunner,
 }
 """Maps tool name to its runner class. Populated when tool modules are loaded."""
