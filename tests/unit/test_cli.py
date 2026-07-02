@@ -10,10 +10,11 @@ import pytest
 from typer.testing import CliRunner
 
 from autobio.cli.main import app
+from autobio.core.catalog import CATALOG, Mode, Tool, register
 from autobio.core.container import ImageInfo
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
 from autobio.core.result import ContainerNotFoundError, RunResult, ToolExecutionError
-from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
 
 runner = CliRunner()
 
@@ -380,3 +381,83 @@ class TestHelpOutput:
     def test_subcommand_help(self, command: str) -> None:
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# autobio run --mode (catalog tools)
+# ---------------------------------------------------------------------------
+
+
+class _RunInput(BaseInput):
+    pass
+
+
+class _RunOutput(BaseOutput):
+    pass
+
+
+def _register_run_tool() -> None:
+    if "runtool" in CATALOG:
+        return
+    register(
+        Tool(
+            name="runtool",
+            display_name="RunTool",
+            category=ToolCategory.SCORING,
+            description="run demo",
+            version="1.0.0",
+            image_tag="runtool:1.0.0",
+            requires_gpu=False,
+            gpu_count=0,
+            default_mode="a",
+            modes={
+                "a": Mode("a", "A", "a", _RunInput, _RunOutput, default_timeout=1),
+                "b": Mode("b", "B", "b", _RunInput, _RunOutput, default_timeout=1),
+            },
+        )
+    )
+
+
+def test_run_forwards_mode_for_catalog_tool(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    _register_run_tool()
+    cfg = tmp_path / "config.json"
+    cfg.write_text("{}")
+
+    mock_runner = MagicMock()
+    mock_output = _RunOutput(
+        metadata=RunMetadata(
+            tool_name="runtool",
+            tool_version="1.0.0",
+            image_uri="runtool:1.0.0",
+            wall_time_seconds=0.1,
+            gpu_ids=None,
+            workspace_path=tmp_path,
+            timestamp=datetime.now(tz=UTC),
+        ),
+        raw_output_path=tmp_path,
+    )
+    mock_runner.run.return_value = mock_output
+
+    with patch("autobio.cli.run.get_runner", return_value=mock_runner):
+        result = CliRunner().invoke(
+            app, ["run", "runtool", "--mode", "b", "--config", str(cfg), "--gpu", "none"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert mock_runner.run.call_args.kwargs["mode"] == "b"
+
+
+def test_run_rejects_mode_for_legacy_tool(tmp_path: Path) -> None:
+    import autobio.tools  # noqa: F401 - populate TOOL_RUNNERS with the real ProdigyRunner
+
+    # test_cli's autouse `_clean_registry` fixture clears TOOL_REGISTRY around every test
+    # body, so re-importing `autobio.tools` (already cached) does not repopulate it. Add
+    # the entry explicitly, matching the pattern used elsewhere in this test class.
+    TOOL_REGISTRY["prodigy"] = _make_entry()
+    cfg = tmp_path / "config.json"
+    cfg.write_text("{}")
+    result = CliRunner().invoke(app, ["run", "prodigy", "--mode", "x", "--config", str(cfg)])
+    assert result.exit_code == 1
+    assert "does not support --mode" in result.output
