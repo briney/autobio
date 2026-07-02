@@ -10,6 +10,7 @@ from autobio.utils.sequences import (
     DNA_BASES,
     RNA_BASES,
     parse_fasta,
+    parse_fasta_string,
     validate_antibody_sequence,
     validate_nucleotide_sequence,
     validate_protein_sequence,
@@ -148,3 +149,32 @@ class TestAlphabets:
 
     def test_rna_bases_count(self) -> None:
         assert len(RNA_BASES) == 4
+
+
+# ---------------------------------------------------------------------------
+# Generic FASTA string parsing
+# ---------------------------------------------------------------------------
+
+
+def test_parse_fasta_string_basic():
+    text = ">a\nMKT\nVLL\n>b\nGGG\n"
+    assert parse_fasta_string(text) == {"a": "MKTVLL", "b": "GGG"}
+
+
+def test_parse_fasta_string_rejects_duplicate_ids():
+    import pytest
+
+    with pytest.raises(ValueError, match="[Dd]uplicate.*'a'"):
+        parse_fasta_string(">a\nMKT\n>a\nGGG\n")
+
+
+def test_parse_fasta_string_rejects_sequence_before_header():
+    import pytest
+
+    with pytest.raises(ValueError, match="before any header"):
+        parse_fasta_string("MKT\n>a\nGGG\n")
+
+
+def test_parse_fasta_string_ignores_blank_lines():
+    text = "\n>a\nMKT\n\n\n>b\nGGG\n\n"
+    assert parse_fasta_string(text) == {"a": "MKT", "b": "GGG"}
