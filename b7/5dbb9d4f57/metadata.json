@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "b75dbb9d4f57",
+  "strategy": "manual-commit",
+  "branch": "docs/refactor-design",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/superpowers/specs/2026-07-02-autobio-tools-modes-refactor-design.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b7/5dbb9d4f57/0/metadata.json",
+      "transcript": "/b7/5dbb9d4f57/0/full.jsonl",
+      "compact_transcript": "/b7/5dbb9d4f57/0/transcript.jsonl",
+      "content_hash": "/b7/5dbb9d4f57/0/content_hash.txt",
+      "prompt": "/b7/5dbb9d4f57/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8748,
+    "cache_creation_tokens": 135238,
+    "cache_read_tokens": 2166508,
+    "output_tokens": 36587,
+    "api_call_count": 34
+  }
+}

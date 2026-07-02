@@ -1,0 +1,418 @@
+I'd like to embark on a sizeable refactor to allow a broader range of uses for `autobio`, including serving as the foundation for a fold@Scripps webapp, API/MCP, and interactive access in notebook environments (jupyter, marimo, etc) in addition to its current primary use as a toolkit for autonomous agentic experimentation. Read through the refactoring design document (`docs/REFACTOR.md`) and lets brainstorm how to turn this into a concrete implementation plan.
+
+---
+
+<task-notification>
+<task-id>ad969b19e8e913eef</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ad969b19e8e913eef.output</output-file>
+<status>completed</status>
+<summary>Agent "Map variant-dispatch runner patterns" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have everything needed. Here is the concrete inventory.
+
+# Overview: two parallel registries + one dispatch field
+
+There are **two** flat-name-keyed maps, and both have exactly one entry per flat tool name:
+
+- `TOOL_REGISTRY: dict[str, ToolEntry]` — `src/autobio/core/registry.py:47`. `ToolEntry` (registry.py:24-44) holds `image_tag, category, requires_gpu, gpu_count, input_schema, output_schema, default_timeout, supports_batch, description, version, notes, input_format`. **It does NOT store the runner class or any mode/variant field.**
+- `TOOL_RUNNERS: dict[str, type[ToolRunner]]` — `src/autobio/tools/__init__.py:32-79`. Maps each flat name to a runner class. `get_runner()` (tools/__init__.py:83-103) instantiates `runner_cls(tool_name, config)`.
+
+The base `ToolRunner.__init__` (`tools/base.py:35-44`) stores `self.tool_name` and `self.entry = TOOL_REGISTRY[tool_name]`. **All variant dispatch happens inside `prepare_workspace`/`parse_output` by reading `self.tool_name`.** `write_config(config)` serializes the dict to `config.json` (`core/workspace.py:59-60`).
+
+So today, adding a "mode" means: add a `TOOL_REGISTRY[name]` entry, add a `TOOL_RUNNERS[name]` entry, and add a branch keyed on `self.tool_name` inside the runner (or a new runner class).
+
+---
+
+# Per-runner details
+
+## 1. AntibodyLMRunner — `src/autobio/tools/antibody_lm.py`
+
+**Registration:** 12 flat entries (antibody_lm.py:405-631), one per (model × mode) pair: `currab`, `currab_pll`, `ft_esm`, `ft_esm_pll`, `balm_paired(_pll)`, `balm_unpaired(_pll)`, `ablang2(_pll)`, `antiberta2(_pll)`. All map to `AntibodyLMRunner` (tools/__init__.py:36-47). All are `category=EMBEDDING` — **including the `_pll` variants**.
+
+**Dispatch (two independent axes):**
+- Model selection: `spec = _MODEL_CONFIG[self.tool_name]` (antibody_lm.py:207). `_MODEL_CONFIG` (antibody_lm.py:56-187) has **12 keys with the pairs fully duplicated** (e.g. `"currab"` and `"currab_pll"` hold identical `_ModelSpec`).
+- Mode selection: `_is_pll_mode()` = `self.tool_name.endswith("_pll")` (antibody_lm.py:255-257). Used in both `prepare_workspace` (line 225) and `parse_output` (line 251).
+
+**Schemas:** `input_schema=AntibodyInput` for all 12. `output_schema` **differs by mode**: `EmbeddingOutput` for base, `AntibodyPLLOutput` for `_pll` (e.g. lines 411/429). Timeout differs: 600 embedding vs 1800 pll. Image is **shared within a model pair but differs across models** (`currab:1.0.0` for both currab/currab_pll; `ft-esm:1.0.0`, `balm-paired:1.0.0`, etc.) — 6 images, 12 tools.
+
+**config.json (antibody_lm.py:224-244):** writes an explicit `"mode": "pll" | "embedding"` (line 225-226). Model identity via `"model_name"`, `"model_family"`, `"chain_separator"` (from `_ModelSpec`), and `"hf_cache": spec.cache_path`. **No `checkpoint` key**; no `variant` key. Then flat-merges `extra` minus `_CONSUMED_EXTRA_KEYS={"per_position"}`.
+
+**parse_output (antibody_lm.py:246-305):** branches on `_is_pll_mode()` → `_parse_pll_output` (reads `data["scores"]` → `SequencePLL`/`AntibodyPLLOutput`) vs `_parse_embedding_output` (reads `data["embeddings"]` → `SequenceEmbedding`/`EmbeddingOutput`).
+
+## 2. RosettaRunner — `src/autobio/tools/rosetta.py`
+
+**Registration:** 4 flat entries (rosetta.py:329-410): `rosetta_score`, `rosetta_relax`, `rosetta_minimize`, `rosetta_flexddg`, all → `RosettaRunner`, all `category=SCORING`. Each uses a **distinct image** (`rosetta-score:1.0.0`, `rosetta-relax:1.0.0`, `rosetta-minimize:1.0.0`, `rosetta-flexddg:1.0.0`) and distinct `default_timeout`. (Note: the module docstring mentions `rosetta_ddg_monomer` but it is **not** registered.)
+
+**Dispatch:** `variant_cfg = _VARIANT_CONFIG[self.tool_name]` (rosetta.py:120, and again at 203 in `_validate_inputs`). `_VARIANT_CONFIG` (rosetta.py:46-81) keys each name → `{binary, protocol, uses_xml, xml_path?, produces_structure, requires_mutations, default_nstruct}`. There is also one hard-coded name check: `if self.tool_name == "rosetta_flexddg"` (rosetta.py:220) requiring `chains_to_move`.
+
+**Schemas:** identical for all 4 — `ScoringInput` / `ScoringOutput`.
+
+**config.json (rosetta.py:129-154):** writes `"binary"` and `"protocol"` from `variant_cfg` (**no `mode`/`variant`/`checkpoint` key** — these are CPU tools, no weights). Adds `"nstruct"` (extra or `default_nstruct`); adds `"xml_path"` only if `uses_xml`; calls `_prepare_mutations` only if `requires_mutations` (writes `mutations`/`chains_to_move`/`resfile_path`/`mutation_list`). Flat-merges `extra` minus `_CONSUMED_EXTRA_KEYS` (rosetta.py:85-87).
+
+**parse_output (rosetta.py:156-184):** **single implementation, no variant branching** — reads `data["scores"]`, conditionally resolves `structure_path`, and passes through `ddg`/`mutations` fields uniformly.
+
+## 3. ESMRunner — `src/autobio/tools/esm.py`
+
+**Registration:** 2 flat entries (esm.py:214-248): `esm1b`, `esm2`, both → `ESMRunner`, both `category=EMBEDDING`, both **share image `esm:1.0.0`**.
+
+**Dispatch:** `_resolve_model_config` (esm.py:133-145): `if self.tool_name == "esm1b": return _ESM1B_CONFIG`; else for `esm2` it reads `checkpoint = input_data.extra.get("checkpoint", "650M")` and looks up `_ESM2_CHECKPOINTS` (esm.py:49-56, sizes 8M–15B). Unknown checkpoint raises `AutobioError`.
+
+**Schemas:** identical — `EmbeddingInput` / `EmbeddingOutput` for both.
+
+**config.json (esm.py:92-106):** writes the **resolved** `"model_name"` (e.g. `facebook/esm2_t33_650M_UR50D`) plus `layer`, `pooling`, `hf_cache`. **No `mode`/`variant` key**, and **no literal `checkpoint` key** — `checkpoint` is in `_CONSUMED_EXTRA_KEYS={"checkpoint"}` (esm.py:61) and is collapsed into `model_name`. So checkpoint selection is resolved host-side into a HuggingFace model id.
+
+**parse_output (esm.py:108-131):** single implementation, no branching.
+
+## 4. EvoEF2Runner — `src/autobio/tools/evoef2.py`
+
+**Registration:** 3 flat entries (evoef2.py:286-344): `evoef2_repair`, `evoef2_binding`, `evoef2_build_mutant`, all → `EvoEF2Runner`, all `category=SCORING`, **all share image `evoef2:1.0.0`**.
+
+**Dispatch:** `variant_cfg = _VARIANT_CONFIG[self.tool_name]` (evoef2.py:103, again at 195). `_VARIANT_CONFIG` (evoef2.py:44-63) → `{command, produces_structure, requires_mutations, has_auto_repair}`. Also a hard-coded `if self.tool_name == "evoef2_binding"` in validation (evoef2.py:215) checking `split_chains` format.
+
+**Schemas:** identical for all 3 — `ScoringInput` / `ScoringOutput`.
+
+**config.json (evoef2.py:112-138):** writes `"command"` (`RepairStructure`/`ComputeBinding`/`BuildMutant`) from `variant_cfg` — **this is the mode field, but named `command`; no `mode`/`variant`/`checkpoint`**. Conditionally adds `repair`/`split_chains` (binding) or `mutations`/`mutant_file` (build_mutant). Flat-merges `extra` minus `_CONSUMED_EXTRA_KEYS={"mutations","repair","split_chains"}` (evoef2.py:67).
+
+**parse_output (evoef2.py:140-168):** single implementation, no branching.
+
+## 5. OpenMMRunner — `src/autobio/tools/openmm.py`
+
+**Registration:** 3 flat entries (openmm.py:465-593): `openmm_amber_minimize`, `openmm_amber_relax`, `openmm_md_simulate`, all → `OpenMMRunner`. **Distinct images** (`openmm-amber-minimize:1.1.0`, `-relax:1.1.0`, `-md-simulate:1.1.0`) and **distinct categories**: minimize/relax = `SCORING`, md_simulate = `SIMULATION`.
+
+**Dispatch:** `variant_cfg = _VARIANT_CONFIG[self.tool_name]` (openmm.py:169, 182). The key branch is `if variant_cfg.get("produces_trajectory")` (openmm.py:171, 184) — only `openmm_md_simulate` sets it (openmm.py:80). `_VARIANT_CONFIG` (openmm.py:44-101) additionally holds many `"default_*"` keys that are auto-flattened into config.
+
+**Schemas — differ by variant (this is the important one alongside esm_if1/antifold):** minimize/relax use `ScoringInput`/`ScoringOutput`; md_simulate uses `SimulationInput`/`SimulationOutput`. `prepare_workspace` asserts the type per branch (openmm.py:171-178).
+
+**config.json (openmm.py:190-289):** writes `"protocol"` (`amber_minimize`/`amber_relax`/`md_simulate`) — the mode field, again **named `protocol`, no `mode`/`variant`/`checkpoint`**. Then the notable loop: `for key, default in variant_cfg.items(): if key.startswith("default_"): config[key.removeprefix("default_")] = extra.get(param_name, default)` (openmm.py:211-214, 275-278) — variant defaults get materialized into config. md_simulate additionally allows `n_steps` (openmm.py:281-282). Flat-merge minus the large `_CONSUMED_EXTRA_KEYS` (openmm.py:105-142).
+
+**parse_output (openmm.py:180-186):** branches on `produces_trajectory` → `_parse_simulation_output` (`trajectory_path`, `energy_timeseries`, `summary` → `SimulationOutput`) vs `_parse_scoring_output` (`scores` → `ScoringOutput`).
+
+## 6. ComplexaRunner — `src/autobio/tools/complexa.py`
+
+**Registration:** 3 flat entries (complexa.py:368-432): `complexa`, `complexa_ligand`, `complexa_ame`, all → `ComplexaRunner`, all `category=STRUCTURE_DESIGN`, **all share image `complexa:2.0.0`**.
+
+**Dispatch:** `variant_cfg = _VARIANT_CONFIG[self.tool_name]` (complexa.py:137). `_VARIANT_CONFIG` (complexa.py:45-64) → `{variant, pipeline_config, ckpt_name, ae_ckpt_name}`.
+
+**Schemas:** identical for all 3 — `StructureDesignInput` / `StructureDesignOutput`.
+
+**config.json (complexa.py:140-156):** This is **the richest variant descriptor** — writes `"variant"` (`protein_binder`/`ligand_binder`/`ame`), `"pipeline_config"`, **`"ckpt_name"` and `"ae_ckpt_name"` (per-variant checkpoints)**, plus `"weights_dir"`. So Complexa already sends both an explicit `variant` key **and** per-variant checkpoint names to the container. Flat-merges `extra` (its `_CONSUMED_EXTRA_KEYS` is empty, complexa.py:68). (Note: a per-run `"mode": "generate"|"design"` is not set by the runner; it is expected to arrive via `extra` per the notes at complexa.py:265.)
+
+**parse_output (complexa.py:158-187):** single implementation, no branching.
+
+## 7. FreeSASARunner — `src/autobio/tools/freesasa.py`
+
+**Registration:** 2 flat entries (freesasa.py:226-263): `freesasa_bsa`, `freesasa_sasa`, both → `FreeSASARunner`, both `category=SCORING`, **share image `freesasa:2.2.1`**.
+
+**Dispatch:** simple string equality, no config dict: `is_bsa = self.tool_name == "freesasa_bsa"` (freesasa.py:67), threaded into `_validate_inputs(..., is_bsa=is_bsa)` (freesasa.py:70, 125).
+
+**Schemas:** identical — `ScoringInput` / `ScoringOutput` for both.
+
+**config.json (freesasa.py:79-97):** writes explicit `"mode": "bsa" | "sasa"` (line 80). If BSA, adds `"partner1"`/`"partner2"` (from `extra`). **No `variant`/`checkpoint`** (CPU, no weights). Flat-merges `extra` minus `_CONSUMED_EXTRA_KEYS` (freesasa.py:35-43).
+
+**parse_output (freesasa.py:99-120):** single implementation, no branching. Note it does **not** resolve/emit `structure_path` (SASA/BSA produce no structure), unlike Rosetta/EvoEF2/OpenMM.
+
+## 8. ESM-IF1 — `src/autobio/tools/esm_if1.py` (TWO runner classes)
+
+**Registration:** 2 flat entries (esm_if1.py:184-226): `esm_if1` → `ESMIF1Runner`, `esm_if1_score` → `ESMIF1ScoreRunner` (tools/__init__.py:50-51). **Share image `esm-if1:1.0.0`**. **Categories differ**: `esm_if1`=`INVERSE_FOLDING`, `esm_if1_score`=`SCORING`.
+
+**Dispatch:** **none inside the classes** — there is no `self.tool_name` branching. Each class hard-codes its behavior. `mode` is a literal per class.
+
+**Schemas — differ by class:** `ESMIF1Runner` → `InverseFoldingInput`/`InverseFoldingOutput`; `ESMIF1ScoreRunner` → `ScoringInput`/`ScoringOutput`.
+
+**config.json:** `ESMIF1Runner` writes `"mode": "design"` (esm_if1.py:66) plus `num_sequences`, `temperature`, optional `chains_to_design`/`fixed_positions`. `ESMIF1ScoreRunner` writes `"mode": "score"` (esm_if1.py:132) plus `sequences`. **No `variant`/`checkpoint`.** Both use `config.update(input_data.extra)` — **merges ALL extra keys (no `_CONSUMED_EXTRA_KEYS` filtering)**, unlike the single-class runners above.
+
+**parse_output:** separate per class — design reads `data["designed_sequences"]` → `InverseFoldingOutput`; score reads `data["scores"]` → `ScoringOutput`.
+
+## 9. AntiFold — `src/autobio/tools/antifold.py` (TWO runner classes)
+
+**Registration:** 2 flat entries (antifold.py:212-255): `antifold` → `AntiFoldRunner`, `antifold_score` → `AntiFoldScoreRunner` (tools/__init__.py:33-34). **Share image `antifold:1.0.0`**. **Categories differ**: `antifold`=`INVERSE_FOLDING`, `antifold_score`=`SCORING`.
+
+**Dispatch:** **none inside the classes** — no `self.tool_name` branching; behavior hard-coded per class. Shared module-level helper `_validate_chain_ids` (antifold.py:48-57) called by both.
+
+**Schemas — differ by class:** `AntiFoldRunner` → `InverseFoldingInput`/`InverseFoldingOutput`; `AntiFoldScoreRunner` → `ScoringInput`/`ScoringOutput`.
+
+**config.json:** `AntiFoldRunner` writes `"mode": "design"` (antifold.py:91) + `num_sequences`, `temperature`; **deliberately does NOT map `chains_to_design`/`fixed_positions`** (comment antifold.py:88-89) — antibody params come via `extra`. `AntiFoldScoreRunner` writes `"mode": "score"` (antifold.py:157) + `sequences`. **No `variant`/`checkpoint`.** Both use `config.update(input_data.extra)` (full merge, no consumed-key filtering).
+
+**parse_output:** separate per class — same shape as ESM-IF1 (design→`InverseFoldingOutput`, score→`ScoringOutput`).
+
+---
+
+# Pattern inventory (for your refactor)
+
+**A. One runner class, N flat names, dispatch via a module-level dict keyed on `self.tool_name`:**
+- `RosettaRunner` — `_VARIANT_CONFIG` (4 names), key = `protocol`/`binary`
+- `EvoEF2Runner` — `_VARIANT_CONFIG` (3 names), key = `command`
+- `ComplexaRunner` — `_VARIANT_CONFIG` (3 names), key = `variant` (+ per-variant `ckpt_name`)
+- `OpenMMRunner` — `_VARIANT_CONFIG` (3 names), key = `protocol`; **also switches input+output schema** and category
+- `AntibodyLMRunner` — `_MODEL_CONFIG` (12 names, pairs duplicated) + suffix check; key = `mode` (pll/embedding); **switches output schema**
+- `ESMRunner` — `_ESM1B_CONFIG`/`_ESM2_CHECKPOINTS`, dispatch via `self.tool_name == "esm1b"` + `extra["checkpoint"]` (2 names)
+
+**B. One runner class, dispatch via plain string equality (no config dict):**
+- `FreeSASARunner` — `self.tool_name == "freesasa_bsa"` (2 names), key = `mode` (bsa/sasa)
+
+**C. Separate runner class per flat name (no in-class `self.tool_name` dispatch); differ in schema AND category:**
+- ESM-IF1: `ESMIF1Runner` + `ESMIF1ScoreRunner`, `mode` literal design/score
+- AntiFold: `AntiFoldRunner` + `AntiFoldScoreRunner`, `mode` literal design/score
+
+**Cross-cutting inconsistencies worth normalizing during the refactor:**
+1. The container-facing "which mode" key has **no common name**: `mode` (antibody_lm, freesasa, esm_if1, antifold), `protocol` (rosetta, openmm), `binary` (rosetta), `command` (evoef2), `variant`+`ckpt_name` (complexa), and **nothing** for ESM (folded into `model_name`).
+2. Only **Complexa** sends explicit per-variant `checkpoint` (`ckpt_name`/`ae_ckpt_name`). AntibodyLM sends `model_name`; ESM resolves `extra["checkpoint"]` → `model_name` and drops the raw key. Rosetta/EvoEF2/FreeSASA/OpenMM have no weights.
+3. Image-per-mode varies: **one image, many modes** (esm, evoef2, complexa, freesasa, esm_if1, antifold); **one image per mode** (rosetta, openmm); **image per model but shared across the model's two modes** (antibody_lm).
+4. `extra` handling splits into two camps: single-class runners use `_CONSUMED_EXTRA_KEYS` filtering; the four separate-class runners (esm_if1, antifold) use unfiltered `config.update(input_data.extra)`.
+5. Schema variance across modes exists only in **OpenMM** (single class) and **ESM-IF1/AntiFold** (separate classes) for input+output; **AntibodyLM** varies only the output schema. All other multi-name runners keep one input+output schema across modes.</result>
+<usage><subagent_tokens>86140</subagent_tokens><tool_uses>15</tool_uses><duration_ms>151094</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a377e84948ff28426</task-id>
+<tool-use-id>toolu_012qY6nDdjquvFKPHc4AoA3d</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a377e84948ff28426.output</output-file>
+<status>completed</status>
+<summary>Agent "Map CLI, schemas, sequences, tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have a complete picture. Here is the concrete report.
+
+---
+
+# Autobio Refactor Investigation Report
+
+## 1. CLI (`src/autobio/cli/`)
+
+The CLI is Typer-based. `main.py` wires up six commands and — importantly — triggers tool registration via a side-effect import.
+
+`src/autobio/cli/main.py:7-25`:
+```python
+import autobio.tools  # noqa: F401 -- trigger tool registration
+...
+app.command("list")(list_tools_cmd)
+app.command("info")(info_cmd)
+app.command("run")(run_cmd)
+app.command("result")(result_cmd)
+app.command("pull")(pull_cmd)
+app.command("images")(images_cmd)
+```
+
+### `list` / `info` / `run` / `result`
+
+- **`list`** (`src/autobio/cli/list.py:13-25`): thin wrapper; calls `list_tools(category=...)` then `format_tool_list(tools, fmt)`.
+- **`info`** (`src/autobio/cli/info.py:13-26`): `get_tool(tool)` (KeyError → exit 1) then `format_tool_info(tool, entry, fmt)`.
+- **`run`** (`src/autobio/cli/run.py:17-71`): see below.
+- **`result`** (`src/autobio/cli/result.py:14-34`): builds a `Workspace(workspace_dir)`, checks `workspace.result_path.exists()`, calls `workspace.read_result()`, then `format_workspace_result(run_result, fmt)`.
+
+### How `info` produces JSON (exact code path)
+
+`info_cmd` → `format_tool_info` in `src/autobio/cli/formatters.py:77-107`. The `model_json_schema()` call is here:
+
+```python
+def format_tool_info(name, entry, fmt=OutputFormat.TABLE) -&gt; str:
+    input_schema = entry.input_schema.model_json_schema()   # &lt;-- line 88
+
+    if fmt == OutputFormat.JSON:
+        data: dict[str, object] = {
+            "name": name, "category": entry.category.value,
+            "image_tag": entry.image_tag, "requires_gpu": entry.requires_gpu,
+            "gpu_count": entry.gpu_count, "default_timeout": entry.default_timeout,
+            "supports_batch": entry.supports_batch, "version": entry.version,
+            "description": entry.description, "input_schema": input_schema,
+        }
+        if entry.input_format:
+            data["input_format"] = list(entry.input_format)
+        if entry.notes:
+            data["notes"] = list(entry.notes)
+        return json.dumps(data, indent=2)
+```
+
+`model_json_schema()` is called unconditionally at line 88 (used by both JSON and TABLE paths — the table renders it at `formatters.py:127`). Only the **input** schema is emitted; `output_schema` is never surfaced by `info`.
+
+### How `run` loads `--config` and constructs the input model
+
+`src/autobio/cli/run.py:41-71`:
+```python
+config_data = json.loads(config.read_text())          # OSError/JSONDecodeError -&gt; exit 1
+autobio_config = AutobioConfig.resolve()
+runner = get_runner(tool, autobio_config)             # KeyError -&gt; exit 1
+input_data = runner.entry.input_schema.model_validate(config_data)  # any Exception -&gt; exit 1
+output = runner.run(input_data, gpu=gpu, timeout=timeout, output_dir=output_dir)  # AutobioError -&gt; exit 1
+output_dict = output.model_dump(mode="json")
+typer.echo(format_run_result(output_dict, fmt))
+```
+
+Key mechanics: the input model is built by `runner.entry.input_schema.model_validate(config_data)` — the whole config JSON is validated against the tool's `input_schema` (a `BaseInput` subclass). Note `run` resolves the runner **first**, then validates via `runner.entry.input_schema` (not via `get_tool`). `gpu` is passed through as a raw string (e.g. `"auto"`, `"0,1"`); the runner's `_resolve_gpu` interprets it.
+
+### What `list --format json` outputs per tool
+
+`src/autobio/cli/formatters.py:42-53` — exactly five keys per tool, sorted by name:
+```python
+{"name": name, "category": entry.category.value, "gpu": entry.requires_gpu,
+ "version": entry.version, "description": entry.description}
+```
+Note: `gpu` is a bool (not `requires_gpu`), and `input_format`/`notes`/`image_tag`/`gpu_count`/`supports_batch`/`default_timeout` are NOT in the list output — those only appear in `info`.
+
+### Is the CLI ML-heavy or registry-reads-only?
+
+**Registry-reads-only.** No ML libraries are imported anywhere in `src/autobio/` — `grep` for `torch`/`numpy`/`transformers`/`tensorflow` returns nothing. The `import autobio.tools` in `main.py:7` loads all runner modules, but those modules (e.g. `mpnn.py:13-24`) only import stdlib (`json`, `shutil`), `pydantic` schemas, the registry, and `ToolRunner`. Runners shell out to Docker via `python-on-whales`; all heavy compute lives in the containers. So importing the CLI just populates `TOOL_REGISTRY` and `TOOL_RUNNERS` dicts.
+
+---
+
+## 2. Schemas (`src/autobio/schemas/`)
+
+### Every schema module and its Input/Output classes
+
+| Module | Input class | Output + record classes |
+|---|---|---|
+| `base.py` | `BaseInput` (has `extra`) | `BaseOutput` (has `metadata`, `raw_output_path`), `RunMetadata` |
+| `antibody.py` | `AntibodyInput` | `AntibodyPLLOutput`; records: `AntibodySequence`, `SequencePLL` |
+| `embedding.py` | `EmbeddingInput` | `EmbeddingOutput`; record: `SequenceEmbedding` |
+| `structure_prediction.py` | `StructurePredictionInput` | `StructurePredictionOutput`; records: `PredictedStructure`, `ConfidenceMetrics` |
+| `inverse_folding.py` | `InverseFoldingInput` | `InverseFoldingOutput`; record: `DesignedSequence` |
+| `scoring.py` | `ScoringInput` | `ScoringOutput`; record: `ScoredStructure` |
+| `structure_design.py` | `StructureDesignInput` | `StructureDesignOutput`; record: `DesignedStructure` |
+| `simulation.py` | `SimulationInput` | `SimulationOutput`; records: `EnergyRecord`, `SimulationSummary` |
+| `binding_affinity.py` | `BindingAffinityInput` | `BindingAffinityOutput`; record: `BindingAffinityPrediction` |
+| `protein_binding_affinity.py` | `ProteinBindingAffinityInput` | `ProteinBindingAffinityOutput`; record: `ProteinBindingAffinityPrediction` |
+
+All are re-exported from `src/autobio/schemas/__init__.py` (the `__all__` there is the canonical public list).
+
+### Antibody sequence representation
+
+`src/autobio/schemas/antibody.py:17-38` — `AntibodySequence(BaseModel)`:
+```python
+id: str
+heavy_chain: str | None = None   # VH
+light_chain: str | None = None   # VL
+
+@model_validator(mode="after")
+def _at_least_one_chain(self) -&gt; AntibodySequence:
+    if self.heavy_chain is None and self.light_chain is None:
+        raise ValueError(f"Sequence '{self.id}': at least one of heavy_chain or light_chain is required.")
+```
+`AntibodyInput` (`antibody.py:41-65`) carries `sequences: list[AntibodySequence]`, plus optional `layer: int | None` and `pooling: str | None`.
+
+### How generic sequence input is typed today
+
+Plain `dict[str, str]` (chain/seq-id → sequence), in multiple places:
+- `EmbeddingInput.sequences: dict[str, str]` — `embedding.py:15`
+- `StructurePredictionInput.sequences: dict[str, str]` — `structure_prediction.py:15`
+- `ScoringInput.sequences: dict[str, str] | None` — `scoring.py:17`
+- `SimulationInput.sequences: dict[str, str] | None` — `simulation.py:38`
+- `InverseFoldingOutput.native_sequence` / `DesignedSequence.sequence` also use `dict[str, str]`.
+
+So antibody tools use a structured `list[AntibodySequence]`, while everything else uses the untyped `dict[str, str]`. This is the divergence a refactor would likely target.
+
+### How `extra: dict[str, Any]` is used
+
+Defined once in `src/autobio/schemas/base.py:30-36`:
+```python
+extra: dict[str, Any] = Field(default_factory=dict,
+    description="Tool-specific parameters passed through to the container. "
+                "Keys and values are forwarded as-is into config.json.")
+```
+Runners read tool-specific params out of `extra` and flat-merge them into `config.json`, excluding a per-runner `_CONSUMED_EXTRA_KEYS` set. Examples:
+- `rosetta.py:85-87` consumes `{"mutations","chains","chains_to_move","resfile","nstruct","score_function"}`; merge loop at `rosetta.py:150-152`.
+- `antibody_lm.py:38` consumes `{"per_position"}`; merge loop at `antibody_lm.py:240-242`.
+- `esm.py:102-104` merge loop; `baddg.py:82` / `stabddg.py:83` read `extra["chains"]`; `chai.py:81` reads `extra["chai_fasta"]`; `openmm.py:282` reads `extra["n_steps"]`.
+
+### Do any schemas promote fields beyond `extra`?
+
+Yes — several Input schemas add first-class typed fields on top of `BaseInput.extra`, rather than routing everything through `extra`:
+- `structure_design.py:21-39`: `input_structures`, `design_specs: dict[str, dict[str, Any]]`, `n_batches`.
+- `inverse_folding.py:15-34`: `structure_path`, `chains_to_design`, `num_sequences`, `temperature`, `fixed_positions`.
+- `binding_affinity.py:20-34`: `structure_path`, `heavy_chain`, `light_chain`, `antigen_chains`.
+- `protein_binding_affinity.py:22-40`: `structure_path`, `chain_selection`, `temperature`.
+- `antibody.py`, `embedding.py`, `scoring.py`, `simulation.py`, `structure_prediction.py` all promote `sequences`/`structure_path` etc.
+
+So the pattern is mixed: stable, category-level params are promoted to typed fields; tool-specific knobs stay in `extra`. Note `simulation.py:13-35` documents ~20 common `extra` keys (temperature, pressure, force_field, etc.) purely in the docstring — they are NOT promoted to fields.
+
+### Does anything use `json_schema_extra`?
+
+**No.** `grep -rn "json_schema_extra" src/ tests/` returns zero hits. No schema currently attaches JSON-schema metadata via `json_schema_extra` (or `model_config`/`ConfigDict` extras).
+
+---
+
+## 3. `utils/sequences.py`
+
+Pure-Python, no deps. Alphabet constants at `sequences.py:14-17` (`AMINO_ACIDS`, `ANTIBODY_AMINO_ACIDS` = standard + `BOUXZ`, `DNA_BASES`, `RNA_BASES`).
+
+- **`parse_fasta(path: Path) -&gt; dict[str, str]`** (`sequences.py:26-58`): opens the file, strips lines, skips blanks, treats `&gt;`-prefixed lines as headers (leading `&gt;` stripped), concatenates multi-line sequences. Returns insertion-ordered `{header: sequence}`.
+- **`write_fasta(sequences: dict[str, str], path: Path) -&gt; None`** (`sequences.py:61-72`): writes `&gt;{header}` then wraps sequence at `_FASTA_LINE_WIDTH = 80` (`sequences.py:23`) chars per line.
+- **`validate_protein_sequence(seq: str) -&gt; bool`** (`sequences.py:80-82`): `len(seq) &gt; 0 and set(seq.upper()) &lt;= AMINO_ACIDS`.
+- Also present: `validate_antibody_sequence` (`:85-91`, allows `BOUXZ`) and `validate_nucleotide_sequence(seq, molecule="DNA")` (`:94-105`).
+
+### How runners call `write_fasta` to stage sequences
+
+Only two runners use `write_fasta`, both writing the `dict[str,str]` straight into the workspace `inputs/` dir, then referencing the container-internal path in `config.json`:
+
+- `src/autobio/tools/esm.py:89`:
+  ```python
+  write_fasta(input_data.sequences, workspace.inputs_dir / "sequences.fasta")
+  ...
+  "input_fasta": "/workspace/inputs/sequences.fasta",   # esm.py:94
+  ```
+- `src/autobio/tools/esmfold.py:63`: same pattern.
+
+Antibody LM runners do NOT use `write_fasta` — because their input is `list[AntibodySequence]`, `antibody_lm.py:213-222` serializes to `sequences.json` (list of `{id, heavy_chain, light_chain}`) instead. Structure/complex runners (rosetta, chai, mpnn, etc.) `shutil.copy2` structure files rather than writing FASTA (e.g. `rosetta.py:125`). So FASTA staging is only for the two protein-sequence embedding/folding tools that take `dict[str,str]`.
+
+---
+
+## 4. Tests structure
+
+General layout: `tests/unit/` (60+ files, mocked) and `tests/integration/` (one per tool, real containers). Shared fixtures in `tests/conftest.py:14-30` (`tmp_workspace`, `sample_config`, `monkeypatch_no_gpu`).
+
+### `tests/unit/test_registry.py`
+
+Tests the registry data model, not real tools. Defines local `_MockInput`/`_MockOutput` (BaseInput/BaseOutput subclasses) and a `_make_entry()` helper (`test_registry.py:21-45`). An **autouse fixture `_clean_registry`** (`:143-150`) snapshots `dict(TOOL_REGISTRY)`, clears it, yields, then restores — so tests run against an empty registry. Asserts:
+- `ToolCategory` values/count (6 members) and that members are `str`.
+- `ToolEntry` construction, `notes`/`input_format` default to `()` and populate correctly.
+- `get_tool` success + KeyError messages ("Unknown tool", lists available, `(none)` when empty).
+- `list_tools` returns all / filters by category / returns a copy (mutation doesn't leak into `TOOL_REGISTRY`).
+
+### `tests/unit/test_cli.py`
+
+Uses Typer's `CliRunner` (`test_cli.py:18`) to invoke `app`. Same `_MockInput`/`_MockOutput`/`_make_entry` + `_clean_registry` autouse fixture (`:69-75`). Test classes: `TestListCommand`, `TestInfoCommand`, `TestResultCommand`, `TestRunCommand`, `TestImagesCommand`, `TestPullCommand`, `TestHelpOutput`. Assertions are **structural, not snapshot** — e.g. `json.loads(result.output) == []`, `parsed[0]["name"] == "mock-tool"`, `"input_schema" in parsed`, exit codes. `run` tests patch `autobio.cli.run.get_runner` and hand back a `MagicMock` runner with `.entry.input_schema = _MockInput` and `.run.return_value = mock_output` (`:208-227`), and verify gpu/timeout forwarding via `mock_runner.run.call_args.kwargs` (`:280-283`). `images`/`pull` tests patch `autobio.cli.images.ContainerManager`.
+
+### Variant-dispatch tests: `test_antibody_lm.py` and `test_rosetta.py`
+
+Both build the real runner with Docker/GPU patched, then assert the dispatch produces the right `config.json`.
+
+- Runner construction helper (identical shape in both), e.g. `test_antibody_lm.py:34-39`:
+  ```python
+  def _make_runner(tool_name, config):
+      with (patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager")):
+          return AntibodyLMRunner(tool_name, config)
+  ```
+- **antibody_lm** dispatch is keyed on `self.tool_name` → `_MODEL_CONFIG` (`antibody_lm.py:56-187`) and `_is_pll_mode()` = `tool_name.endswith("_pll")` (`antibody_lm.py:255-257`). Tests parametrize tool_name → expected model_name / model_family / chain_separator (`test_antibody_lm.py:128-203`), assert `mode` embedding vs pll (`:156-170`), per-model layer bounds (currab 33, balm 24, ablang2 12, antiberta2 16 — `:337-397`), cache paths (`:408-437`), and registration: every one of the 12 tools maps to `AntibodyLMRunner` in `TOOL_RUNNERS` and has the right input/output schema (`:605-663`).
+- **rosetta** dispatch is keyed on `self.tool_name` → `_VARIANT_CONFIG` (`rosetta.py:46-81`). `test_rosetta.py:85-87` derives its parametrization lists directly from `_VARIANT_CONFIG.keys()` and the `requires_mutations` flag. Tests assert per-variant binary/protocol/nstruct/xml_path, `extra` merge vs consumed keys, DDG mutation/resfile handling, and that all four tools map to `RosettaRunner`.
+
+Both dispatch mechanisms are runtime dicts inside the runner module — there is no per-variant subclass. A refactor changing tool_name→config mapping must keep these dicts (`_MODEL_CONFIG`, `_VARIANT_CONFIG`) and the `TOOL_RUNNERS` table in `tools/__init__.py:32-79` in sync.
+
+### Snapshot-style tests of `info`/`list` JSON?
+
+**None.** No syrupy/`.ambr`/snapshot fixtures exist (the only "snapshot" hits are the registry snapshot/restore fixture comments). `info`/`list` JSON is checked by asserting individual parsed keys, primarily in `tests/unit/test_formatters.py` (`TestFormatToolList` `:88-122`, `TestFormatToolInfo` `:130-251`). Notably `test_formatters.py:131-139` asserts `parsed["input_schema"]["properties"]` contains `"sequences"` — i.e. it inspects the `model_json_schema()` output structurally. If a refactor changes schema field names or the `model_json_schema()` shape, these are the assertions that will break.
+
+### General pattern: how unit tests mock Docker/GPU
+
+Two layers:
+1. **Constructor-level** (most common): patch `autobio.tools.base.ContainerManager` and `autobio.tools.base.GPUManager` as context managers around runner instantiation (`ToolRunner.__init__` creates `self._container` / `self._gpu` at `base.py:43-44`). Used for prepare_workspace / parse_output tests that never launch a container. Seen in `test_antibody_lm.py:35-38`, `test_rosetta.py:36-39`, `test_tool_runner.py:92-102`.
+2. **Behavior-level** for full `run()` lifecycle (`test_tool_runner.py:264-454`): the fixture (`:89-103`) installs `MagicMock` for both managers, sets `mock_gm.allocate.return_value = [0]`; individual tests set `runner._container.run.side_effect = fake_container_run`, where `fake_container_run` writes a `result.json` into the workspace (`_write_success_result`/`_write_failure_result` at `:235-261`) and returns a `ContainerResult`. This exercises prepare → run → read_result → parse_output → metadata without Docker. GPU release, temp-workspace cleanup, and timeout-forwarding are all verified via mock call assertions.
+
+There is also `tests/conftest.py:26-30` `monkeypatch_no_gpu` which patches `autobio.core.gpu.GPUManager._discover_gpus` to return `[]` for tests that want the real GPUManager with no devices. CLI tests instead patch at the `autobio.cli.*` import site (e.g. `autobio.cli.run.get_runner`, `autobio.cli.images.ContainerManager`).
+
+---
+
+## Refactor-relevant summary
+
+- The single `model_json_schema()` call that powers `info` JSON is `formatters.py:88`; nothing consumes `json_schema_extra` yet, so adding it to fields is a safe, additive way to enrich `info` output.
+- Generic sequence input is untyped `dict[str,str]` in 4 Input schemas; antibody input is the only structured (`list[AntibodySequence]`) representation — the natural unification target.
+- `extra` is the universal passthrough; each runner defines `_CONSUMED_EXTRA_KEYS` and flat-merges the rest into `config.json`. Promoting an `extra` key to a real field requires adding it to `_CONSUMED_EXTRA_KEYS` too (or it will double-write).
+- Variant dispatch = tool_name-keyed dicts inside runner modules (`_MODEL_CONFIG`, `_VARIANT_CONFIG`) + the `TOOL_RUNNERS` map in `tools/__init__.py`; kept in sync by parametrized registration tests.
+- Tests are structural (no snapshots); the fragile spots for a schema refactor are `test_formatters.py` (asserts `input_schema.properties.sequences`) and the parametrized dispatch tests in `test_antibody_lm.py` / `test_rosetta.py`.</result>
+<usage><subagent_tokens>117473</subagent_tokens><tool_uses>38</tool_uses><duration_ms>188029</duration_ms></usage>
+</task-notification>
+
+---
+
+approve the design, write the spec

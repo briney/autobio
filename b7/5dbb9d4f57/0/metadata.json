@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "b75dbb9d4f57",
+  "session_id": "bd522b89-efe2-4c84-9179-69456ba55dac",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T19:47:38.826134881Z",
+  "branch": "docs/refactor-design",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/superpowers/specs/2026-07-02-autobio-tools-modes-refactor-design.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8[1m]",
+  "turn_id": "06f5d6cda629",
+  "token_usage": {
+    "input_tokens": 8748,
+    "cache_creation_tokens": 135238,
+    "cache_read_tokens": 2166508,
+    "output_tokens": 36587,
+    "api_call_count": 34
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Kwssgk2fB2gcaevHX7SoL3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "06f5d6cda629",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 19,
+        "end": 20,
+        "entry_ids": [
+          "2696edb5-9eb8-4ced-adfb-428acdb124b3"
+        ],
+        "tool_use_id": "toolu_01Kwssgk2fB2gcaevHX7SoL3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Kwssgk2fB2gcaevHX7SoL3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T19:47:38.788791412Z",
+    "agent_lines": 393,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 393,
+    "total_lines_changed": 393,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    }
+  ]
+}
