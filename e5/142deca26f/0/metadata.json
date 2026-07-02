@@ -1,0 +1,259 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "e5142deca26f",
+  "session_id": "bd522b89-efe2-4c84-9179-69456ba55dac",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T21:07:43.276858525Z",
+  "branch": "feature/tools-modes-foundation",
+  "checkpoints_count": 18,
+  "save_step_count": 7,
+  "files_touched": [
+    "docs/superpowers/plans/2026-07-02-autobio-tools-modes-foundation.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8[1m]",
+  "turn_id": "c5cc63bd9871",
+  "checkpoint_transcript_start": 204,
+  "transcript_lines_at_start": 204,
+  "token_usage": {
+    "input_tokens": 4901,
+    "cache_creation_tokens": 335234,
+    "cache_read_tokens": 22875651,
+    "output_tokens": 88592,
+    "api_call_count": 102
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Kwssgk2fB2gcaevHX7SoL3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c5cc63bd9871",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 19,
+        "end": 20,
+        "entry_ids": [
+          "2696edb5-9eb8-4ced-adfb-428acdb124b3"
+        ],
+        "tool_use_id": "toolu_01Kwssgk2fB2gcaevHX7SoL3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Kwssgk2fB2gcaevHX7SoL3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01D7vDyqmv9xAUSmtzN5DeYZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:writing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c5cc63bd9871",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 183,
+        "end": 184,
+        "entry_ids": [
+          "c743dbfd-998c-4ab1-b8a3-52230acf81d2"
+        ],
+        "tool_use_id": "toolu_01D7vDyqmv9xAUSmtzN5DeYZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01D7vDyqmv9xAUSmtzN5DeYZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:writing-plans",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01DfjZ7uX3WtAfwW69mMsEWW",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:subagent-driven-development"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c5cc63bd9871",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 210,
+        "end": 211,
+        "entry_ids": [
+          "d1b643d7-735b-4687-8c34-fb11139483b9"
+        ],
+        "tool_use_id": "toolu_01DfjZ7uX3WtAfwW69mMsEWW"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01DfjZ7uX3WtAfwW69mMsEWW"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:subagent-driven-development",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01CDHtcqA5LcJLZuXujYa9pJ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:using-git-worktrees"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c5cc63bd9871",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 228,
+        "end": 229,
+        "entry_ids": [
+          "77d1da54-381b-48b3-8ed3-ac6e0c0868e3"
+        ],
+        "tool_use_id": "toolu_01CDHtcqA5LcJLZuXujYa9pJ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CDHtcqA5LcJLZuXujYa9pJ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:using-git-worktrees",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 22
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T21:07:43.216071893Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 8,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 8,
+    "total_lines_changed": 8,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1066,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1066,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1066,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1066,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1066,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1066,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1066,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    }
+  ]
+}

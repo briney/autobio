@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "e5142deca26f",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-foundation",
+  "checkpoints_count": 18,
+  "files_touched": [
+    "docs/superpowers/plans/2026-07-02-autobio-tools-modes-foundation.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e5/142deca26f/0/metadata.json",
+      "transcript": "/e5/142deca26f/0/full.jsonl",
+      "compact_transcript": "/e5/142deca26f/0/transcript.jsonl",
+      "content_hash": "/e5/142deca26f/0/content_hash.txt",
+      "prompt": "/e5/142deca26f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4901,
+    "cache_creation_tokens": 335234,
+    "cache_read_tokens": 22875651,
+    "output_tokens": 88592,
+    "api_call_count": 102
+  }
+}

@@ -1,0 +1,485 @@
+subagent-driven
+
+---
+
+<task-notification>
+<task-id>a847430bf3c399a28</task-id>
+<tool-use-id>toolu_01D4d7WLqt9HHqWKc3uaLFAR</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a847430bf3c399a28.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 1: catalog Tool/Mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+Commit: `9a93d6c` — "catalog: add Tool/Mode dataclasses and catalog registry"
+Test summary: 8/8 new catalog tests passing, 26/26 combined with test_registry.py, full suite (1339 tests) green with no failures — output pristine
+Concern: brief showed `ToolCategory` imported at module level, but project's ruff `TCH` config flagged it as annotation-only (TC001); moved it into the `TYPE_CHECKING` block alongside `BaseInput`/`BaseOutput` to get a genuinely clean lint pass — zero behavior change, documented in report
+Report: `/home/briney/git/autobio/.superpowers/sdd/task-1-report.md`</result>
+<usage><subagent_tokens>53928</subagent_tokens><tool_uses>30</tool_uses><duration_ms>258769</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a1b1833ec627c7d8f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a1b1833ec627c7d8f.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 1 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+✅ Spec compliant
+
+Verified against the brief's "Produces" list line-by-line:
+- `Mode` frozen dataclass — fields/order/defaults match exactly (`src/autobio/core/catalog.py:37-48`).
+- `Tool` frozen dataclass — fields/order/defaults match exactly (`src/autobio/core/catalog.py:52-66`); `__post_init__` raises `ValueError` for empty `modes` ("at least one mode", checked first) and for `default_mode not in modes` ("default_mode" in message), in the order the brief's test suite requires (`src/autobio/core/catalog.py:68-75`).
+- `CATALOG: dict[str, Tool] = {}` module-global, empty at import (`src/autobio/core/catalog.py:78`).
+- `register` raises `ValueError` on duplicate name (`src/autobio/core/catalog.py:82-93`).
+- `get_tool` raises `KeyError` listing available tool names, `from None` re-raise (`src/autobio/core/catalog.py:96-112`).
+- `list_tools(category=None)` returns a `dict(CATALOG)` copy; filters by primary-or-mode-override category via `tool_categories` (`src/autobio/core/catalog.py:124-138`).
+- `tool_categories` returns insertion-ordered union (primary first, then dedup'd mode overrides) (`src/autobio/core/catalog.py:115-121`).
+- Test file `tests/unit/test_catalog.py` is byte-for-byte the brief's Step 1 code — all 8 cases present, exercising real dataclass/dict behavior with no mocks.
+- Additive-only constraint respected: diff touches only the two new files; `core/registry.py`, `tools/`, `cli/` untouched.
+- Canonical `ToolCategory` values: independently confirmed unchanged and correct in `src/autobio/core/registry.py:14-21` (`STRUCTURE_PREDICTION="structure-prediction"`, `EMBEDDING="embedding"`, `INVERSE_FOLDING="inverse-folding"`, `SCORING="scoring"`, `STRUCTURE_DESIGN="structure-design"`, `SIMULATION="simulation"`) — this file is untouched by the diff, so the task correctly left it alone.
+
+On the reported deviation (moving `ToolCategory` import into the `TYPE_CHECKING` block instead of module scope): verified `pyproject.toml:48-58` does enable `"TCH"` (flake8-type-checking) in `[tool.ruff.lint].select`, so the lint failure the report describes is real, not invented. Verified `src/autobio/core/registry.py:7-9` already uses this exact pattern (`BaseInput`/`BaseOutput` under `TYPE_CHECKING`) for the identical reason — so the deviation makes `catalog.py` *more* consistent with the existing codebase convention than the brief's literal sample would have been. Since `from __future__ import annotations` is present (`src/autobio/core/catalog.py:26`), no annotation referencing `ToolCategory` is evaluated at runtime (dataclass field annotations, return annotations, and local-variable annotations are all deferred to strings), so this is behavior-neutral. Correctly judged and disclosed.
+
+### Strengths
+- `list_tools` reuses `tool_categories` rather than reimplementing the union/filter logic — good DRY (`src/autobio/core/catalog.py:138`).
+- Validation order in `Tool.__post_init__` is deliberately empty-check-first, which is exactly what makes both brief-mandated error messages distinguishable (`src/autobio/core/catalog.py:69-75`).
+- `get_tool`'s `KeyError` message degrades gracefully to `"(none)"` when the catalog is empty (`src/autobio/core/catalog.py:111`) — untested but harmless, sensible defensive polish.
+- Full TDD evidence (RED → GREEN → lint/format → regression run) is present and internally consistent with the diff.
+- Test isolation via autouse `_clean_catalog` fixture correctly snapshots/restores the module-global `CATALOG`, preventing cross-test and cross-suite pollution (`tests/unit/test_catalog.py:164-171`, mapped from diff).
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- `src/autobio/core/catalog.py:115-116` — `tool_categories` docstring is a bare one-liner while sibling functions (`register`, `get_tool`, `list_tools`) all carry full Google-style `Args`/`Returns` sections. The function has real branching logic (not a trivial getter), so the one-liner is a slight inconsistency in documentation depth within the same file. Add `Args:`/`Returns:` for consistency.
+- `src/autobio/core/catalog.py:63` (`modes: dict[str, Mode]` on a `frozen=True` dataclass) — `Tool` is unhashable because of this dict field even though it's declared frozen; not required by the brief or exercised by any test, but worth a one-line note if `Tool` is ever expected to go in a set/dict key later (e.g., a future "tools by category" index).
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** Every field, default, validation rule, and function behavior in the brief is implemented exactly as specified and covered by the (verbatim) brief-provided test suite; the additive-only boundary was respected with zero footprint outside the two new files; the one disclosed deviation is independently verified as correct, behavior-neutral, and more consistent with the existing codebase than the brief's literal sample.</result>
+<usage><subagent_tokens>51090</subagent_tokens><tool_uses>5</tool_uses><duration_ms>207011</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3f60fc6b8f64805d</task-id>
+<tool-use-id>toolu_01KmKAu4doSBLof576trERHM</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a3f60fc6b8f64805d.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 2: category taxonomy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+Commits created: `e3cc3cf` — "catalog: add category taxonomy display metadata"
+Test summary: 10/10 tests in `test_catalog.py` pass (8 pre-existing + 2 new); full suite 1341 passed, 121 skipped (docker/gpu-gated, pre-existing); ruff check/format and mypy all clean.
+Concerns: None.
+Report: `/home/briney/git/autobio/.superpowers/sdd/task-2-report.md`</result>
+<usage><subagent_tokens>43045</subagent_tokens><tool_uses>20</tool_uses><duration_ms>107178</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac88895a24c167268</task-id>
+<tool-use-id>toolu_017js9NFrFi4rsir2hGh7muS</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ac88895a24c167268.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 2 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: mypy clean, all 10 tests pass. Now compiling the review.
+
+### Spec Compliance
+- ✅ Spec compliant. `CategoryInfo` dataclass fields/defaults, `get_category_info`, and `list_categories` match the brief's produced interface exactly (`src/autobio/core/catalog.py:62-120`). All six `ToolCategory` members (`STRUCTURE_PREDICTION`, `STRUCTURE_DESIGN`, `INVERSE_FOLDING`, `EMBEDDING`, `SCORING`, `SIMULATION`) appear in `_CATEGORY_INFO` with unique orders 1–6 (`catalog.py:73-110`), confirmed against `registry.py:16-21`'s enum. Only `catalog.py` and `test_catalog.py` were touched — verified via `git diff 9a93d6c..e3cc3cf --stat`; `core/registry.py`, `tools/`, `cli/` untouched.
+- ✅ The Task-1 `TYPE_CHECKING` carry-forward risk was correctly handled: `from autobio.core.registry import ToolCategory` was promoted to a normal top-level import (`catalog.py:14`), leaving only the annotation-only `BaseInput`/`BaseOutput` import under `TYPE_CHECKING` (`catalog.py:16-17`). Verified the module imports cleanly and `_CATEGORY_INFO` construction at module load time does not raise `NameError`.
+- ✅ Tests added verbatim per brief, cover all-six-members/sorted/unique-order and single-entry lookup (`tests/unit/test_catalog.py:127-139`). Ran independently: 10/10 pass. Ran `ruff check`, `ruff format --check`, and `mypy` on both files myself — all clean, matching the report's claims.
+
+### Strengths
+- Import fix correctly diagnosed and applied; report's reasoning about the runtime `NameError` risk is technically accurate and independently verified.
+- `CategoryInfo` frozen for consistency with existing `Mode`/`Tool` dataclasses.
+- Tests are non-tautological: the "orders sorted and unique" and "set equality against `ToolCategory`" assertions genuinely catch hand-typing mistakes (duplicate/missing `order`, missing category entry) rather than just re-asserting the implementation.
+- No scope creep: no extra fields, no invented icon values, `_CATEGORY_INFO` kept private as specified.
+
+### Issues
+
+#### Minor (Nice to Have)
+- `catalog.py:113-115` — `get_category_info` does a raw `dict[category]` lookup with no error handling, unlike the sibling `get_tool` (`catalog.py:141-157`) in the same file, which wraps `KeyError` with a friendly message listing available tools. If a future `ToolCategory` member is added without a matching `_CATEGORY_INFO` entry, `get_category_info` would raise a bare `KeyError: &lt;ToolCategory.X&gt;` rather than an informative error — inconsistent with the module's own established pattern and with the user's standing feedback on failing fast with useful errors. Risk is mitigated by `test_list_categories_covers_all_members_sorted_by_order` (`tests/unit/test_catalog.py:127-132`), which would fail in CI the moment a new category is added without a corresponding entry, so this isn't a silent landmine — just a minor inconsistency. This exact code was specified verbatim in the brief (plan-mandated), so it's not an implementer deviation; noting for potential follow-up polish.
+- `tests/unit/test_catalog.py:124` — the new `from autobio.core.catalog import CategoryInfo, get_category_info, list_categories` import sits mid-file (after existing tests) rather than being merged into the top-of-file import block at line 7-15, requiring a `# noqa: E402` suppression. This was specified verbatim in the brief's step-1 test snippet (append-based authoring), so it's plan-mandated rather than an implementer choice, but it does leave the test file with a slightly unconventional import layout relative to the project's stated import-grouping conventions. Trivial fix would be folding the three names into the existing `from autobio.core.catalog import (...)` block at the top and dropping the noqa.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** Implementation matches the brief's interface exactly, correctly resolves the Task-1 `TYPE_CHECKING` carry-forward risk with sound reasoning verified independently, stays within the additive-only file scope, and is backed by non-tautological passing tests plus clean ruff/mypy. The two minor findings are brief-mandated artifacts, not implementer defects, and neither undermines trust in the code.</result>
+<usage><subagent_tokens>44211</subagent_tokens><tool_uses>10</tool_uses><duration_ms>83003</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0514c25263fd4508</task-id>
+<tool-use-id>toolu_01RHLpas16qrt7XUwHza3uE1</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a0514c25263fd4508.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 3: x-autobio hints" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+- Commit: `1bb7d7e` — "schemas: add x-autobio UI-hint helper (Tier/Widget/ui)"
+- Test summary: 4/4 new tests pass (`test_hints.py`); full non-docker/gpu suite green after the change
+- Concerns: none — only cosmetic deviation is `ruff format` wrapping one long `Field(...)` line in the test (whitespace-only, applied by the prescribed lint step itself)
+- Report: `/home/briney/git/autobio/.superpowers/sdd/task-3-report.md`</result>
+<usage><subagent_tokens>36649</subagent_tokens><tool_uses>15</tool_uses><duration_ms>90028</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6b4a3a82601a21cd</task-id>
+<tool-use-id>toolu_019G5Y2kmjnEFmiuSYtccecG</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a6b4a3a82601a21cd.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 3 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+- ✅ Spec compliant. `Tier(StrEnum)` (PRIMARY="primary", ADVANCED="advanced"), `Widget(StrEnum)` (TOGGLE/SELECT/SLIDER/NUMBER/TEXT/TEXTAREA/SEQUENCE/FILE, lowercase-name values), and `ui(*, tier=None, widget=None, group=None, order=None, unit=None, step=None, enum_labels=None, flavor=None) -&gt; dict` all match the brief's interfaces exactly (`src/autobio/schemas/hints.py:32-88`, matching brief lines 83-139 verbatim).
+- ✅ Only-provided-keys behavior, `None` omission, and `Tier`/`Widget` → string coercion (`str(tier)`/`str(widget)`) all implemented and tested (`src/autobio/schemas/hints.py:72-88`; `tests/unit/test_hints.py:104-124`).
+- ✅ `model_json_schema()` round-trip test genuinely asserts strict equality on the nested `x-autobio` dict, not a weaker containment/subset check: `tests/unit/test_hints.py:133-137` uses `==` against a full literal dict `{"tier": "primary", "widget": "toggle"}`.
+- ✅ Phase 0 additive-only constraint honored: diff touches only `src/autobio/schemas/hints.py` and `tests/unit/test_hints.py`, 114 insertions / 0 deletions, no changes to `core/registry.py`, `tools/`, or `cli/` (confirmed from diff stat and full hunk content).
+- ✅ `from __future__ import annotations`, `StrEnum`, absolute imports, no wildcard imports — present in both new files.
+- ✅ Verified independently (read-only, no working-tree mutation): `ruff check src/autobio/schemas/hints.py tests/unit/test_hints.py` → "All checks passed!"; `ruff format --check` on both files → "2 files already formatted"; `python -m pytest tests/unit/test_hints.py -v` → 4 passed; `mypy src/autobio/schemas/hints.py` → "Success: no issues found."
+
+### Strengths
+- Implementation is minimal, single-purpose, and matches the prescribed interface signature and parameter order exactly (`src/autobio/schemas/hints.py:52-62`).
+- The module docstring correctly documents intent (presentation-only, doesn't affect validation, unknown-field fallback semantics) — useful context for future consumers (`src/autobio/schemas/hints.py:1-8`).
+- The end-to-end `model_json_schema()` test is the right proof of the actual requirement (that hints survive Pydantic's schema generation via `Field(json_schema_extra=...)`), not just a unit test of `ui()` in isolation.
+- Report's claims about isolation (only 2 files touched) and TDD sequencing check out against the diff.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- `tests/unit/test_hints.py:104-137` — none of the four tests ever pass a value for `group` or `enum_labels`; those two of the eight `ui()` branches (`src/autobio/schemas/hints.py:79-84`, `hint["group"] = group` and `hint["enum_labels"] = enum_labels`) are exercised only for the "omit when None" path, never for "include when provided." A bug in either branch (e.g., accidentally stringifying `enum_labels`) would go undetected. This gap is inherited verbatim from the brief's own Step 1 test, not introduced by the implementer, but is worth flagging as a coverage hole.
+- `src/autobio/schemas/hints.py:114-121` — `ui()`'s docstring has a `Returns:` section but no `Args:` section despite 8 keyword parameters, some with non-obvious semantics (`step`, `enum_labels`, `flavor`). Other multi-parameter functions in this codebase (e.g. `src/autobio/utils/structures.py:48`, `src/autobio/core/catalog.py:130`) do include `Args:` sections — this is a minor deviation from that Google-style convention.
+- `tests/unit/test_hints.py` test functions lack `-&gt; None` return annotations (e.g. `test_ui_emits_only_provided_keys_under_namespace()` at line 104), whereas most sibling test files in `tests/unit/` (e.g. `test_registry.py`, `test_config.py`, `test_formatters.py`) consistently annotate test functions `-&gt; None`. Convention is inconsistent repo-wide (`test_catalog.py` has none either), so this is polish, not a blocker; not enforced by ruff/mypy since mypy is only run against `src/`.
+- `src/autobio/schemas/hints.py:122-138` — the eight sequential `if x is not None: hint[k] = ...` blocks are repetitive; could be tightened with a small dict-comprehension/coercion-map, but current form is explicit, easy to read/extend, and was copied verbatim from the brief, so this is a stylistic nit only.
+- Test file naming (`tests/unit/test_hints.py`) diverges from the existing schema-test naming precedent in this repo (`tests/unit/test_schemas_base.py`), which prefixes schema tests with `test_schemas_`. This was dictated explicitly by the brief's "Files" section, so it's not an implementer error — just a minor inconsistency for whoever later greps for schema tests.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** The implementation and tests match the brief's specified interfaces and file scope exactly, all lint/format/type/test checks pass cleanly, the Phase 0 additive-only boundary is respected, and the key schema round-trip test performs a genuine strict-equality assertion. Remaining findings are minor polish/coverage items, several inherited directly from the brief's own prescribed test code rather than implementer error.</result>
+<usage><subagent_tokens>48646</subagent_tokens><tool_uses>18</tool_uses><duration_ms>172573</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a91ead18fcb3d3fee</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a91ead18fcb3d3fee.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 4: parse_fasta_string" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>- **Status:** DONE
+- Commit: `e6bf3c0` — "sequences: add parse_fasta_string and delegate parse_fasta to it"
+- Tests: 33/33 passed in `test_sequences.py` (6 pre-existing `parse_fasta` tests confirmed still passing + 4 new `parse_fasta_string` tests + 23 other pre-existing); full suite 1349 passed, 121 deselected (docker/gpu)
+- Concerns: none
+- Report: `/home/briney/git/autobio/.superpowers/sdd/task-4-report.md`</result>
+<usage><subagent_tokens>43409</subagent_tokens><tool_uses>18</tool_uses><duration_ms>94305</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aae870f9481d4b0bb</task-id>
+<tool-use-id>toolu_01DNU9gMUndt5byYqobJXnSM</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/aae870f9481d4b0bb.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 4 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Diff matches the working tree exactly (HEAD is e6bf3c0, base is the prior commit 1bb7d7e). Lint/format confirmed clean by direct run. No other files touched. Now finalizing the review.
+
+### Spec Compliance
+- ✅ Spec compliant
+
+### Strengths
+- `parse_fasta_string(text: str) -&gt; dict[str, str]` (src/autobio/utils/sequences.py:26-54) matches the brief's interface exactly: insertion-ordered mapping, `ValueError` naming the duplicate id (`f"Duplicate sequence id {current!r} in FASTA input."`), `ValueError` when a sequence line precedes any header.
+- `parse_fasta` (src/autobio/utils/sequences.py:57-69) is now a genuine one-line delegation (`return parse_fasta_string(path.read_text())`) — no duplicated per-line logic, satisfying DRY.
+- Behavior preservation verified by tracing both implementations line-by-line: multi-line concatenation (`+=` per line vs. old `"".join(chunks)`), blank-line skipping (`if not line: continue` in both), leading-`&gt;` stripping (`line[1:].strip()` in both), insertion order (dict insertion order in both), and headers-with-empty-sequence (`sequences[current] = ""` initialized immediately vs. old `chunks = []` joined empty on next header/EOF) all produce identical output for well-formed input.
+- Google-style docstrings with `Args`/`Returns`/`Raises` sections on both functions.
+- Phase-0 boundary respected: diff touches only `src/autobio/utils/sequences.py` and `tests/unit/test_sequences.py`; no changes to `core/registry.py`, `tools/`, or `cli/`.
+- No pre-existing test was weakened, deleted, or modified — confirmed by reading the full current `tests/unit/test_sequences.py`: all 6 pre-existing `TestFastaIO` tests are untouched and none assert duplicate-id or sequence-before-header behavior, so the new `ValueError`s are purely additive.
+- Independently reran `ruff check` and `ruff format --check` on both files (no `--fix`, no mutation): both clean, confirming the report's lint/format claims.
+- No BioPython or other new imports introduced; parsing remains pure-Python.
+- Diff base/head (1bb7d7e / e6bf3c0) verified to match current `git log`/working tree exactly.
+
+### Issues
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- tests/unit/test_sequences.py:165, 172 — `import pytest` is placed inside two individual test function bodies rather than as a module-level import. This is copied verbatim from the brief, but it's inconsistent with this project's actual convention: all 46 other test files in `tests/unit/` (e.g. `test_antifold.py:10`, `test_catalog.py:5`) import `pytest` once at module top. Not a functional defect (ruff's configured rule set has no ANN/local-import rule to catch it), but a drive-by cleanup — hoisting a single `import pytest` to the top of `tests/unit/test_sequences.py` and removing the two duplicated inline imports — would match codebase norms.
+- tests/unit/test_sequences.py:159-180 — the 4 new test functions omit `-&gt; None:` return annotations, while every other test function/method in this same file (all pre-existing `TestFastaIO`, `TestProteinValidation`, etc. tests) consistently annotates `-&gt; None:`. Global instructions require type hints on all function signatures; this is a verbatim copy from the brief, not enforced by the configured ruff rule set (no ANN rules selected), but it's a minor stylistic inconsistency worth fixing for consistency with the rest of the file.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** Implementation matches the brief's interface exactly, preserves all pre-existing `parse_fasta` behavior (verified by code tracing, not just trusting the pass count), stays within the Phase-0 file boundary, and is lint/format clean (independently reverified). Only minor, non-functional style nits remain, both traceable to verbatim brief text rather than implementer error.</result>
+<usage><subagent_tokens>46085</subagent_tokens><tool_uses>10</tool_uses><duration_ms>91266</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abe07a617ed3a4ab4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/abe07a617ed3a4ab4.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 5: antibody FASTA pairing" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+- Commit: `f9dbb5e` — "sequences: add antibody FASTA header-tagged pairing parser"
+- Tests: 43/43 pass in `tests/unit/test_sequences.py` (RED confirmed pre-implementation via ImportError, GREEN after); full repo suite also green (Docker-gated integration tests skip as baseline).
+- Concerns: none blocking; minor pre-existing lack of `-&gt; None:` on a few older test functions left untouched (out of stated scope).
+- Report: `/home/briney/git/autobio/.superpowers/sdd/task-5-report.md`</result>
+<usage><subagent_tokens>55067</subagent_tokens><tool_uses>20</tool_uses><duration_ms>122284</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a371afb28e98ff54e</task-id>
+<tool-use-id>toolu_01Wx9UiCKD1TUWfVpMnbkoEt</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a371afb28e98ff54e.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 5 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+- ❌ Issues found:
+  1. `normalize_chain_token`'s `ValueError` does not "name the offending record" when the unknown-token error surfaces through `parse_antibody_fasta_string` — `src/autobio/utils/sequences.py:142-144`, exercised at `src/autobio/utils/sequences.py:169`. Verified live: `parse_antibody_fasta_string("&gt;ab1|kappa\nQVQLVQSG\n")` raises `ValueError("Unknown chain token 'kappa'. Expected one of [...]")` — no `ab1`, no header, anywhere in the message. Every other error path in this function (`missing tag`, `duplicate`, `bad sequence`) embeds `header!r` or `pair_id!r`; this one doesn't. In a multi-record file, a user has no way to tell which record had the bad token. Plan-mandated (this is the brief's Step 3 code verbatim) — the brief's own `normalize_chain_token`/`parse_antibody_fasta_string` split doesn't thread record context through this one call site.
+  2. The `test_parse_antibody_fasta_duplicate_pair_chain` test does not exercise the pairing-specific duplicate-detection branch it's named for (`src/autobio/utils/sequences.py:175-176`). Verified live: for input `"&gt;ab1|heavy\n...\n&gt;ab1|heavy\n...\n"`, the actual exception raised is `"Duplicate sequence id 'ab1|heavy' in FASTA input."` from `parse_fasta_string` (line 50), not `"Duplicate record for pair 'ab1' chain 'heavy'."` from the antibody parser — because both records share the exact same header string, `parse_fasta_string`'s own dedup check fires first. The test passes only because that message happens to also match `"ab1.*heavy"`. The intended branch (lines 175-176) is real and correct — confirmed separately by feeding two differently-cased duplicate tokens (`ab1|heavy` + `ab1|HEAVY`), which does hit it and produces the expected message — but no test in the suite exercises it. Plan-mandated (verbatim brief Step 1 test).
+- ✅ Otherwise spec compliant: alias mapping (heavy/h/vh, light/l/vl, case-insensitive) at `sequences.py:129-144`; missing-`|`-tag error names header at `sequences.py:112-116`; bad-sequence error names header at `sequences.py:120-121`; pairing by `pair_id` in first-seen order via `order`/`chains` at `sequences.py:109-136`; lone record → unpaired `AntibodySequence` (only one chain set) verified against the brief's own test; delimiter handled via `header.rpartition("|")` at `sequences.py:117`, which sensibly treats the *last* `|` as the chain-tag separator, tolerating `|` inside `pair_id`.
+- ✅ Phase 0 constraint respected: diff stat confirms only `src/autobio/utils/sequences.py` and `tests/unit/test_sequences.py` touched; `core/registry.py`, `tools/`, `cli/` untouched.
+- ✅ Import safety confirmed: `from autobio.schemas.antibody import AntibodySequence` is a module-level runtime import (`sequences.py:7`), not under `TYPE_CHECKING`. Traced the full import graph: `schemas/antibody.py` imports only `pydantic` and `schemas/base.py`; `schemas/__init__.py` (triggered as a side effect of `from autobio.schemas.antibody import ...`) imports all schema submodules, none of which import from `autobio.utils`. `python -c "import autobio.utils.sequences"` succeeds (exit 0).
+
+### Strengths
+- Correctly reuses `parse_fasta_string` and `validate_antibody_sequence` rather than reimplementing FASTA parsing/validation — genuine DRY (`sequences.py:158, 170`).
+- Three of four required error paths correctly name the offending record via `header!r` / `pair_id!r`/`chain!r`.
+- `ruff check`, `ruff format --check`, and `mypy` all pass clean on both changed files; no lines over 100 chars.
+- Diff is minimally scoped — only the two permitted files, no drive-by changes to `core/registry.py`, `tools/`, or `cli/`.
+- Sensible delimiter choice (`rpartition`) that degrades gracefully if `pair_id` itself contains `|`.
+- Full test suite (43 tests) passes; new tests use real assertions (full `AntibodySequence` equality), not just "some exception raised."
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+1. **[Plan-mandated]** `sequences.py:142-144` / `sequences.py:169` — Unknown-chain-token `ValueError`, when raised from within `parse_antibody_fasta_string`, does not name the offending record (pair_id/header) — only the raw bad token. Violates the brief's explicit requirement that this error path name "the offending record," and is inconsistent with the other three error paths in the same function. Fix: catch and re-raise with header context in `parse_antibody_fasta_string`, e.g. `try: chain = normalize_chain_token(chain_token) except ValueError as exc: raise ValueError(f"Record {header!r}: {exc}") from exc`.
+2. **[Plan-mandated]** `sequences.py:175-176`, test at `tests/unit/test_sequences.py:223-226` — `test_parse_antibody_fasta_duplicate_pair_chain` does not exercise the intended duplicate-`(pair_id, chain)` branch; the identical-header input is instead caught by `parse_fasta_string`'s pre-existing duplicate-id check (verified live: raised message is `"Duplicate sequence id 'ab1|heavy' in FASTA input."`, not `"Duplicate record for pair 'ab1' chain 'heavy'."`). The branch itself is correctly implemented (confirmed by manually testing `ab1|heavy` + `ab1|HEAVY`, which does trigger it), but as written the test suite provides no regression protection for it — a future refactor could delete lines 175-176 and no test would fail. Fix: add/replace with a test using two distinct header strings that normalize to the same `(pair_id, chain)`, e.g. `"&gt;ab1|heavy\n...\n&gt;ab1|VH\n...\n"`.
+
+#### Minor (Nice to Have)
+1. `sequences.py:129-144, 147-156` — New function docstrings omit `Args`/`Returns` sections present on sibling functions in the same file (e.g. `parse_fasta_string` at line 28, `validate_nucleotide_sequence` at line 107), reducing docstring consistency within the module.
+2. `sequences.py:120-121` — For a header with an empty sequence (e.g., a header line with no following sequence lines), `validate_antibody_sequence("")` fails and raises `"sequence contains non-protein characters"`, which is a slightly misleading message for a zero-length sequence.
+3. `tests/unit/test_sequences.py` — No test covers a light-chain-only lone record (only heavy-only lone `ab2` is covered), and no test covers a chain alias (e.g. `vh`/`l`) flowing through the full `parse_antibody_fasta_string` pipeline (only exercised in isolation via `normalize_chain_token`). Matches the brief's own Step 1 tests exactly, so not a deviation, but a coverage gap worth closing.
+
+### Assessment
+**Task quality:** Needs fixes
+**Reasoning:** The implementation faithfully follows the brief and is clean, DRY, and lint/type/format-clean, but two of the brief's four mandated error-path guarantees are not actually delivered/verified: the unknown-chain-token error fails to name the offending record when raised through the public parsing entry point, and the duplicate-`(pair_id, chain)` test doesn't exercise the code path it's meant to protect. Both defects trace directly to the brief's own verbatim Step 1/3 code, not implementer deviation, but both are real, currently-shippable gaps that should be closed before merge.</result>
+<usage><subagent_tokens>59610</subagent_tokens><tool_uses>18</tool_uses><duration_ms>196221</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae8cbc7ede2b72bba</task-id>
+<tool-use-id>toolu_016rhxM7ucgFQ3WeocQUJNgH</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ae8cbc7ede2b72bba.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix Task 5 Important findings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+New commit: `cfc7ef3` — "sequences: name record in antibody-FASTA token error; strengthen tests"
+Tests: `python -m pytest tests/unit/test_sequences.py -v` → 46 passed, 0 failed (43 prior + 3 new)
+Also clean: `ruff check`, `ruff format --check`, `mypy src/autobio/utils/sequences.py` — all pass, no issues.
+Nothing left unaddressed.</result>
+<usage><subagent_tokens>47493</subagent_tokens><tool_uses>19</tool_uses><duration_ms>92500</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a73dd534a786d3c7b</task-id>
+<tool-use-id>toolu_01BwQVFDDhpf2koSXUFdGSZo</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a73dd534a786d3c7b.output</output-file>
+<status>completed</status>
+<summary>Agent "Re-review Task 5 after fixes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+- ✅ Spec compliant — only `src/autobio/utils/sequences.py` and `tests/unit/test_sequences.py` touched across both commits (confirmed via diffstat and `git status --short`, which shows no modifications to either file at current HEAD `cfc7ef3`). Google-style docstrings present with Args/Returns/Raises on both new functions. Type hints on both function signatures. `ruff check`, `ruff format --check`, and `mypy src/autobio/utils/sequences.py` all clean (independently re-run, not just trusted from report).
+
+### Resolution of prior findings
+- Finding 1: **Resolved** — `src/autobio/utils/sequences.py:184-187` wraps the call: `try: chain = normalize_chain_token(chain_token) except ValueError as exc: raise ValueError(f"Record {header!r}: {exc}") from exc`. `normalize_chain_token`'s standalone message (line 149-151) is untouched. Live-executed `parse_antibody_fasta_string("&gt;ab1|kappa\nQVQLVQSG\n")` → `Record 'ab1|kappa': Unknown chain token 'kappa'. Expected one of [...]`. New test `test_parse_antibody_fasta_unknown_chain_token_names_record` (test_sequences.py:232-234) calls the public function and asserts `match="ab1"` — exercises the real path, not a synthetic one.
+- Finding 2: **Resolved** — test input changed to `"&gt;ab1|heavy\nQVQLVQSG\n&gt;ab1|VH\nEVQLLESG\n"` (test_sequences.py:227), two distinct header strings ("ab1|heavy" vs "ab1|VH") that both normalize to `("ab1", "heavy")`. Traced the branch logic: `parse_fasta_string` keys on the raw header string, so these two are unique keys — its duplicate-id check does not fire. Control reaches the antibody parser's own `if chain in chains[pair_id]:` check (sequences.py:193-194), raising `"Duplicate record for pair 'ab1' chain 'heavy'."`. Assertion tightened to `match="Duplicate record for pair 'ab1' chain 'heavy'"` — matches only the antibody parser's exact message, not the generic `parse_fasta_string` message. Independently confirmed by executing both the fixed input (hits antibody-parser message) and the old identical-header input (hits `parse_fasta_string`'s "Duplicate sequence id..." message instead) — the two paths are genuinely distinguishable and the fix targets the right one.
+
+### Strengths
+- Exception chaining uses `from exc`, preserving the original traceback.
+- Added tests genuinely extend coverage of real gaps: lone light-chain record (`test_parse_antibody_fasta_lone_light_chain_record`) and full-pipeline chain-alias normalization (`test_parse_antibody_fasta_chain_alias_end_to_end`), not just the isolated `normalize_chain_token` unit tests.
+- Explanatory comment on the fixed duplicate-pair-chain test (test_sequences.py:224-226) documents why the specific headers were chosen — helps future maintainers avoid re-introducing the same bug.
+- Docstrings on both functions now have complete Args/Returns/Raises sections consistent with the rest of the module (e.g. `parse_fasta_string`).
+- No regression: all three previously-correct error paths (missing chain tag, duplicate-pair-chain, pairing/unpaired/aliasing behavior) still pass; re-ran `pytest tests/unit/test_sequences.py -v` myself — 46 passed, matching the report.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- `src/autobio/utils/sequences.py`: no test exercises the fourth documented error path — a sequence failing `validate_antibody_sequence` (the `"Record {header!r}: sequence contains non-protein characters."` branch at line 188-189). This is a pre-existing gap from the original commit (not something the fix pass introduced or was asked to address), but since the task brief requires "every antibody-FASTA error must NAME the offending record" for all four conditions, a positive test of this one would round out coverage.
+- `src/autobio/utils/sequences.py:125-126`: `_HEAVY_TOKENS`/`_LIGHT_TOKENS` are untyped (`_HEAVY_TOKENS = {"heavy", "h", "vh"}`), inconsistent with the file's existing convention of type-annotating module-level constants (e.g. `AMINO_ACIDS: frozenset[str] = frozenset(...)`). Not a binding-constraint violation (constraint only requires type hints on function signatures) and mypy passes either way — purely stylistic.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** Both Important findings are genuinely fixed and verified by direct code reading and live execution (not just trusting the pass count) — the record-naming wrap and the duplicate-branch test both do what they claim, and no prior behavior regressed. Remaining notes are minor/pre-existing coverage gaps, not defects introduced by this fix pass.</result>
+<usage><subagent_tokens>54223</subagent_tokens><tool_uses>10</tool_uses><duration_ms>101117</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8b61273aac001030</task-id>
+<tool-use-id>toolu_01MR5rFUuaRc1mq27SF7Sg8v</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a8b61273aac001030.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 6: GenericSequenceSet" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+Commits created: `53fa707` — schemas: add GenericSequenceSet accepting structured/FASTA/file input
+Test summary: 6/6 new tests pass (RED confirmed `ModuleNotFoundError` before implementation, GREEN after); full suite exit code 0, no regressions; ruff/mypy clean
+Concerns: none — implementation matches brief verbatim; only cosmetic test-file tweaks (`-&gt; None` annotations, `TYPE_CHECKING`-guarded `Path` import) were needed to satisfy `ruff check` (TC003)
+Report: `/home/briney/git/autobio/.superpowers/sdd/task-6-report.md`</result>
+<usage><subagent_tokens>53013</subagent_tokens><tool_uses>35</tool_uses><duration_ms>246662</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0b3f83a0871bf6ad</task-id>
+<tool-use-id>toolu_018WFkVArJZEWoTnCD9C5nP9</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a0b3f83a0871bf6ad.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 6 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+- ✅ Spec compliant
+
+Verified against `.superpowers/sdd/task-6-brief.md`:
+- `src/autobio/schemas/sequences.py:1-58` and `tests/unit/test_sequence_set.py:1-45` are the only files touched (confirmed via diff stat, `2 files changed, 103 insertions(+)`, both new files). `core/registry.py`, `tools/`, `cli/`, `schemas/__init__.py` are untouched — Phase 0 constraint honored.
+- `normalize_generic_sequences` (src/autobio/schemas/sequences.py:96-121): native `dict` → `{str(k): str(v)}` (line 104-105); `str` starting with `&gt;` or containing `\n` → `parse_fasta_string` (line 106-108); `str` ending `.fasta`/`.fa` → `Path.is_file()` check then `parse_fasta` (line 109-113), `ValueError` if missing; any other string or type → `ValueError` (line 114-121). Matches brief exactly, byte-for-byte (implementer's report claims "copied verbatim" — confirmed true by diff).
+- Check order sound: FASTA-text detection (`_looks_like_fasta_text`, line 37-39) is checked before FASTA-path detection (`_looks_like_fasta_path`, line 42-43) inside the `str` branch (line 107 vs 109) — a multi-line or `&gt;`-prefixed string is never misrouted to path-existence checking.
+- `GenericSequenceSet = Annotated[dict[str, str], BeforeValidator(normalize_generic_sequences)]` at line 74 — canonical stored type is `dict[str, str]`, so JSON callers passing a plain dict still validate through Pydantic's own dict/str coercion after the `BeforeValidator` runs.
+- Private helpers `_looks_like_fasta_text`, `_looks_like_fasta_path`, `_FASTA_SUFFIXES` are module-scope (lines 34, 37, 42), available for Task 7 reuse as required.
+- `parse_fasta`/`parse_fasta_string` (consumed from `src/autobio/utils/sequences.py`, pre-existing from Task 4) are reused rather than reimplemented — no duplicate FASTA-parsing logic (DRY).
+
+Ran independently (not just trusting the report):
+- `pytest tests/unit/test_sequence_set.py -v` → 6 passed.
+- `ruff check` + `ruff format --check` on both files → clean.
+- `mypy src/autobio/schemas/sequences.py` → no issues.
+
+All match the report's claims.
+
+### Strengths
+- Verbatim, faithful implementation of the brief with no scope creep — no incidental touches to `registry.py`/`tools/`/`cli/`/`schemas/__init__.py`, respecting the Phase-0 isolation constraint.
+- Error messages are actionable: name the offending value/type (`f"FASTA file not found: {value!r}."`, `f"Unsupported sequence input type {type(value).__name__!r}; ..."`).
+- Correctly reuses `parse_fasta`/`parse_fasta_string` instead of reimplementing FASTA parsing — good separation of concerns (this module only does dispatch/normalization).
+- Test file adaptations (return-type annotations, `TYPE_CHECKING`-guarded `Path` import) genuinely match repo conventions (verified against `tests/unit/test_antifold.py`), not arbitrary changes.
+- Self-review in the report (empty string, non-str dict values, case-insensitive suffix) matches actual traced behavior — checked by hand, all correct.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- `src/autobio/schemas/sequences.py:96-103` — `normalize_generic_sequences` docstring omits an `Args:` section for `value`, unlike comparable functions in `src/autobio/utils/sequences.py` (e.g. `normalize_chain_token`, `parse_fasta_string`) which document their single parameter explicitly. Not a functional issue, but an inconsistency with the codebase's established Google-style docstring pattern for non-trivial public functions.
+- `src/autobio/schemas/sequences.py:109-113` — if the path exists but is unreadable (`PermissionError`) or is a directory misnamed `*.fasta`, `path.is_file()` returns `False` and the code raises `ValueError: FASTA file not found: ...`, which is slightly misleading for a permissions case (file exists but access denied) vs. a genuinely missing file. Extremely low-probability edge case, not covered by spec or tests; no action required but worth a one-line comment if ever revisited.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** Implementation matches the brief exactly (byte-for-byte), all six specified tests pass, ruff/mypy are clean, disambiguation ordering is sound, and the Phase-0 file-scope constraint is fully respected. Only cosmetic docstring/edge-case nits remain, neither blocking.</result>
+<usage><subagent_tokens>47703</subagent_tokens><tool_uses>15</tool_uses><duration_ms>110283</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2c087c4d3de5b3ca</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a2c087c4d3de5b3ca.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 7: AntibodySequenceSet" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task 7 complete.
+
+- **Status:** DONE
+- Commit: `203bb4a` — "schemas: add AntibodySequenceSet with FASTA pairing input" (2 files, +86/-2)
+- Tests: full non-docker/gpu suite `1373 passed, 121 deselected in 2.41s`; `mypy src/` → `Success: no issues found in 56 source files`; whole-tree `ruff check src/autobio tests/unit` → `All checks passed!`
+- Concerns: none — whole-tree ruff was clean outside the two touched files, nothing to flag
+- Report: `/home/briney/git/autobio/.superpowers/sdd/task-7-report.md`</result>
+<usage><subagent_tokens>52859</subagent_tokens><tool_uses>31</tool_uses><duration_ms>162783</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>adeb6a283d27f3440</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/adeb6a283d27f3440.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 7 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Single commit as claimed. Now I have everything needed to write the review.
+
+### Spec Compliance
+- ✅ Spec compliant
+
+### Strengths
+- `normalize_antibody_sequences` and `AntibodySequenceSet` match the brief's interface exactly (`src/autobio/schemas/sequences.py:62-105`), implemented verbatim from the brief's Step 3 code.
+- Task 6 helpers (`_looks_like_fasta_text`, `_looks_like_fasta_path`, `_FASTA_SUFFIXES`, `Path`) are reused, not duplicated — confirmed by diffing against base commit 53fa707: the pre-existing block (lines 1-59) is untouched; the new function is appended after it (`src/autobio/schemas/sequences.py:34-39` for helpers, `86-91` for reuse sites).
+- `AntibodySequence` imported at module level as a runtime import (`src/autobio/schemas/sequences.py:15`), not under `TYPE_CHECKING` — correct, since it's constructed via `AntibodySequence(**item)` and used as the list element type in the `Annotated` alias.
+- `parse_antibody_fasta_string` merged into the existing `autobio.utils.sequences` import line rather than added as a separate import statement (`src/autobio/schemas/sequences.py:16`), exactly as the brief specified.
+- No import cycle: `schemas/antibody.py` imports only `pydantic` and `schemas/base` (verified by reading the file); `schemas/__init__.py` does not import `schemas/sequences` at all (verified — its imports list stops at antibody/base/binding_affinity/etc., no `sequences` module reference). The report's claim of a clean `import autobio.schemas.sequences` is consistent with the actual import graph.
+- Phase 0 constraint honored: diff touches only `src/autobio/schemas/sequences.py` and `tests/unit/test_sequence_set.py` (confirmed via diff stat and `git log --oneline 53fa707..203bb4a` showing a single commit); `core/registry.py`, `tools/`, `cli/`, `schemas/__init__.py` are untouched.
+- Tests cover all five required cases and use real Pydantic round-trips through `_Ab(BaseModel)` rather than calling the normalizer directly: native list of models (`tests/unit/test_sequence_set.py:57-59`), list of dicts coerced (`:62-64`), FASTA text with heavy/light pairing (`:67-71`), FASTA file via `tmp_path` (`:74-77`), and bad-type rejection (`:80-82`).
+- All changed lines respect the 100-char limit (verified independently; longest line is 98 chars).
+
+### Issues
+
+#### Minor (Nice to Have)
+- `src/autobio/schemas/sequences.py:71-74` — an empty list (`[]`) silently normalizes to `[]` with no validation that at least one sequence was provided. This mirrors the existing `normalize_generic_sequences` behavior (no emptiness check there either), so it's consistent with the established pattern in this module rather than a new gap, but neither this task nor Task 6 tests the empty-list case explicitly.
+- `src/autobio/schemas/sequences.py:88-90` — "FASTA file not found" error path (missing `.fasta`/`.fa` file) is implemented identically to the Task 6 pattern but has no dedicated antibody test (only the generic-sequence set has `test_generic_rejects_missing_file`). Brief's Step 1 test list didn't request this for antibodies, so this is a coverage gap relative to the sibling type rather than an unmet requirement.
+- Report's deviation on test-import placement (top-of-file vs. brief's mid-file `# noqa: E402` snippet) is reasonable and correctly disclosed — matches existing file convention and produces identical test bodies/assertions.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** Implementation matches the brief's specified interface and code verbatim, correctly reuses Task 6 helpers with no duplication, uses a proper runtime (non-`TYPE_CHECKING`) import for `AntibodySequence`, introduces no import cycle, stays within the Phase 0 file-scope constraint, and the five required test cases all exercise real Pydantic validation behavior. The only gaps (empty-list, missing-file-for-antibody coverage) are minor, pre-existing-pattern-consistent, and not required by the brief.</result>
+<usage><subagent_tokens>48649</subagent_tokens><tool_uses>11</tool_uses><duration_ms>47992</duration_ms></usage>
+</task-notification>
