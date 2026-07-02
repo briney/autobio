@@ -9,9 +9,12 @@ from autobio.cli.formatters import (
     OutputFormat,
     format_image_list,
     format_tool_info,
+    format_tool_info_catalog,
     format_tool_list,
+    format_tool_list_merged,
     format_workspace_result,
 )
+from autobio.core.catalog import Mode, Tool
 from autobio.core.container import ImageInfo
 from autobio.core.registry import ToolCategory, ToolEntry
 from autobio.core.result import RunResult
@@ -314,3 +317,103 @@ class TestFormatImageList:
         images = [_make_image_info()]
         result = format_image_list(images, OutputFormat.TABLE)
         assert "ghcr.io/briney/autobio-mock:1.0" in result
+
+
+# ---------------------------------------------------------------------------
+# format_tool_info_catalog
+# ---------------------------------------------------------------------------
+
+
+class _InInfo(BaseInput):
+    pass
+
+
+class _OutInfo(BaseOutput):
+    pass
+
+
+def _tool_for_info() -> Tool:
+    return Tool(
+        name="demo",
+        display_name="Demo",
+        category=ToolCategory.SCORING,
+        description="demo tool",
+        version="1.0.0",
+        image_tag="demo:1.0.0",
+        requires_gpu=False,
+        gpu_count=0,
+        default_mode="a",
+        modes={
+            "a": Mode("a", "Alpha", "alpha mode", _InInfo, _OutInfo, default_timeout=300),
+            "b": Mode(
+                "b",
+                "Beta",
+                "beta mode",
+                _InInfo,
+                _OutInfo,
+                default_timeout=600,
+                category=ToolCategory.SIMULATION,
+            ),
+        },
+        keywords=("demo", "example"),
+    )
+
+
+def test_format_tool_info_catalog_json_shape() -> None:
+    parsed = json.loads(format_tool_info_catalog(_tool_for_info(), OutputFormat.JSON))
+    assert parsed["name"] == "demo"
+    assert parsed["default_mode"] == "a"
+    assert parsed["categories"] == ["scoring", "simulation"]  # union, primary first
+    assert parsed["keywords"] == ["demo", "example"]
+    mode_names = [m["name"] for m in parsed["modes"]]
+    assert mode_names == ["a", "b"]
+    mode_a = parsed["modes"][0]
+    assert mode_a["category"] == "scoring"  # falls back to Tool category
+    assert "input_schema" in mode_a and "output_schema" in mode_a
+    assert parsed["modes"][1]["category"] == "simulation"  # mode override
+
+
+def test_format_tool_info_catalog_table_runs() -> None:
+    out = format_tool_info_catalog(_tool_for_info(), OutputFormat.TABLE)
+    assert "demo" in out and "Alpha" in out
+
+
+# ---------------------------------------------------------------------------
+# format_tool_list_merged
+# ---------------------------------------------------------------------------
+
+
+def _flat_entry() -> ToolEntry:
+    return ToolEntry(
+        image_tag="prodigy:1.0.0",
+        category=ToolCategory.SCORING,
+        requires_gpu=False,
+        gpu_count=0,
+        input_schema=_InInfo,
+        output_schema=_OutInfo,
+        default_timeout=300,
+        supports_batch=False,
+        description="legacy tool",
+        version="1.0.0",
+    )
+
+
+def test_format_tool_list_merged_json_has_both() -> None:
+    rows = json.loads(
+        format_tool_list_merged(
+            {"prodigy": _flat_entry()}, {"demo": _tool_for_info()}, OutputFormat.JSON
+        )
+    )
+    by_name = {r["name"]: r for r in rows}
+    assert set(by_name) == {"prodigy", "demo"}
+    assert by_name["demo"]["modes"] == ["a", "b"]
+    assert by_name["demo"]["categories"] == ["scoring", "simulation"]
+    assert "modes" not in by_name["prodigy"]  # legacy row keeps the old shape
+    assert [r["name"] for r in rows] == ["demo", "prodigy"]  # sorted by name
+
+
+def test_format_tool_list_merged_table_runs() -> None:
+    out = format_tool_list_merged(
+        {"prodigy": _flat_entry()}, {"demo": _tool_for_info()}, OutputFormat.TABLE
+    )
+    assert "prodigy" in out and "demo" in out

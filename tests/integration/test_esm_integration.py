@@ -17,8 +17,9 @@ np = pytest.importorskip("numpy")
 
 from autobio.core.config import AutobioConfig  # noqa: E402
 from autobio.schemas.embedding import (  # noqa: E402
-    EmbeddingInput,
     EmbeddingOutput,
+    ESM2Input,
+    ESMEmbedInput,
 )
 from autobio.tools import get_runner  # noqa: E402
 
@@ -55,11 +56,11 @@ class TestESM2SingleSequence:
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Run ESM-2 end-to-end and verify output embedding."""
-        input_data = EmbeddingInput(
+        input_data = ESM2Input(
             sequences={"crambin": _CRAMBIN_SEQ},
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
 
         assert isinstance(output, EmbeddingOutput)
         assert len(output.embeddings) == 1
@@ -79,12 +80,12 @@ class TestESM2SingleSequence:
 
     def test_per_residue_pooling(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Per-residue pooling produces (L, D) shaped embedding."""
-        input_data = EmbeddingInput(
+        input_data = ESM2Input(
             sequences={"crambin": _CRAMBIN_SEQ},
             pooling="per_residue",
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
 
         e = output.embeddings[0]
         emb = np.load(e.embedding_path)
@@ -101,11 +102,11 @@ class TestESM2MultipleSequences:
 
     def test_batch_extraction(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Multiple sequences produce one embedding each."""
-        input_data = EmbeddingInput(
+        input_data = ESM2Input(
             sequences={"crambin": _CRAMBIN_SEQ, "insulin_b": _INSULIN_B},
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
 
         assert len(output.embeddings) == 2
         ids = {e.sequence_id for e in output.embeddings}
@@ -127,12 +128,12 @@ class TestESM2CheckpointSelection:
 
     def test_8m_checkpoint(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """8M checkpoint produces 320-dim embeddings."""
-        input_data = EmbeddingInput(
+        input_data = ESM2Input(
             sequences={"crambin": _CRAMBIN_SEQ},
-            extra={"checkpoint": "8M"},
+            checkpoint="8M",
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
 
         assert output.embedding_dimension == 320
         e = output.embeddings[0]
@@ -150,11 +151,11 @@ class TestESM1b:
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Run ESM-1b end-to-end."""
-        input_data = EmbeddingInput(
+        input_data = ESMEmbedInput(
             sequences={"crambin": _CRAMBIN_SEQ},
         )
         runner = get_runner("esm1b", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
 
         assert isinstance(output, EmbeddingOutput)
         assert output.model_name == "esm1b_t33_650M_UR50S"

@@ -7,10 +7,11 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from autobio.core.catalog import CATALOG, Mode, Tool, get_tool
 from autobio.core.container import ContainerManager
 from autobio.core.gpu import GPUManager
 from autobio.core.registry import TOOL_REGISTRY, ToolEntry
-from autobio.core.result import ToolExecutionError
+from autobio.core.result import AutobioError, ToolExecutionError
 from autobio.core.workspace import Workspace
 from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
 from autobio.utils.logging import get_logger
@@ -33,13 +34,18 @@ class ToolRunner(ABC):
     """
 
     def __init__(self, tool_name: str, config: AutobioConfig) -> None:
-        try:
-            self.entry: ToolEntry = TOOL_REGISTRY[tool_name]
-        except KeyError:
-            available = ", ".join(sorted(TOOL_REGISTRY)) or "(none)"
+        self.tool: Tool | None = None
+        self.entry: ToolEntry | None = None
+        if tool_name in CATALOG:
+            self.tool = get_tool(tool_name)
+        elif tool_name in TOOL_REGISTRY:
+            self.entry = TOOL_REGISTRY[tool_name]
+        else:
+            available = ", ".join(sorted(set(CATALOG) | set(TOOL_REGISTRY))) or "(none)"
             raise KeyError(f"Unknown tool {tool_name!r}. Available tools: {available}") from None
         self.tool_name = tool_name
         self.config = config
+        self.current_mode: Mode | None = None
         self._container = ContainerManager(config)
         self._gpu = GPUManager()
 
@@ -78,8 +84,13 @@ class ToolRunner(ABC):
         gpu: str | list[int] = "auto",
         timeout: int | None = None,
         output_dir: Path | None = None,
+        mode: str | None = None,
     ) -> BaseOutput:
         """Full execution lifecycle. Do NOT override this method.
+
+        For migrated (catalog) tools, *mode* selects a :class:`Mode` by name
+        (defaulting to the Tool's ``default_mode``). Legacy tools ignore *mode*
+        (passing one raises).
 
         Steps:
             1. Create workspace
@@ -101,16 +112,21 @@ class ToolRunner(ABC):
             timeout: Maximum wall-clock seconds. Falls back to the tool's
                 ``default_timeout`` if *None*.
             output_dir: Persist workspace here instead of a temp directory.
+            mode: Name of the :class:`Mode` to run (catalog tools only).
+                Defaults to the Tool's ``default_mode``.
 
         Returns:
             Populated output model with metadata attached.
 
         Raises:
             ToolExecutionError: If the container reports a failure.
+            AutobioError: For an unknown mode, or a mode passed to a legacy tool.
         """
         gpu_ids: list[int] = []
         workspace: Workspace | None = None
         start = time.monotonic()
+
+        self.current_mode = self._resolve_mode(mode)
 
         try:
             # 1. Create workspace
@@ -123,11 +139,11 @@ class ToolRunner(ABC):
             gpu_ids = self._resolve_gpu(gpu)
 
             # 4. Ensure image
-            image_uri = f"{self.config.image_prefix}{self.entry.image_tag}"
+            image_uri = f"{self.config.image_prefix}{self._image_tag()}"
             self._container.ensure_image(image_uri)
 
             # 5. Run container
-            effective_timeout = timeout if timeout is not None else self.entry.default_timeout
+            effective_timeout = timeout if timeout is not None else self._default_timeout()
             self._container.run(
                 image_uri=image_uri,
                 workspace=workspace.root,
@@ -166,6 +182,58 @@ class ToolRunner(ABC):
             if workspace is not None and workspace._is_temp:
                 workspace.cleanup()
 
+    def _resolve_mode(self, mode: str | None) -> Mode | None:
+        """Resolve the selected Mode for a migrated tool, or None for a legacy tool."""
+        if self.tool is None:
+            if mode is not None:
+                raise AutobioError(f"Tool {self.tool_name!r} does not support modes.")
+            return None
+        name = mode if mode is not None else self.tool.default_mode
+        try:
+            return self.tool.modes[name]
+        except KeyError:
+            available = ", ".join(sorted(self.tool.modes))
+            raise AutobioError(
+                f"Unknown mode {name!r} for tool {self.tool_name!r}. Available modes: {available}"
+            ) from None
+
+    def _image_tag(self) -> str:
+        """Container image tag for the current run (mode override, else tool/entry)."""
+        if self.tool is not None:
+            assert self.current_mode is not None
+            return self.current_mode.image_tag or self.tool.image_tag
+        assert self.entry is not None
+        return self.entry.image_tag
+
+    def _default_timeout(self) -> int:
+        """Default timeout for the current run (per-mode for catalog tools)."""
+        if self.tool is not None:
+            assert self.current_mode is not None
+            return self.current_mode.default_timeout
+        assert self.entry is not None
+        return self.entry.default_timeout
+
+    def _requires_gpu(self) -> bool:
+        """Whether the active tool requires a GPU."""
+        if self.tool is not None:
+            return self.tool.requires_gpu
+        assert self.entry is not None
+        return self.entry.requires_gpu
+
+    def _gpu_count(self) -> int:
+        """Number of GPUs the active tool requests under ``gpu='auto'``."""
+        if self.tool is not None:
+            return self.tool.gpu_count
+        assert self.entry is not None
+        return self.entry.gpu_count
+
+    def _tool_version(self) -> str:
+        """Version string of the active tool."""
+        if self.tool is not None:
+            return self.tool.version
+        assert self.entry is not None
+        return self.entry.version
+
     def _resolve_gpu(self, gpu: str | list[int]) -> list[int]:
         """Translate the user-facing gpu parameter into a list of device IDs.
 
@@ -189,9 +257,9 @@ class ToolRunner(ABC):
             return []
 
         if gpu == "auto":
-            if not self.entry.requires_gpu:
+            if not self._requires_gpu():
                 return []
-            return self._gpu.allocate(count=self.entry.gpu_count)
+            return self._gpu.allocate(count=self._gpu_count())
 
         # Comma-separated string: "0,1,2"
         device_ids = [int(x.strip()) for x in gpu.split(",")]
@@ -207,7 +275,7 @@ class ToolRunner(ABC):
         """Construct a ``RunMetadata`` instance for the completed run."""
         return RunMetadata(
             tool_name=self.tool_name,
-            tool_version=self.entry.version,
+            tool_version=self._tool_version(),
             image_uri=image_uri,
             wall_time_seconds=wall_time,
             gpu_ids=gpu_ids or None,

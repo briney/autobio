@@ -10,10 +10,11 @@ import pytest
 from typer.testing import CliRunner
 
 from autobio.cli.main import app
+from autobio.core.catalog import CATALOG, Mode, Tool, register
 from autobio.core.container import ImageInfo
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
 from autobio.core.result import ContainerNotFoundError, RunResult, ToolExecutionError
-from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
 
 runner = CliRunner()
 
@@ -34,9 +35,10 @@ def _make_entry(
     *,
     category: ToolCategory = ToolCategory.STRUCTURE_PREDICTION,
     requires_gpu: bool = True,
+    image_tag: str = "mock-tool:1.0",
 ) -> ToolEntry:
     return ToolEntry(
-        image_tag="mock-tool:1.0",
+        image_tag=image_tag,
         category=category,
         requires_gpu=requires_gpu,
         gpu_count=1,
@@ -73,6 +75,16 @@ def _clean_registry():
     yield
     TOOL_REGISTRY.clear()
     TOOL_REGISTRY.update(saved)
+
+
+@pytest.fixture(autouse=True)
+def _clean_catalog():
+    """Snapshot, clear, and restore CATALOG around each test."""
+    saved = dict(CATALOG)
+    CATALOG.clear()
+    yield
+    CATALOG.clear()
+    CATALOG.update(saved)
 
 
 # ---------------------------------------------------------------------------
@@ -345,8 +357,10 @@ class TestPullCommand:
 
     @patch("autobio.cli.images.ContainerManager")
     def test_pull_all(self, mock_cm_cls: MagicMock) -> None:
-        TOOL_REGISTRY["tool-a"] = _make_entry()
-        TOOL_REGISTRY["tool-b"] = _make_entry()
+        # Distinct image tags so both are pulled (identical-image tools are
+        # deduped — see test_pull_resolves_catalog_tools_and_dedupes).
+        TOOL_REGISTRY["tool-a"] = _make_entry(image_tag="tool-a:1.0")
+        TOOL_REGISTRY["tool-b"] = _make_entry(image_tag="tool-b:1.0")
         result = runner.invoke(app, ["pull", "--all"])
         assert result.exit_code == 0
         assert mock_cm_cls.return_value.pull_image.call_count == 2
@@ -364,6 +378,68 @@ class TestPullCommand:
         assert result.exit_code == 0
         assert "No tools registered" in result.output
 
+    @patch("autobio.cli.images.ContainerManager")
+    def test_pull_resolves_catalog_tools_and_dedupes(self, mock_cm_cls: MagicMock) -> None:
+        """Catalog Tools (migrated from the flat registry) must be pullable too.
+
+        Registers a catalog Tool with two modes — one falling back to the
+        Tool's own ``image_tag``, one overriding with an image tag that
+        collides (post-prefix) with a flat ``TOOL_REGISTRY`` entry's image —
+        to exercise both multi-image pulls for a single Tool and cross-registry
+        URI dedup for ``pull --all``.
+        """
+        flat_entry = _make_entry()  # image_tag="mock-tool:1.0"
+        TOOL_REGISTRY["flat-tool"] = flat_entry
+
+        register(
+            Tool(
+                name="cat-tool",
+                display_name="CatTool",
+                category=ToolCategory.SCORING,
+                description="Catalog tool for pull test.",
+                version="1.0.0",
+                image_tag="cat-tool:1.0.0",
+                requires_gpu=False,
+                gpu_count=0,
+                default_mode="a",
+                modes={
+                    "a": Mode("a", "A", "mode a", _MockInput, _MockOutput, default_timeout=1),
+                    "b": Mode(
+                        "b",
+                        "B",
+                        "mode b",
+                        _MockInput,
+                        _MockOutput,
+                        default_timeout=1,
+                        image_tag=flat_entry.image_tag,  # collides with flat-tool's image
+                    ),
+                },
+            )
+        )
+
+        # -- `pull cat-tool` pulls both the Tool's own image and the mode-b
+        # override, and nothing else.
+        result = runner.invoke(app, ["pull", "cat-tool"])
+        assert result.exit_code == 0, result.output
+        pulled = {call.args[0] for call in mock_cm_cls.return_value.pull_image.call_args_list}
+        assert pulled == {
+            "ghcr.io/briney/autobio-cat-tool:1.0.0",
+            "ghcr.io/briney/autobio-mock-tool:1.0",
+        }
+
+        # -- `pull --all` pulls the flat tool's image and the catalog tool's
+        # image(s), deduping the URI shared between flat-tool and cat-tool's
+        # mode-b override so it is only pulled once.
+        mock_cm_cls.return_value.pull_image.reset_mock()
+        result = runner.invoke(app, ["pull", "--all"])
+        assert result.exit_code == 0, result.output
+        pulled_list = [call.args[0] for call in mock_cm_cls.return_value.pull_image.call_args_list]
+        assert sorted(pulled_list) == [
+            "ghcr.io/briney/autobio-cat-tool:1.0.0",
+            "ghcr.io/briney/autobio-mock-tool:1.0",
+        ]
+        assert len(pulled_list) == len(set(pulled_list))  # each unique uri pulled exactly once
+
 
 # ---------------------------------------------------------------------------
 # autobio --help
@@ -380,3 +456,165 @@ class TestHelpOutput:
     def test_subcommand_help(self, command: str) -> None:
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# autobio run --mode (catalog tools)
+# ---------------------------------------------------------------------------
+
+
+class _RunInput(BaseInput):
+    pass
+
+
+class _RunOutput(BaseOutput):
+    pass
+
+
+def _register_run_tool() -> None:
+    if "runtool" in CATALOG:
+        return
+    register(
+        Tool(
+            name="runtool",
+            display_name="RunTool",
+            category=ToolCategory.SCORING,
+            description="run demo",
+            version="1.0.0",
+            image_tag="runtool:1.0.0",
+            requires_gpu=False,
+            gpu_count=0,
+            default_mode="a",
+            modes={
+                "a": Mode("a", "A", "a", _RunInput, _RunOutput, default_timeout=1),
+                "b": Mode("b", "B", "b", _RunInput, _RunOutput, default_timeout=1),
+            },
+        )
+    )
+
+
+def test_run_forwards_mode_for_catalog_tool(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    _register_run_tool()
+    cfg = tmp_path / "config.json"
+    cfg.write_text("{}")
+
+    mock_runner = MagicMock()
+    mock_output = _RunOutput(
+        metadata=RunMetadata(
+            tool_name="runtool",
+            tool_version="1.0.0",
+            image_uri="runtool:1.0.0",
+            wall_time_seconds=0.1,
+            gpu_ids=None,
+            workspace_path=tmp_path,
+            timestamp=datetime.now(tz=UTC),
+        ),
+        raw_output_path=tmp_path,
+    )
+    mock_runner.run.return_value = mock_output
+
+    with patch("autobio.cli.run.get_runner", return_value=mock_runner):
+        result = CliRunner().invoke(
+            app, ["run", "runtool", "--mode", "b", "--config", str(cfg), "--gpu", "none"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert mock_runner.run.call_args.kwargs["mode"] == "b"
+
+
+def test_run_unknown_mode_exits_1(tmp_path: Path) -> None:
+    _register_run_tool()
+    cfg = tmp_path / "config.json"
+    cfg.write_text("{}")
+
+    mock_runner = MagicMock()
+
+    with patch("autobio.cli.run.get_runner", return_value=mock_runner):
+        result = CliRunner().invoke(app, ["run", "runtool", "--config", str(cfg), "--mode", "nope"])
+
+    assert result.exit_code == 1
+    assert "Unknown mode" in result.output
+    mock_runner.run.assert_not_called()
+
+
+def test_run_rejects_mode_for_legacy_tool(tmp_path: Path) -> None:
+    # 'prodigy' is a legacy flat tool (in TOOL_REGISTRY, not CATALOG). get_runner is
+    # patched (like the other run-command tests in this class) so no real
+    # ContainerManager/GPUManager gets constructed.
+    TOOL_REGISTRY["prodigy"] = _make_entry()
+    cfg = tmp_path / "config.json"
+    cfg.write_text("{}")
+
+    mock_runner = MagicMock()
+    mock_runner.entry = _make_entry()
+
+    with patch("autobio.cli.run.get_runner", return_value=mock_runner):
+        result = CliRunner().invoke(app, ["run", "prodigy", "--mode", "x", "--config", str(cfg)])
+
+    assert result.exit_code == 1
+    assert "does not support --mode" in result.output
+
+
+# ---------------------------------------------------------------------------
+# autobio list / info — real merge coverage with the migrated freesasa Tool
+#
+# freesasa is the first real (non-mock) catalog Tool, so these tests exercise
+# the actual `list`/`info` CLI paths with a genuine multi-mode Tool alongside
+# a flat (legacy) tool, instead of only testing the formatters directly.
+# ---------------------------------------------------------------------------
+
+
+def _register_freesasa() -> None:
+    """Re-register the real freesasa Tool into CATALOG after fixture-clearing.
+
+    Importing ``autobio.tools`` registers freesasa once (module import is
+    cached), but the autouse ``_clean_catalog``/``_clean_registry`` fixtures
+    snapshot-clear-restore CATALOG/TOOL_REGISTRY around every test in this
+    file for isolation — so tests that need freesasa present must re-register
+    it explicitly, using the module's own Tool object (not a reconstruction).
+    """
+    import autobio.tools  # noqa: F401 - ensures the module (and its schemas) are importable
+    from autobio.tools.freesasa import FREESASA_TOOL
+
+    if "freesasa" not in CATALOG:
+        register(FREESASA_TOOL)
+
+
+class TestListInfoMergedWithFreesasa:
+    def test_list_json_includes_freesasa_and_flat_tool(self) -> None:
+        _register_freesasa()
+        TOOL_REGISTRY["prodigy"] = _make_entry(category=ToolCategory.SCORING)
+
+        result = runner.invoke(app, ["list", "--format", "json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        names = [row["name"] for row in parsed]
+        assert names.count("freesasa") == 1
+        assert "prodigy" in names
+
+        freesasa_row = next(row for row in parsed if row["name"] == "freesasa")
+        assert freesasa_row["modes"] == ["sasa", "bsa"]
+
+    def test_list_category_filter_includes_freesasa(self) -> None:
+        _register_freesasa()
+
+        result = runner.invoke(app, ["list", "--category", "scoring", "--format", "json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert any(row["name"] == "freesasa" for row in parsed)
+
+    def test_info_freesasa_json_returns_catalog_payload(self) -> None:
+        _register_freesasa()
+
+        result = runner.invoke(app, ["info", "freesasa", "--format", "json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert [mode["name"] for mode in parsed["modes"]] == ["sasa", "bsa"]
+        for mode in parsed["modes"]:
+            assert "input_schema" in mode
+            assert "output_schema" in mode

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 - Pydantic needs at runtime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.hints import Tier, Widget, ui
 
 
 class ScoringInput(BaseInput):
@@ -20,6 +21,50 @@ class ScoringInput(BaseInput):
             "Optional mapping of chain ID to amino acid sequence. "
             "If provided, scores the structure with these sequences threaded onto the backbone."
         ),
+    )
+
+
+class FreeSASABaseInput(BaseInput):
+    """Shared input for FreeSASA modes (SASA and BSA)."""
+
+    structure_path: Path = Field(
+        description="Path to the input PDB structure.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=0),
+    )
+    algorithm: Literal["LeeRichards", "ShrakeRupley"] = Field(
+        default="LeeRichards",
+        description="SASA computation algorithm.",
+        json_schema_extra=ui(widget=Widget.SELECT, tier=Tier.ADVANCED, order=10),
+    )
+    probe_radius: float = Field(
+        default=1.4,
+        gt=0,
+        description="Solvent probe radius.",
+        json_schema_extra=ui(
+            widget=Widget.NUMBER, tier=Tier.ADVANCED, unit="Å", step=0.1, order=11
+        ),
+    )
+    per_residue: bool = Field(
+        default=False,
+        description="Return per-residue values in addition to totals.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=12),
+    )
+
+
+class FreeSASASASAInput(FreeSASABaseInput):
+    """Input for the FreeSASA ``sasa`` mode (solvent-accessible surface area)."""
+
+
+class FreeSASABSAInput(FreeSASABaseInput):
+    """Input for the FreeSASA ``bsa`` mode (buried surface area at an interface)."""
+
+    partner1: str = Field(
+        description="Comma-separated chain IDs for interface partner 1 (e.g. 'A,B').",
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=1),
+    )
+    partner2: str = Field(
+        description="Comma-separated chain IDs for interface partner 2 (e.g. 'C').",
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=2),
     )
 
 

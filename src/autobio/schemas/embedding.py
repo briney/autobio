@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 - Pydantic needs at runtime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.hints import Tier, Widget, ui
+from autobio.schemas.sequences import GenericSequenceSet  # noqa: TC001 - needed at runtime
 
 
 class EmbeddingInput(BaseInput):
@@ -23,6 +26,47 @@ class EmbeddingInput(BaseInput):
         default=None,
         description=(
             "Pooling strategy for per-residue embeddings (e.g., 'mean', 'cls', 'per_residue')."
+        ),
+    )
+
+
+class ESMEmbedInput(BaseInput):
+    """Input for ESM embedding (esm1b): sequences + layer/pooling."""
+
+    sequences: GenericSequenceSet = Field(
+        description="Protein sequences: a dict of id→sequence, FASTA text, or a FASTA file path.",
+        json_schema_extra=ui(widget=Widget.SEQUENCE, flavor="generic", tier=Tier.PRIMARY, order=0),
+    )
+    layer: int | None = Field(
+        default=None,
+        description="Model layer to extract embeddings from (None = final layer).",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    pooling: Literal["mean", "cls", "per_residue"] = Field(
+        default="mean",
+        description="Pooling strategy for per-residue embeddings.",
+        json_schema_extra=ui(widget=Widget.SELECT, tier=Tier.PRIMARY, order=1),
+    )
+
+
+class ESM2Input(ESMEmbedInput):
+    """Input for ESM-2 (adds checkpoint size selection)."""
+
+    checkpoint: Literal["8M", "35M", "150M", "650M", "3B", "15B"] = Field(
+        default="650M",
+        description="ESM-2 checkpoint size.",
+        json_schema_extra=ui(
+            widget=Widget.SELECT,
+            tier=Tier.PRIMARY,
+            order=2,
+            enum_labels={
+                "8M": "8M (t6)",
+                "35M": "35M (t12)",
+                "150M": "150M (t30)",
+                "650M": "650M (t33, default)",
+                "3B": "3B (t36)",
+                "15B": "15B (t48)",
+            },
         ),
     )
 

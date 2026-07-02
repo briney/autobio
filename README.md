@@ -239,8 +239,7 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | `evoef2_binding` | No | Compute protein-protein binding energy using EvoEF2's physics-based energy function |
 | `antifold_score` | Yes | Score antibody sequences against backbone structures using AntiFold conditional log-likelihoods |
 | `esm_if1_score` | Yes | Score protein sequences against backbone structures using ESM-IF1 conditional log-likelihood |
-| `freesasa_sasa` | No | Calculate solvent-accessible surface area (SASA) of a protein structure using FreeSASA |
-| `freesasa_bsa` | No | Calculate buried surface area (BSA) at a protein-protein interface using FreeSASA |
+| `freesasa` | No | Calculate solvent-accessible surface area (SASA, default mode) or buried surface area (BSA, `bsa` mode) using FreeSASA |
 
 ### Simulation
 

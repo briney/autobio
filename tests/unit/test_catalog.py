@@ -137,3 +137,20 @@ def test_get_category_info_returns_labelled_entry():
     assert isinstance(info, CategoryInfo)
     assert info.category is ToolCategory.EMBEDDING
     assert info.label and info.description
+
+
+def test_mode_image_tag_defaults_to_none() -> None:
+    assert _mode("embed").image_tag is None
+
+
+def test_mode_image_tag_override_is_stored() -> None:
+    m = Mode(
+        name="relax",
+        display_name="Relax",
+        description="relax",
+        input_schema=BaseInput,
+        output_schema=BaseOutput,
+        default_timeout=600,
+        image_tag="rosetta-relax:1.0.0",
+    )
+    assert m.image_tag == "rosetta-relax:1.0.0"
