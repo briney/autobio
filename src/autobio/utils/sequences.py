@@ -131,6 +131,13 @@ def normalize_chain_token(token: str) -> str:
 
     Accepts aliases ``heavy``/``h``/``vh`` and ``light``/``l``/``vl``.
 
+    Args:
+        token: Raw chain token parsed from a FASTA header (case-insensitive,
+            surrounding whitespace tolerated).
+
+    Returns:
+        Either ``"heavy"`` or ``"light"``.
+
     Raises:
         ValueError: If the token is not a recognized chain identifier.
     """
@@ -151,9 +158,17 @@ def parse_antibody_fasta_string(text: str) -> list[AntibodySequence]:
     a ``pair_id`` are paired into one antibody; a lone record becomes an unpaired
     antibody (that chain only).
 
+    Args:
+        text: Raw FASTA content with ``>{pair_id}|{chain}`` headers.
+
+    Returns:
+        List of :class:`AntibodySequence` objects, one per distinct ``pair_id``,
+        in first-seen order.
+
     Raises:
         ValueError: For a header without a ``|`` chain tag, an unknown chain
             token, a duplicate ``(pair_id, chain)``, or a non-protein sequence.
+            Every raised error names the offending record's header.
     """
     raw = parse_fasta_string(text)
     chains: dict[str, dict[str, str]] = {}
@@ -166,7 +181,10 @@ def parse_antibody_fasta_string(text: str) -> list[AntibodySequence]:
             )
         pair_id, _, chain_token = header.rpartition("|")
         pair_id = pair_id.strip()
-        chain = normalize_chain_token(chain_token)
+        try:
+            chain = normalize_chain_token(chain_token)
+        except ValueError as exc:
+            raise ValueError(f"Record {header!r}: {exc}") from exc
         if not validate_antibody_sequence(seq):
             raise ValueError(f"Record {header!r}: sequence contains non-protein characters.")
         if pair_id not in chains:

@@ -221,6 +221,26 @@ def test_parse_antibody_fasta_missing_chain_tag() -> None:
 
 
 def test_parse_antibody_fasta_duplicate_pair_chain() -> None:
-    text = ">ab1|heavy\nQVQLVQSG\n>ab1|heavy\nEVQLLESG\n"
-    with pytest.raises(ValueError, match="ab1.*heavy"):
+    # Distinct headers ("heavy" vs "VH") that normalize to the same (pair_id,
+    # chain) so parse_fasta_string's own duplicate-id check does not fire
+    # first; this exercises the antibody parser's own duplicate-chain branch.
+    text = ">ab1|heavy\nQVQLVQSG\n>ab1|VH\nEVQLLESG\n"
+    with pytest.raises(ValueError, match="Duplicate record for pair 'ab1' chain 'heavy'"):
         parse_antibody_fasta_string(text)
+
+
+def test_parse_antibody_fasta_unknown_chain_token_names_record() -> None:
+    with pytest.raises(ValueError, match="ab1"):
+        parse_antibody_fasta_string(">ab1|kappa\nQVQLVQSG\n")
+
+
+def test_parse_antibody_fasta_lone_light_chain_record() -> None:
+    text = ">ab1|light\nDIQMTQSP\n"
+    result = parse_antibody_fasta_string(text)
+    assert result == [AntibodySequence(id="ab1", light_chain="DIQMTQSP")]
+
+
+def test_parse_antibody_fasta_chain_alias_end_to_end() -> None:
+    text = ">ab1|vh\nQVQLVQSG\n"
+    result = parse_antibody_fasta_string(text)
+    assert result == [AntibodySequence(id="ab1", heavy_chain="QVQLVQSG")]
