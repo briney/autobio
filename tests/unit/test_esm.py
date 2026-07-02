@@ -6,8 +6,11 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+import pytest
+
 from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
+from autobio.core.result import AutobioError
 from autobio.tools.esm import ESMRunner
 
 if TYPE_CHECKING:
@@ -70,13 +73,134 @@ def test_esm_accepts_fasta_text(tmp_path: Path) -> None:
     assert cfg["model_name"] == "facebook/esm1b_t33_650M_UR50S"
 
 
+def test_esm_invalid_protein_sequence_rejected(tmp_path: Path) -> None:
+    from autobio.schemas.embedding import ESMEmbedInput
+
+    runner = _make_runner("esm1b")
+    with pytest.raises(AutobioError, match="Invalid protein sequence"):
+        _written_config(runner, ESMEmbedInput(sequences={"s1": "XZ123"}), tmp_path)
+
+
+def test_esm2_layer_out_of_range_checkpoint_aware_rejected(tmp_path: Path) -> None:
+    """esm2 8M has num_layers=6; layer=10 must be rejected against that bound, not esm1b's 33."""
+    from autobio.schemas.embedding import ESM2Input
+
+    runner = _make_runner("esm2")
+    with pytest.raises(AutobioError, match="between 0 and 6"):
+        _written_config(
+            runner,
+            ESM2Input(sequences={"s1": "MKT"}, checkpoint="8M", layer=10),
+            tmp_path,
+        )
+
+
+def test_esm2_negative_layer_rejected(tmp_path: Path) -> None:
+    from autobio.schemas.embedding import ESM2Input
+
+    runner = _make_runner("esm2")
+    with pytest.raises(AutobioError, match="between 0 and 6"):
+        _written_config(
+            runner,
+            ESM2Input(sequences={"s1": "MKT"}, checkpoint="8M", layer=-1),
+            tmp_path,
+        )
+
+
+def test_esm_empty_sequences_rejected(tmp_path: Path) -> None:
+    from autobio.schemas.embedding import ESMEmbedInput
+
+    runner = _make_runner("esm1b")
+    with pytest.raises(AutobioError, match="sequences must be non-empty"):
+        _written_config(runner, ESMEmbedInput(sequences={}), tmp_path)
+
+
+_SINGLE_EMBEDDING_RESULT = {
+    "embeddings": [
+        {
+            "sequence_id": "seq1",
+            "embedding_path": "/workspace/outputs/standardized/seq1.npy",
+            "dimension": 1280,
+            "layer": 33,
+            "pooling": "mean",
+        }
+    ],
+    "model_name": "esm2_t33_650M_UR50D",
+    "embedding_dimension": 1280,
+}
+
+_MULTI_EMBEDDING_RESULT = {
+    "embeddings": [
+        {
+            "sequence_id": "seq1",
+            "embedding_path": "/workspace/outputs/standardized/seq1.npy",
+            "dimension": 1280,
+            "layer": 33,
+            "pooling": "mean",
+        },
+        {
+            "sequence_id": "seq2",
+            "embedding_path": "/workspace/outputs/standardized/seq2.npy",
+            "dimension": 1280,
+            "layer": 33,
+            "pooling": "mean",
+        },
+    ],
+    "model_name": "esm2_t33_650M_UR50D",
+    "embedding_dimension": 1280,
+}
+
+
+def test_parse_output_single_embedding(tmp_path: Path) -> None:
+    from autobio.core.workspace import Workspace
+    from autobio.schemas.embedding import EmbeddingOutput
+
+    runner = _make_runner("esm2")
+    ws = Workspace.create(tmp_path / "ws")
+    try:
+        (ws.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_EMBEDDING_RESULT))
+        output = runner.parse_output(ws)
+        assert isinstance(output, EmbeddingOutput)
+        assert output.model_name == "esm2_t33_650M_UR50D"
+        assert output.embedding_dimension == 1280
+        assert len(output.embeddings) == 1
+        e = output.embeddings[0]
+        assert e.sequence_id == "seq1"
+        assert e.dimension == 1280
+        assert e.layer == 33
+        assert e.pooling == "mean"
+        # container-path remapping: /workspace/... -> host workspace root
+        assert e.embedding_path == ws.root / "outputs" / "standardized" / "seq1.npy"
+    finally:
+        ws.cleanup()
+
+
+def test_parse_output_multiple_embeddings(tmp_path: Path) -> None:
+    from autobio.core.workspace import Workspace
+
+    runner = _make_runner("esm2")
+    ws = Workspace.create(tmp_path / "ws")
+    try:
+        (ws.std_output_dir / "result_data.json").write_text(json.dumps(_MULTI_EMBEDDING_RESULT))
+        output = runner.parse_output(ws)
+        assert len(output.embeddings) == 2
+        assert {e.sequence_id for e in output.embeddings} == {"seq1", "seq2"}
+    finally:
+        ws.cleanup()
+
+
 def test_info_snapshot_esm2() -> None:
     import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("esm2"), OutputFormat.JSON))
+    assert parsed["modes"][0]["name"] == "embed"
     props = parsed["modes"][0]["input_schema"]["properties"]
     assert props["sequences"]["x-autobio"]["widget"] == "sequence"
     assert props["sequences"]["x-autobio"]["flavor"] == "generic"
+    assert props["layer"]["x-autobio"]["widget"] == "number"
+    assert props["layer"]["x-autobio"]["tier"] == "advanced"
+    assert props["pooling"]["x-autobio"]["widget"] == "select"
+    assert props["pooling"]["x-autobio"]["tier"] == "primary"
+    assert props["checkpoint"]["x-autobio"]["widget"] == "select"
     assert props["checkpoint"]["default"] == "650M"
     assert "output_schema" in parsed["modes"][0]
