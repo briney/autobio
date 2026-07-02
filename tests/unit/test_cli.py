@@ -35,9 +35,10 @@ def _make_entry(
     *,
     category: ToolCategory = ToolCategory.STRUCTURE_PREDICTION,
     requires_gpu: bool = True,
+    image_tag: str = "mock-tool:1.0",
 ) -> ToolEntry:
     return ToolEntry(
-        image_tag="mock-tool:1.0",
+        image_tag=image_tag,
         category=category,
         requires_gpu=requires_gpu,
         gpu_count=1,
@@ -356,8 +357,10 @@ class TestPullCommand:
 
     @patch("autobio.cli.images.ContainerManager")
     def test_pull_all(self, mock_cm_cls: MagicMock) -> None:
-        TOOL_REGISTRY["tool-a"] = _make_entry()
-        TOOL_REGISTRY["tool-b"] = _make_entry()
+        # Distinct image tags so both are pulled (identical-image tools are
+        # deduped — see test_pull_resolves_catalog_tools_and_dedupes).
+        TOOL_REGISTRY["tool-a"] = _make_entry(image_tag="tool-a:1.0")
+        TOOL_REGISTRY["tool-b"] = _make_entry(image_tag="tool-b:1.0")
         result = runner.invoke(app, ["pull", "--all"])
         assert result.exit_code == 0
         assert mock_cm_cls.return_value.pull_image.call_count == 2
@@ -374,6 +377,68 @@ class TestPullCommand:
         result = runner.invoke(app, ["pull", "--all"])
         assert result.exit_code == 0
         assert "No tools registered" in result.output
+
+    @patch("autobio.cli.images.ContainerManager")
+    def test_pull_resolves_catalog_tools_and_dedupes(self, mock_cm_cls: MagicMock) -> None:
+        """Catalog Tools (migrated from the flat registry) must be pullable too.
+
+        Registers a catalog Tool with two modes — one falling back to the
+        Tool's own ``image_tag``, one overriding with an image tag that
+        collides (post-prefix) with a flat ``TOOL_REGISTRY`` entry's image —
+        to exercise both multi-image pulls for a single Tool and cross-registry
+        URI dedup for ``pull --all``.
+        """
+        flat_entry = _make_entry()  # image_tag="mock-tool:1.0"
+        TOOL_REGISTRY["flat-tool"] = flat_entry
+
+        register(
+            Tool(
+                name="cat-tool",
+                display_name="CatTool",
+                category=ToolCategory.SCORING,
+                description="Catalog tool for pull test.",
+                version="1.0.0",
+                image_tag="cat-tool:1.0.0",
+                requires_gpu=False,
+                gpu_count=0,
+                default_mode="a",
+                modes={
+                    "a": Mode("a", "A", "mode a", _MockInput, _MockOutput, default_timeout=1),
+                    "b": Mode(
+                        "b",
+                        "B",
+                        "mode b",
+                        _MockInput,
+                        _MockOutput,
+                        default_timeout=1,
+                        image_tag=flat_entry.image_tag,  # collides with flat-tool's image
+                    ),
+                },
+            )
+        )
+
+        # -- `pull cat-tool` pulls both the Tool's own image and the mode-b
+        # override, and nothing else.
+        result = runner.invoke(app, ["pull", "cat-tool"])
+        assert result.exit_code == 0, result.output
+        pulled = {call.args[0] for call in mock_cm_cls.return_value.pull_image.call_args_list}
+        assert pulled == {
+            "ghcr.io/briney/autobio-cat-tool:1.0.0",
+            "ghcr.io/briney/autobio-mock-tool:1.0",
+        }
+
+        # -- `pull --all` pulls the flat tool's image and the catalog tool's
+        # image(s), deduping the URI shared between flat-tool and cat-tool's
+        # mode-b override so it is only pulled once.
+        mock_cm_cls.return_value.pull_image.reset_mock()
+        result = runner.invoke(app, ["pull", "--all"])
+        assert result.exit_code == 0, result.output
+        pulled_list = [call.args[0] for call in mock_cm_cls.return_value.pull_image.call_args_list]
+        assert sorted(pulled_list) == [
+            "ghcr.io/briney/autobio-cat-tool:1.0.0",
+            "ghcr.io/briney/autobio-mock-tool:1.0",
+        ]
+        assert len(pulled_list) == len(set(pulled_list))  # each unique uri pulled exactly once
 
 
 # ---------------------------------------------------------------------------

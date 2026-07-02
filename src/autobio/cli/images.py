@@ -8,12 +8,32 @@ import typer
 from rich.console import Console
 
 from autobio.cli.formatters import OutputFormat, format_image_list, print_error
+from autobio.core import catalog
 from autobio.core.config import AutobioConfig
 from autobio.core.container import ContainerManager
 from autobio.core.registry import TOOL_REGISTRY, get_tool
 from autobio.core.result import ContainerNotFoundError
 
 _console = Console()
+
+
+def _catalog_image_uris(tool: catalog.Tool, config: AutobioConfig) -> set[str]:
+    """Return the prefixed image URIs a catalog Tool pulls from.
+
+    This is the Tool's own ``image_tag`` plus any per-mode ``image_tag``
+    overrides (used by engines whose modes ship as separate container images,
+    e.g. future rosetta/openmm modes). ``freesasa``/``esm1b``/``esm2`` have no
+    mode overrides, so this is just the Tool's single image.
+
+    Args:
+        tool: The catalog Tool to resolve image URIs for.
+        config: Active autobio config (supplies the image prefix).
+
+    Returns:
+        A set of fully-prefixed image URIs (deduplicated).
+    """
+    tags = {tool.image_tag} | {m.image_tag for m in tool.modes.values() if m.image_tag}
+    return {f"{config.image_prefix}{tag}" for tag in tags}
 
 
 def pull_cmd(
@@ -35,24 +55,40 @@ def pull_cmd(
     manager = ContainerManager(config)
 
     if all_tools:
-        entries = list(TOOL_REGISTRY.items())
-        if not entries:
+        if not TOOL_REGISTRY and not catalog.CATALOG:
             typer.echo("No tools registered.")
             return
-        for name, entry in entries:
-            uri = f"{config.image_prefix}{entry.image_tag}"
+        # Map uri -> representative tool name, so shared images (e.g. esm1b
+        # and esm2 both resolving to esm:1.0.0) are pulled exactly once.
+        uris: dict[str, str] = {}
+        for name, entry in TOOL_REGISTRY.items():
+            uris.setdefault(f"{config.image_prefix}{entry.image_tag}", name)
+        for name, cat_tool in catalog.CATALOG.items():
+            for uri in _catalog_image_uris(cat_tool, config):
+                uris.setdefault(uri, name)
+        for uri, name in uris.items():
             _pull_with_status(manager, name, uri)
         return
 
-    # Single tool
-    try:
-        entry = get_tool(tool)  # type: ignore[arg-type]
-    except KeyError as exc:
-        print_error(str(exc))
-        raise typer.Exit(code=1) from None
+    # Single tool — argparse guarantees `tool` is a non-empty str here, since
+    # the only way to reach this branch with `tool is None` would have exited
+    # via the guard above (`not tool and not all_tools`).
+    assert tool is not None
+    if tool in catalog.CATALOG:
+        cat_tool = catalog.get_tool(tool)
+        for uri in sorted(_catalog_image_uris(cat_tool, config)):
+            _pull_with_status(manager, tool, uri)
+        return
 
-    uri = f"{config.image_prefix}{entry.image_tag}"
-    _pull_with_status(manager, tool, uri)  # type: ignore[arg-type]
+    if tool in TOOL_REGISTRY:
+        entry = get_tool(tool)
+        uri = f"{config.image_prefix}{entry.image_tag}"
+        _pull_with_status(manager, tool, uri)
+        return
+
+    available = ", ".join(sorted(set(catalog.CATALOG) | set(TOOL_REGISTRY))) or "(none)"
+    print_error(f"Unknown tool {tool!r}. Available tools: {available}")
+    raise typer.Exit(code=1)
 
 
 def images_cmd(
