@@ -119,3 +119,21 @@ def test_list_tools_filters_by_mode_override_category():
     assert "demo" in list_tools(category=ToolCategory.SCORING)
     assert "demo" in list_tools(category=ToolCategory.INVERSE_FOLDING)
     assert "demo" not in list_tools(category=ToolCategory.SIMULATION)
+
+
+from autobio.core.catalog import CategoryInfo, get_category_info, list_categories  # noqa: E402
+
+
+def test_list_categories_covers_all_members_sorted_by_order():
+    cats = list_categories()
+    assert {c.category for c in cats} == set(ToolCategory)
+    orders = [c.order for c in cats]
+    assert orders == sorted(orders)
+    assert len(orders) == len(set(orders))  # orders are unique
+
+
+def test_get_category_info_returns_labelled_entry():
+    info = get_category_info(ToolCategory.EMBEDDING)
+    assert isinstance(info, CategoryInfo)
+    assert info.category is ToolCategory.EMBEDDING
+    assert info.label and info.description

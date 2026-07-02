@@ -11,8 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from autobio.core.registry import ToolCategory
+
 if TYPE_CHECKING:
-    from autobio.core.registry import ToolCategory
     from autobio.schemas.base import BaseInput, BaseOutput
 
 
@@ -56,6 +57,67 @@ class Tool:
                 f"Tool {self.name!r} default_mode {self.default_mode!r} "
                 f"is not among its modes: {sorted(self.modes)}."
             )
+
+
+@dataclass(frozen=True)
+class CategoryInfo:
+    """Display metadata for a tool category (drives consumer sidebar submenus)."""
+
+    category: ToolCategory
+    label: str
+    description: str
+    order: int
+    icon: str | None = None
+
+
+_CATEGORY_INFO: dict[ToolCategory, CategoryInfo] = {
+    ToolCategory.STRUCTURE_PREDICTION: CategoryInfo(
+        ToolCategory.STRUCTURE_PREDICTION,
+        "Structure Prediction",
+        "Predict 3D structures from sequence.",
+        order=1,
+    ),
+    ToolCategory.STRUCTURE_DESIGN: CategoryInfo(
+        ToolCategory.STRUCTURE_DESIGN,
+        "Structure Design",
+        "Generate or design new structures.",
+        order=2,
+    ),
+    ToolCategory.INVERSE_FOLDING: CategoryInfo(
+        ToolCategory.INVERSE_FOLDING,
+        "Inverse Folding",
+        "Design sequences for a target backbone.",
+        order=3,
+    ),
+    ToolCategory.EMBEDDING: CategoryInfo(
+        ToolCategory.EMBEDDING,
+        "Embeddings",
+        "Extract learned representations and likelihoods from sequences.",
+        order=4,
+    ),
+    ToolCategory.SCORING: CategoryInfo(
+        ToolCategory.SCORING,
+        "Scoring",
+        "Score structures, complexes, or mutations.",
+        order=5,
+    ),
+    ToolCategory.SIMULATION: CategoryInfo(
+        ToolCategory.SIMULATION,
+        "Simulation",
+        "Molecular dynamics and physics-based simulation.",
+        order=6,
+    ),
+}
+
+
+def get_category_info(category: ToolCategory) -> CategoryInfo:
+    """Return display metadata for a category."""
+    return _CATEGORY_INFO[category]
+
+
+def list_categories() -> list[CategoryInfo]:
+    """Return all category metadata entries, sorted by display order."""
+    return sorted(_CATEGORY_INFO.values(), key=lambda c: c.order)
 
 
 CATALOG: dict[str, Tool] = {}
