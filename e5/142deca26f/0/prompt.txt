@@ -483,3 +483,64 @@ None.
 **Reasoning:** Implementation matches the brief's specified interface and code verbatim, correctly reuses Task 6 helpers with no duplication, uses a proper runtime (non-`TYPE_CHECKING`) import for `AntibodySequence`, introduces no import cycle, stays within the Phase 0 file-scope constraint, and the five required test cases all exercise real Pydantic validation behavior. The only gaps (empty-list, missing-file-for-antibody coverage) are minor, pre-existing-pattern-consistent, and not required by the brief.</result>
 <usage><subagent_tokens>48649</subagent_tokens><tool_uses>11</tool_uses><duration_ms>47992</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a218f70ca0b0d6d24</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a218f70ca0b0d6d24.output</output-file>
+<status>completed</status>
+<summary>Agent "Final whole-branch review (Foundation)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. Let me compile the review.
+
+## Whole-Branch Review: Phase 0 (Foundation) — Tools→Modes Refactor
+
+I verified the additive-only boundary (`git diff --name-only 45e1942..203bb4a` shows exactly the 8 expected files; `registry.py`/`tools/`/`cli/` are byte-identical), confirmed `_CATEGORY_INFO` covers all 6 `ToolCategory` members, traced the only host-side caller of the changed `parse_fasta` (the new `schemas/sequences.py` — container copies are independent, so the stricter behavior regresses nothing), and spot-checked the load-bearing runtime behaviors (StrEnum coercion, `endswith` tuple, `Tool` hashability, empty-input normalization). All modules import cleanly.
+
+### Strengths
+- **Clean additive boundary.** The four units are genuinely self-contained; nothing outside the new files + `utils/sequences.py` moved. The `catalog.py` module docstring honestly frames itself as the "additive successor to `core.registry`," so the parallel-module approach is intentional and documented.
+- **`parse_fasta` refactor is DRY and safe.** Delegating `parse_fasta` → `parse_fasta_string` removes duplicated line-loop logic, and the only host caller is new code, so the new duplicate-id / sequence-before-header errors (spec §6.2) can't break an existing consumer.
+- **`BeforeValidator` design is correct and round-trips.** `Annotated[canonical, BeforeValidator]` keeps the declared type structured (JSON callers unaffected) while widening accepted inputs. Native `AntibodySequence` instances pass through without re-validation (Pydantic v2 default `revalidate_instances='never'`), so `_Ab(sequences=[ab]).sequences == [ab]` holds.
+- **`TYPE_CHECKING` decision is right.** `catalog.py` annotates `type[BaseInput]`/`type[BaseOutput]` under `TYPE_CHECKING` with `from __future__ import annotations`; because `Mode`/`Tool` are plain dataclasses (not Pydantic), annotations are never resolved at runtime, so no import cost/cycle. The `utils/sequences.py` runtime import of `AntibodySequence` is necessary (used in `AntibodySequence(...)` calls) and creates no cycle (`antibody.py` imports only pydantic + `base`).
+- **Error messages are actionable and consistently record-named** in the antibody parser (`Record {header!r}: ...`), and `get_tool` lists available tools. Good fail-fast discipline in the hot paths.
+- **Cross-category filtering works as specified** (`tool_categories` union + `list_tools(category=...)`), with tests covering the mode-override case.
+
+### Issues
+
+#### Critical (Must Fix)
+None. No correctness defects; the additive boundary is intact.
+
+#### Important (Should Fix)
+- **Design gap that will bite Phase 1: the sequence `x-autobio` hint does not live with the `SequenceSet` type.** `src/autobio/schemas/sequences.py:58,102`. Spec §6.1 says every sequence field should advertise `x-autobio: {widget: "sequence", flavor: "generic"|"antibody"}` — and because the *declared* JSON Schema of `Annotated[dict[str,str], BeforeValidator]` is just `object`/`additionalProperties`, that hint is the **only** signal telling a consumer FASTA text/file is accepted. As written, Phase 1 must hand-attach `Field(json_schema_extra=ui(widget=Widget.SEQUENCE, flavor=...))` on every sequence field and pick the right flavor each time — easy to forget, and forgetting silently drops the FASTA affordance. This is not a Phase-0 merge blocker (no field uses these yet), but it should be resolved as an explicit Phase-1 decision: either bundle the hint into the alias (`Annotated[dict[str,str], BeforeValidator(...), Field(json_schema_extra=ui(widget=Widget.SEQUENCE, flavor="generic"))]` — note Pydantic will let a field-level `Field` override/replace it, so document that) or make it a checklist item in the Phase-1 plan. Flagging here because the review explicitly asks for design gaps.
+
+#### Minor (Nice to Have)
+- **Misleading error for an empty sequence record.** `src/autobio/utils/sequences.py:188-189`. A header with no sequence body (`&gt;ab1|heavy` followed immediately by the next header) yields `seq=""`, and `validate_antibody_sequence("")` is `False` (length guard), so the raised message is `"...sequence contains non-protein characters."` — confirmed at runtime. It should distinguish empty from non-protein, e.g. `"Record {header!r}: empty sequence."` vs `"...non-protein characters."`.
+- **Cross-file test-style inconsistency.** Every `def test_*` in `tests/unit/test_catalog.py` and `tests/unit/test_hints.py` lacks a `-&gt; None` return annotation, whereas `tests/unit/test_sequence_set.py` and the new functions in `tests/unit/test_sequences.py` all have it. The project convention ("type hints on all function signatures") argues for uniformity. Doesn't fail ruff/mypy (mypy runs on `src/` only), hence consistent with the "clean" report — purely cosmetic.
+- **Asymmetric residue validation between flavors.** The generic FASTA path (`parse_fasta_string`) does not validate residues, while the antibody path calls `validate_antibody_sequence`. This is defensible (generic could be DNA/RNA/protein) but undocumented; a one-line note in `normalize_generic_sequences` would prevent a Phase-1 author assuming generic sequences are validated.
+
+### Triage of accumulated Minor findings
+1. **`tool_categories` bare-one-liner docstring [T1]** — won't-fix. It's a trivial pure helper; the one-liner accurately states behavior. (If you want uniformity, fold into a Phase-1 docstring sweep.)
+2. **`Tool` unhashable [T1]** — won't-fix (confirmed: `hash(tool)` raises `TypeError: unhashable type: 'dict'`; `Mode` is hashable). No current or Phase-1 code keys on `Tool`; the catalog keys on `name: str`. Revisit only if a future index needs `Tool` as a key.
+3. **`get_category_info` bare KeyError [T2]** — fix-in-Phase-1. Cheap symmetry with `get_tool`'s friendly error and aligns with the standing "fail fast with useful errors" preference; but input is a closed enum fully covered by `test_list_categories_covers_all_members_sorted_by_order`, so not a merge blocker.
+4. **Mid-file `# noqa: E402` import in `test_catalog.py:126` [T2]** — won't-fix. It's an intentional TDD artifact (Task 2 appended imports mid-file); harmless. Optionally hoist to the top import block during a Phase-1 test cleanup.
+5. **`ui()` `group`/`enum_labels` branches untested; `ui()` docstring lacks `Args`; test fns lack `-&gt; None` [T3]** — fix-in-Phase-1. The untested branches are structurally identical `if x is not None` lines (low risk), but Phase 1 will lean on `enum_labels`/`group` heavily, so add coverage then. `-&gt; None` folded into finding above.
+6. **Residual inline-`import pytest` / `-&gt; None` inconsistency [T3,4]** — partially resolved / won't-fix. Confirmed: **no** inline `import pytest` remains in any of the four test files (all at module top). The `-&gt; None` inconsistency in `test_catalog.py`/`test_hints.py` remains (see Minor above).
+7. **No positive test for antibody 4th error path (non-protein sequence) [T5]** — fix-in-Phase-1. Confirmed absent. Add a test asserting `parse_antibody_fasta_string("&gt;ab1|heavy\nXJZ123\n")` raises naming the record; pair it with the empty-sequence message fix above.
+8. **`_HEAVY_TOKENS`/`_LIGHT_TOKENS` untyped [T5]** — won't-fix (or fix-in-Phase-1 sweep). Type is obvious (`set[str]`); the module annotates the alphabet frozensets, so `_HEAVY_TOKENS: set[str] = {...}` would match convention, but it's inference-clean for mypy.
+9. **`normalize_generic_sequences` docstring omits `Args`; "not found" message slightly misleading [T6]** — fix-in-Phase-1. Add `Args`; the "FASTA file not found" message is acceptable (the string did end in `.fasta`/`.fa`), so the "misnamed" concern is marginal.
+10. **Empty list/dict normalizes silently to empty; no test [T6,7]** — won't-fix for Phase 0 / fix-in-Phase-1. The `SequenceSet` alias should *not* hardcode "at least one" — per-mode "≥1 sequence" belongs as a `Field(min_length=1)` constraint on the actual field in Phase 1 (where the requirement is real). Confirmed `normalize_antibody_sequences([]) == []`.
+11. **No antibody missing-file test [T7]** — fix-in-Phase-1. Generic has `test_generic_rejects_missing_file`; add the antibody twin. The code path is identical structure, so low risk.
+
+### Recommendations
+1. **Resolve the sequence-hint placement decision before/at the start of Phase 1** (Important above) and record it in the Plan-2 doc — it's the one gap most likely to cause silent inconsistency across migrated tools.
+2. **Reconcile naming in Phase 1/2:** spec §4 names the final registry `TOOL_REGISTRY` in `core/registry.py`; the implementation ships `CATALOG` in `core/catalog.py`. The divergence is justified (can't clobber the live `TOOL_REGISTRY` during coexistence) and documented in the module docstring, but the eventual home + public name should be an explicit Plan-2/Plan-3 step so consumers aren't left importing a soon-to-move symbol.
+3. **Bundle a small Phase-1 "polish sweep"** for the fix-in-Phase-1 items (findings 3, 5, 7, 9, 11 + the two Minor issues) since they naturally land while touching these modules to migrate the first tool family — cheaper than eight separate follow-ups.
+
+### Assessment
+**Ready to merge?** Yes.
+
+**Reasoning:** The additive-only boundary is verified intact, the four units cohere and correctly support the Phase-1 plan (per-mode schemas over a shared base, `*SequenceSet` fields, `x-autobio` hints, Tool/Mode registry with cross-category filtering), and the tricky bits (BeforeValidator round-trip, FASTA disambiguation, antibody pairing/error-naming, TYPE_CHECKING vs runtime imports) are correct. Every outstanding finding is Minor or a Phase-1 planning note — none blocks merge; the sequence-hint gap is the one item worth capturing in the Phase-1 plan before that work starts.</result>
+<usage><subagent_tokens>95118</subagent_tokens><tool_uses>14</tool_uses><duration_ms>270923</duration_ms></usage>
+</task-notification>
