@@ -207,7 +207,8 @@ class ToolRunner(ABC):
 
     def _default_timeout(self) -> int:
         """Default timeout for the current run (per-mode for catalog tools)."""
-        if self.current_mode is not None:
+        if self.tool is not None:
+            assert self.current_mode is not None
             return self.current_mode.default_timeout
         assert self.entry is not None
         return self.entry.default_timeout

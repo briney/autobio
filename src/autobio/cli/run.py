@@ -54,6 +54,9 @@ def run_cmd(
         raise typer.Exit(code=1) from None
 
     # Validate input against the tool's schema
+    if runner.entry is None:
+        print_error(f"{tool!r} does not yet support direct CLI execution (catalog tool).")
+        raise typer.Exit(code=1) from None
     try:
         input_data = runner.entry.input_schema.model_validate(config_data)
     except Exception as exc:

@@ -122,7 +122,6 @@ def test_image_and_timeout_use_mode_override() -> None:
 def test_run_sets_current_mode_and_mode_metadata(tmp_path, monkeypatch) -> None:
     _register_faketool()
     runner = _make_runner("faketool")
-    runner._gpu.allocate.return_value = []
     monkeypatch.setattr(
         "autobio.core.workspace.Workspace.read_result",
         lambda self: SimpleNamespace(
