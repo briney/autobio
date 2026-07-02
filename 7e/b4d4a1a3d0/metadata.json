@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "7eb4d4a1a3d0",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan3-hardening",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/autobio/tools/base.py",
+    "tests/unit/test_tool_runner_modes.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7e/b4d4a1a3d0/0/metadata.json",
+      "transcript": "/7e/b4d4a1a3d0/0/full.jsonl",
+      "compact_transcript": "/7e/b4d4a1a3d0/0/transcript.jsonl",
+      "content_hash": "/7e/b4d4a1a3d0/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 273,
+    "cache_creation_tokens": 31187,
+    "cache_read_tokens": 1290111,
+    "output_tokens": 9809,
+    "api_call_count": 8
+  }
+}
