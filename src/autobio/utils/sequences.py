@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from autobio.schemas.antibody import AntibodySequence
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -114,3 +116,71 @@ def validate_nucleotide_sequence(
     """
     alphabet = DNA_BASES if molecule.upper() == "DNA" else RNA_BASES
     return len(seq) > 0 and set(seq.upper()) <= alphabet
+
+
+# ---------------------------------------------------------------------------
+# Antibody FASTA pairing
+# ---------------------------------------------------------------------------
+
+_HEAVY_TOKENS = {"heavy", "h", "vh"}
+_LIGHT_TOKENS = {"light", "l", "vl"}
+
+
+def normalize_chain_token(token: str) -> str:
+    """Map a case-insensitive chain token to ``"heavy"`` or ``"light"``.
+
+    Accepts aliases ``heavy``/``h``/``vh`` and ``light``/``l``/``vl``.
+
+    Raises:
+        ValueError: If the token is not a recognized chain identifier.
+    """
+    key = token.strip().lower()
+    if key in _HEAVY_TOKENS:
+        return "heavy"
+    if key in _LIGHT_TOKENS:
+        return "light"
+    raise ValueError(
+        f"Unknown chain token {token!r}. Expected one of {sorted(_HEAVY_TOKENS | _LIGHT_TOKENS)}."
+    )
+
+
+def parse_antibody_fasta_string(text: str) -> list[AntibodySequence]:
+    """Parse antibody FASTA text into paired :class:`AntibodySequence` objects.
+
+    Headers encode a pair id and a chain: ``>{pair_id}|{chain}``. Records sharing
+    a ``pair_id`` are paired into one antibody; a lone record becomes an unpaired
+    antibody (that chain only).
+
+    Raises:
+        ValueError: For a header without a ``|`` chain tag, an unknown chain
+            token, a duplicate ``(pair_id, chain)``, or a non-protein sequence.
+    """
+    raw = parse_fasta_string(text)
+    chains: dict[str, dict[str, str]] = {}
+    order: list[str] = []
+    for header, seq in raw.items():
+        if "|" not in header:
+            raise ValueError(
+                f"Antibody FASTA header {header!r} is missing a chain tag "
+                f"(expected '{{pair_id}}|{{chain}}')."
+            )
+        pair_id, _, chain_token = header.rpartition("|")
+        pair_id = pair_id.strip()
+        chain = normalize_chain_token(chain_token)
+        if not validate_antibody_sequence(seq):
+            raise ValueError(f"Record {header!r}: sequence contains non-protein characters.")
+        if pair_id not in chains:
+            chains[pair_id] = {}
+            order.append(pair_id)
+        if chain in chains[pair_id]:
+            raise ValueError(f"Duplicate record for pair {pair_id!r} chain {chain!r}.")
+        chains[pair_id][chain] = seq
+
+    return [
+        AntibodySequence(
+            id=pair_id,
+            heavy_chain=chains[pair_id].get("heavy"),
+            light_chain=chains[pair_id].get("light"),
+        )
+        for pair_id in order
+    ]
