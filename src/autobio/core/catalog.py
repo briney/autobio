@@ -19,7 +19,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Mode:
-    """A named use (task/operation) of a Tool."""
+    """A named use (task/operation) of a Tool.
+
+    ``image_tag`` overrides the owning Tool's image for this mode (used by
+    engines whose modes ship as separate container images); ``None`` falls
+    back to ``Tool.image_tag``.
+    """
 
     name: str
     display_name: str
@@ -28,6 +33,7 @@ class Mode:
     output_schema: type[BaseOutput]
     default_timeout: int
     supports_batch: bool = False
+    image_tag: str | None = None
     category: ToolCategory | None = None
     notes: tuple[str, ...] = ()
 
