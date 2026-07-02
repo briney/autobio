@@ -12,7 +12,8 @@ from typing import Annotated
 
 from pydantic import BeforeValidator
 
-from autobio.utils.sequences import parse_fasta, parse_fasta_string
+from autobio.schemas.antibody import AntibodySequence
+from autobio.utils.sequences import parse_antibody_fasta_string, parse_fasta, parse_fasta_string
 
 _FASTA_SUFFIXES = (".fasta", ".fa")
 
@@ -56,3 +57,49 @@ def normalize_generic_sequences(value: object) -> dict[str, str]:
 
 GenericSequenceSet = Annotated[dict[str, str], BeforeValidator(normalize_generic_sequences)]
 """Field type accepting ``dict[str, str]``, FASTA text, or a FASTA file path."""
+
+
+def normalize_antibody_sequences(value: object) -> list[AntibodySequence]:
+    """Normalize an antibody sequence input to a list of :class:`AntibodySequence`.
+
+    Accepts a native list of ``AntibodySequence`` (or dicts coerced to them),
+    FASTA text with ``>{pair_id}|{chain}`` pairing, or a ``.fasta``/``.fa`` path.
+
+    Raises:
+        ValueError: For an unsupported input type, or a path that does not exist.
+    """
+    if isinstance(value, list):
+        out: list[AntibodySequence] = []
+        for item in value:
+            if isinstance(item, AntibodySequence):
+                out.append(item)
+            elif isinstance(item, dict):
+                out.append(AntibodySequence(**item))
+            else:
+                raise ValueError(
+                    f"Antibody list items must be AntibodySequence or dict, got "
+                    f"{type(item).__name__!r}."
+                )
+        return out
+    if isinstance(value, str):
+        if _looks_like_fasta_text(value):
+            return parse_antibody_fasta_string(value)
+        if _looks_like_fasta_path(value):
+            path = Path(value)
+            if not path.is_file():
+                raise ValueError(f"FASTA file not found: {value!r}.")
+            return parse_antibody_fasta_string(path.read_text())
+        raise ValueError(
+            "String antibody input must be FASTA text (starting with '>' or "
+            "multi-line) or a path to a .fasta/.fa file."
+        )
+    raise ValueError(
+        f"Unsupported antibody sequence input type {type(value).__name__!r}; expected "
+        "a list, FASTA text, or a FASTA file path."
+    )
+
+
+AntibodySequenceSet = Annotated[
+    list[AntibodySequence], BeforeValidator(normalize_antibody_sequences)
+]
+"""Field type accepting a list of AntibodySequence/dicts, FASTA text, or a FASTA file path."""
