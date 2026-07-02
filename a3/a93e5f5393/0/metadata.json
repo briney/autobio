@@ -205,6 +205,37 @@
         "label": "Skill: superpowers:writing-plans",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_016kDTXxFGBBFpCLRDBEwiiw",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:finishing-a-development-branch"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "f42b332f395e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1370,
+        "end": 1371,
+        "entry_ids": [
+          "a23dbc9c-09e9-438e-8560-149ad04d7788"
+        ],
+        "tool_use_id": "toolu_016kDTXxFGBBFpCLRDBEwiiw"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_016kDTXxFGBBFpCLRDBEwiiw"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:finishing-a-development-branch",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {

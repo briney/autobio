@@ -1122,3 +1122,100 @@ Summary: test_esm.py now 11 tests (was 5, +6 net new); full suite 1316 tests pas
 Nothing left unaddressed — report appended to `.superpowers/sdd/task-7-report.md` (gitignored, not committed, per repo convention).</result>
 <usage><subagent_tokens>69765</subagent_tokens><tool_uses>39</tool_uses><duration_ms>207501</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a3024941c269ef08a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a3024941c269ef08a.output</output-file>
+<status>completed</status>
+<summary>Agent "Final whole-branch review (Phase 1)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. Full diff reviewed, source files inspected, ruff/mypy clean confirmed (56 files), 105 affected unit tests pass, and I empirically confirmed the `pull` gap.
+
+---
+
+### Strengths
+
+- **The dual-path scaffolding is coherent and well-factored.** `ToolRunner.__init__` sets exactly one of `self.tool`/`self.entry` and routes by name through the same `CATALOG`/`TOOL_REGISTRY` that the CLI consults, so `list`/`info`/`run` stay consistent for both migrated and flat tools. The five resolver helpers (`_image_tag`, `_default_timeout`, `_requires_gpu`, `_gpu_count`, `_tool_version`) centralize the source-of-truth branch cleanly, and `run()`/`prepare_workspace`/`parse_output` signatures are preserved so unmigrated runners are untouched.
+- **Optional-narrowing after the guard churn is sound, not misleading.** Every `self.tool is not None` branch pairs with `assert self.current_mode is not None` (set by `run()` before any helper is called); every legacy branch asserts `self.entry is not None`. The `assert runner.entry is not None` in `cli/run.py:77` is provably reachable-only-when-true: the `else` means `tool not in CATALOG`, and `get_runner` already succeeded, so the name is in `TOOL_REGISTRY`. No consumer reads `self.entry`/`self.tool` unsafely.
+- **config.json is genuinely preserved for both migrations.** Key insertion order and values are identical for equivalent inputs (verified by `test_sasa_config_unchanged`/`test_bsa_config_unchanged`/`test_esm1b_config_model_name`), the esm `checkpoint` typed field is consumed into `model_name` and not written, and `pooling` default resolves to `"mean"` exactly as before.
+- **The `hints.py` change is correct and safe.** `ui()` still returns `{"x-autobio": {...}}` at runtime; widening the annotation to `dict[str, Any]` only fixes dict-invariance against Pydantic's `Field(json_schema_extra: dict[str, Any])` parameter. No caller indexes the nested type. Proper foundation fix.
+- **Test hygiene is strong:** snapshot-clear-restore fixtures for both `CATALOG` and `TOOL_REGISTRY`, plus real (non-mock) end-to-end CLI merge coverage using the migrated freesasa Tool alongside a flat tool. The Plan-1 carry-forward (sequence hint at field level) is honored.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+
+**1. The `pull` command was not given a catalog path — migrated tools fall through a crack.** `src/autobio/cli/images.py:38` (`pull --all` iterates `TOOL_REGISTRY.items()` only) and `:49` (`get_tool` is imported from `core.registry` at `:13`, which only consults `TOOL_REGISTRY`).
+
+Confirmed empirically:
+```
+pull 'freesasa':     exit=1 | Error: "Unknown tool 'freesasa'. ...
+pull 'esm2':         exit=1 | Error: "Unknown tool 'esm2'. ...
+pull 'freesasa_bsa': exit=1 | Error: "Unknown tool 'freesasa_bsa'. ...
+```
+`autobio pull &lt;migrated&gt;` (freesasa/esm1b/esm2) now errors, the old flat names are gone, and `autobio pull --all` **silently** omits every migrated tool's image. This is exactly the "does the transition work end-to-end for both a migrated and a flat tool" question — extended to a CLI verb the plan's task list didn't cover (it scoped only `list`/`info`/`run`). It's a user-facing regression that *compounds*: after mass migration `pull --all` would pull almost nothing.
+
+Why not Critical: `run()` still auto-pulls via `ContainerManager.ensure_image`, so tools remain runnable; `pull` is a pre-warm convenience. Fix: mirror the `info` dual-path in `pull_cmd` — iterate `TOOL_REGISTRY` **and** `CATALOG` for `--all`, and fall back to `catalog.get_tool` (using `tool.image_tag`, and de-duping per-mode `image_tag` overrides once rosetta/openmm land) for single-tool pulls. Add a pull test that survives the `_clean_catalog` fixture (the existing `TestPullCommand` runs with a cleared catalog, which is why this was missed).
+
+#### Minor (Nice to Have)
+
+**2. README drift (user-facing, not just design docs).** `README.md:242-243` still list `freesasa_sasa` and `freesasa_bsa` as two separate tools — names that now error. A user copying them from the README hits "Unknown tool". `docs/REFACTOR.md:457` is a design doc and fine. The migration recipe has no README-reconciliation step (finding #2).
+
+**3. `extra` can override a promoted typed field; comment is misleading.** `src/autobio/tools/freesasa.py` and `src/autobio/tools/esm.py` set `_CONSUMED_EXTRA_KEYS = frozenset()` with the comment "no longer an extra key at all," but `BaseInput.extra` (`schemas/base.py:30`) is a free-form dict that still accepts the promoted names. Because the extra-merge loop runs *last* in `prepare_workspace`, `FreeSASASASAInput(structure_path=p, extra={"algorithm": "ShrakeRupley"})` overwrites the typed `algorithm` in config.json (a container-read key for freesasa); the esm equivalent leaks an inert `checkpoint` key. Pydantic won't route a top-level kwarg into `extra`, so this is API-misuse only — but see recommendations, since the recipe copies it 11×.
+
+**4. `probe_radius` int→float serialization (finding #3).** The promoted `float` field coerces `probe_radius=2` to `2.0`, changing config.json from `2` to `2.0` versus the old `extra` passthrough. Harmless for freesasa (both parse to the same float; the default 1.4 case is byte-identical), but a genuine per-family check for the recipe.
+
+**5. `RunMetadata` records no mode (finding #5).** `schemas/base.py:12` has `tool_name` only. For a migrated multi-mode tool, output metadata can't say whether `sasa` or `bsa` ran. Compounds as rosetta/openmm/complexa migrate.
+
+**6. `format_tool_info_catalog` computes both JSON schemas even for TABLE (finding #1).** `cli/formatters.py:212` builds `input_schema`/`output_schema` via `model_json_schema()` in the shared `modes` comprehension; the TABLE branch never uses them. Trivial wasted work.
+
+**7. No disjointness invariant between the two registries.** `core/catalog.register` guards against duplicate catalog names, but nothing prevents a name existing in *both* `CATALOG` and `TOOL_REGISTRY`. A future migration that forgets to delete the flat entry would list the tool twice in `list` with no error (info/run/`__init__` would silently prefer the catalog). Cheap to guard now, valuable across 11 migrations.
+
+### Triage of accumulated findings
+
+1. **TABLE computes `model_json_schema()`** — *fix-in-followup*. Pure micro-optimization; output is correct.
+2. **README drift** — *fix-before-merge*. Trivial (2 rows → 1) and the listed names actively error for users; also add a README step to the recipe.
+3. **`probe_radius` int→float** — *won't-fix* for freesasa (both JSON forms parse identically; default is byte-identical), but record as a per-family checklist item in the recipe.
+4. **`extra` overrides typed field / esm checkpoint leak** — *fix-in-followup*, but bake the fail-fast into the recipe *before* mass migration (see below); API-misuse-only today.
+5. **RunMetadata lacks mode** — *fix-in-followup*.
+
+### Recommendations (for the follow-up migration plan)
+
+- **Give `pull` a catalog path in this branch or the immediate follow-up**, and add a catalog-aware pull test. This is the one gap I'd not want to carry silently into the mass migration, because every migrated family disappears from `pull --all`.
+- **Harden the `extra` contract in the recipe.** This directly matches the recorded user feedback (`feedback_validation_flexible_interfaces.md`: dict pass-through needs fail-fast validation). Add a shared check — e.g. in `prepare_workspace` or a base helper — that raises `AutobioError` if `input_data.extra` contains any key that is also a typed field on the mode's schema, instead of silently letting `extra` win. This converts a copy-11× footgun into a fail-fast error.
+- **Standardize the "expose the Tool object" convention.** freesasa defines a module-level `FREESASA_TOOL` (needed for CLI-isolation re-registration); esm inlines `register(Tool(...))`. Pick one — the named-constant form is the better default for anything with CLI-merge tests — so the 11 remaining migrations don't diverge.
+- **Add a cross-registry disjointness assertion** (test or import-time check): `set(CATALOG).isdisjoint(TOOL_REGISTRY)`. Cheap insurance against half-finished migrations.
+- **Add `mode: str | None` to `RunMetadata`** when the first genuinely multi-mode engine (rosetta/openmm) migrates, so per-mode provenance is captured.
+
+### Assessment
+
+**Ready to merge?** With fixes.
+
+**Reasoning:** The core scaffolding is coherent, correct, and well-tested (dual-path runner, CLI list/info/run, both migrations byte-preserve config.json; mypy/ruff clean, affected suites green). The one gap worth blocking on is small and mechanical — the `pull` command was never taught the catalog, so migrated tools error on `pull &lt;tool&gt;` and vanish from `pull --all`; fix that (plus the trivial README rows) and defer the rest to the follow-up plan, ideally hardening the `extra` contract before copying the recipe 11×.</result>
+<usage><subagent_tokens>160324</subagent_tokens><tool_uses>19</tool_uses><duration_ms>321351</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae37ffbbed6e89d9a</task-id>
+<tool-use-id>toolu_01JXo3sUjStbECnpkFztpotT</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ae37ffbbed6e89d9a.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix final-review blockers (pull + README)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>- **Status:** DONE
+- New commit: `8d42c7e` — "cli: teach pull the catalog; readme: fix migrated freesasa/esm tool names"
+- mypy: Success (56 files, no issues); tests: 41/41 in test_cli.py, 1317 passed / 121 deselected full suite
+- Verified via live in-process CLI run (mocking only `ContainerManager.pull_image`, real catalog/registry): `pull freesasa` → `freesasa:2.2.1`; `pull esm2`/`pull esm1b` → both correctly resolve `esm:1.0.0`; `pull --all` → 30 unique URIs, 30 calls, zero duplicates (esm:1.0.0 pulled once despite two tool names mapping to it)
+- Nothing left unaddressed — the "extra['checkpoint']" README wording didn't exist to begin with, confirmed via grep
+
+Full report at `/home/briney/git/autobio/.superpowers/sdd/final-fix-report.md`.</result>
+<usage><subagent_tokens>90223</subagent_tokens><tool_uses>57</tool_uses><duration_ms>394725</duration_ms></usage>
+</task-notification>
