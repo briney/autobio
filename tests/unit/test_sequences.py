@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 - used in fixture type hints
 
+import pytest
+
+from autobio.schemas.antibody import AntibodySequence
 from autobio.utils.sequences import (
     AMINO_ACIDS,
     ANTIBODY_AMINO_ACIDS,
     DNA_BASES,
     RNA_BASES,
+    normalize_chain_token,
+    parse_antibody_fasta_string,
     parse_fasta,
+    parse_fasta_string,
     validate_antibody_sequence,
     validate_nucleotide_sequence,
     validate_protein_sequence,
@@ -148,3 +154,93 @@ class TestAlphabets:
 
     def test_rna_bases_count(self) -> None:
         assert len(RNA_BASES) == 4
+
+
+# ---------------------------------------------------------------------------
+# Generic FASTA string parsing
+# ---------------------------------------------------------------------------
+
+
+def test_parse_fasta_string_basic():
+    text = ">a\nMKT\nVLL\n>b\nGGG\n"
+    assert parse_fasta_string(text) == {"a": "MKTVLL", "b": "GGG"}
+
+
+def test_parse_fasta_string_rejects_duplicate_ids():
+    with pytest.raises(ValueError, match="[Dd]uplicate.*'a'"):
+        parse_fasta_string(">a\nMKT\n>a\nGGG\n")
+
+
+def test_parse_fasta_string_rejects_sequence_before_header():
+    with pytest.raises(ValueError, match="before any header"):
+        parse_fasta_string("MKT\n>a\nGGG\n")
+
+
+def test_parse_fasta_string_ignores_blank_lines():
+    text = "\n>a\nMKT\n\n\n>b\nGGG\n\n"
+    assert parse_fasta_string(text) == {"a": "MKT", "b": "GGG"}
+
+
+# ---------------------------------------------------------------------------
+# Antibody FASTA pairing parser
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "token,expected",
+    [
+        ("heavy", "heavy"),
+        ("H", "heavy"),
+        ("VH", "heavy"),
+        ("light", "light"),
+        ("l", "light"),
+        ("Vl", "light"),
+    ],
+)
+def test_normalize_chain_token_aliases(token: str, expected: str) -> None:
+    assert normalize_chain_token(token) == expected
+
+
+def test_normalize_chain_token_unknown() -> None:
+    with pytest.raises(ValueError, match="chain token"):
+        normalize_chain_token("kappa")
+
+
+def test_parse_antibody_fasta_pairs_and_unpaired() -> None:
+    text = ">ab1|heavy\nQVQLVQSG\n>ab1|light\nDIQMTQSP\n>ab2|heavy\nEVQLLESG\n"
+    result = parse_antibody_fasta_string(text)
+    assert result == [
+        AntibodySequence(id="ab1", heavy_chain="QVQLVQSG", light_chain="DIQMTQSP"),
+        AntibodySequence(id="ab2", heavy_chain="EVQLLESG"),
+    ]
+
+
+def test_parse_antibody_fasta_missing_chain_tag() -> None:
+    with pytest.raises(ValueError, match="ab1"):
+        parse_antibody_fasta_string(">ab1\nQVQLVQSG\n")
+
+
+def test_parse_antibody_fasta_duplicate_pair_chain() -> None:
+    # Distinct headers ("heavy" vs "VH") that normalize to the same (pair_id,
+    # chain) so parse_fasta_string's own duplicate-id check does not fire
+    # first; this exercises the antibody parser's own duplicate-chain branch.
+    text = ">ab1|heavy\nQVQLVQSG\n>ab1|VH\nEVQLLESG\n"
+    with pytest.raises(ValueError, match="Duplicate record for pair 'ab1' chain 'heavy'"):
+        parse_antibody_fasta_string(text)
+
+
+def test_parse_antibody_fasta_unknown_chain_token_names_record() -> None:
+    with pytest.raises(ValueError, match="ab1"):
+        parse_antibody_fasta_string(">ab1|kappa\nQVQLVQSG\n")
+
+
+def test_parse_antibody_fasta_lone_light_chain_record() -> None:
+    text = ">ab1|light\nDIQMTQSP\n"
+    result = parse_antibody_fasta_string(text)
+    assert result == [AntibodySequence(id="ab1", light_chain="DIQMTQSP")]
+
+
+def test_parse_antibody_fasta_chain_alias_end_to_end() -> None:
+    text = ">ab1|vh\nQVQLVQSG\n"
+    result = parse_antibody_fasta_string(text)
+    assert result == [AntibodySequence(id="ab1", heavy_chain="QVQLVQSG")]
