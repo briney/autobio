@@ -74,9 +74,7 @@ def run_cmd(
         if mode is not None:
             print_error(f"Tool {tool!r} does not support --mode.")
             raise typer.Exit(code=1) from None
-        if runner.entry is None:
-            print_error(f"{tool!r} does not yet support direct CLI execution (catalog tool).")
-            raise typer.Exit(code=1) from None
+        assert runner.entry is not None  # legacy branch: name is in TOOL_REGISTRY
         input_schema = runner.entry.input_schema
 
     try:

@@ -76,6 +76,16 @@ def _clean_registry():
     TOOL_REGISTRY.update(saved)
 
 
+@pytest.fixture(autouse=True)
+def _clean_catalog():
+    """Snapshot, clear, and restore CATALOG around each test."""
+    saved = dict(CATALOG)
+    CATALOG.clear()
+    yield
+    CATALOG.clear()
+    CATALOG.update(saved)
+
+
 # ---------------------------------------------------------------------------
 # autobio list
 # ---------------------------------------------------------------------------
@@ -449,15 +459,34 @@ def test_run_forwards_mode_for_catalog_tool(tmp_path: Path) -> None:
     assert mock_runner.run.call_args.kwargs["mode"] == "b"
 
 
-def test_run_rejects_mode_for_legacy_tool(tmp_path: Path) -> None:
-    import autobio.tools  # noqa: F401 - populate TOOL_RUNNERS with the real ProdigyRunner
+def test_run_unknown_mode_exits_1(tmp_path: Path) -> None:
+    _register_run_tool()
+    cfg = tmp_path / "config.json"
+    cfg.write_text("{}")
 
-    # test_cli's autouse `_clean_registry` fixture clears TOOL_REGISTRY around every test
-    # body, so re-importing `autobio.tools` (already cached) does not repopulate it. Add
-    # the entry explicitly, matching the pattern used elsewhere in this test class.
+    mock_runner = MagicMock()
+
+    with patch("autobio.cli.run.get_runner", return_value=mock_runner):
+        result = CliRunner().invoke(app, ["run", "runtool", "--config", str(cfg), "--mode", "nope"])
+
+    assert result.exit_code == 1
+    assert "Unknown mode" in result.output
+    mock_runner.run.assert_not_called()
+
+
+def test_run_rejects_mode_for_legacy_tool(tmp_path: Path) -> None:
+    # 'prodigy' is a legacy flat tool (in TOOL_REGISTRY, not CATALOG). get_runner is
+    # patched (like the other run-command tests in this class) so no real
+    # ContainerManager/GPUManager gets constructed.
     TOOL_REGISTRY["prodigy"] = _make_entry()
     cfg = tmp_path / "config.json"
     cfg.write_text("{}")
-    result = CliRunner().invoke(app, ["run", "prodigy", "--mode", "x", "--config", str(cfg)])
+
+    mock_runner = MagicMock()
+    mock_runner.entry = _make_entry()
+
+    with patch("autobio.cli.run.get_runner", return_value=mock_runner):
+        result = CliRunner().invoke(app, ["run", "prodigy", "--mode", "x", "--config", str(cfg)])
+
     assert result.exit_code == 1
     assert "does not support --mode" in result.output
