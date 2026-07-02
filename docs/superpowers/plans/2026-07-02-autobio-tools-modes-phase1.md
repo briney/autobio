@@ -1829,3 +1829,15 @@ git commit -m "esm: migrate esm1b/esm2 to single-mode catalog Tools with Sequenc
 
 - **Plan 3 (Phase 1 cont.) — remaining families:** migrate the rest against this proven pattern, grouped by shape: same-category multi-mode (rosetta [per-mode `image_tag`], evoef2, complexa), cross-category + two-class consolidation (esm_if1, antifold, ligandmpnn), output-schema variance (openmm [per-mode image + SimulationOutput], antibody LMs ×6 [antibody `SequenceSet`, output variance, shared runner]), and remaining singletons (esmfold, chai1, boltz1/2, proteinmpnn, rfd3, antipasti, baddg, stabddg, prodigy, openfold3).
 - **Plan 4 — teardown + contract polish:** once all families are on the catalog, remove `TOOL_REGISTRY`/`ToolEntry`/legacy CLI paths, collapse `get_runner`/CLI to catalog-only, finalize the unified §7 `list` JSON schema, decide the `CATALOG`↔`TOOL_REGISTRY` naming/home, and rewrite the README to Tools/Modes.
+
+### Carry-forward from Plan 2 (Phase 1 prove-the-pattern) — final whole-branch review
+
+Plan 2 merged clean (10 code commits `b6d77b6..8d42c7e`; full non-docker/gpu suite 1317 passed, mypy/ruff clean). Scaffolding + freesasa/esm migrations proven end-to-end (`list`/`info`/`run --mode`/`pull` all work for catalog + flat tools; config.json byte-preserved). Apply these to the recipe **before** mass-migrating the remaining ~11 families:
+
+1. **Harden the `extra` contract (do this first — recipe change).** `_CONSUMED_EXTRA_KEYS` is now empty per migrated tool, and the `extra` flat-merge runs LAST, so a caller passing a promoted field's name via `extra={...}` silently overrides the typed field in `config.json` (freesasa) or leaks an inert key (esm). Add a shared fail-fast (in `prepare_workspace` or a base helper) that raises `AutobioError` if `input_data.extra` contains any key that is a typed field on the mode's schema. Directly satisfies the standing feedback: dict pass-through needs fail-fast validation.
+2. **Add a cross-registry disjointness guard:** assert/test `set(CATALOG).isdisjoint(TOOL_REGISTRY)` so a half-finished migration (flat entry not deleted) fails loudly instead of listing a tool twice.
+3. **Standardize the "module-level `<TOOL>_TOOL` constant" convention** for the Tool object (freesasa uses `FREESASA_TOOL`; esm inlines `register(Tool(...))`). Pick the named-constant form as default — needed for CLI-isolation re-registration in tests — so the 11 migrations don't diverge.
+4. **Add `mode: str | None` to `RunMetadata`** when the first genuinely multi-mode engine (rosetta/openmm) migrates, so per-mode provenance is captured (today metadata records `tool_name` only).
+5. **Per-family serialization check:** promoted-field typing can change `config.json` vs the old `extra` passthrough (e.g. `probe_radius` `2`→`2.0`); verify each family's coercions are container-safe.
+6. **README-reconciliation step per family** (or batched in Plan 4): collapse migrated flat rows into one Tool row (modes). Plan 2 already fixed the freesasa row.
+7. **Micro-opt (optional):** `format_tool_info_catalog` computes `model_json_schema()` even for TABLE format; compute only in the JSON branch.
