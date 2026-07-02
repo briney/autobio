@@ -1,0 +1,126 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "65079173191b",
+  "session_id": "bd522b89-efe2-4c84-9179-69456ba55dac",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-02T19:58:16.751313096Z",
+  "branch": "docs/refactor-design",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/superpowers/plans/2026-07-02-autobio-tools-modes-foundation.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-8[1m]",
+  "turn_id": "5ee8f31bd5e8",
+  "checkpoint_transcript_start": 175,
+  "transcript_lines_at_start": 175,
+  "token_usage": {
+    "input_tokens": 7,
+    "cache_creation_tokens": 35715,
+    "cache_read_tokens": 446976,
+    "output_tokens": 33330,
+    "api_call_count": 4
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Kwssgk2fB2gcaevHX7SoL3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:brainstorming"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5ee8f31bd5e8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 19,
+        "end": 20,
+        "entry_ids": [
+          "2696edb5-9eb8-4ced-adfb-428acdb124b3"
+        ],
+        "tool_use_id": "toolu_01Kwssgk2fB2gcaevHX7SoL3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Kwssgk2fB2gcaevHX7SoL3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:brainstorming",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01D7vDyqmv9xAUSmtzN5DeYZ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:writing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5ee8f31bd5e8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 183,
+        "end": 184,
+        "entry_ids": [
+          "c743dbfd-998c-4ab1-b8a3-52230acf81d2"
+        ],
+        "tool_use_id": "toolu_01D7vDyqmv9xAUSmtzN5DeYZ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01D7vDyqmv9xAUSmtzN5DeYZ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:writing-plans",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-02T19:58:16.73880081Z",
+    "agent_lines": 1182,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1182,
+    "total_lines_changed": 1182,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    }
+  ]
+}
