@@ -11,6 +11,7 @@ from autobio.cli.formatters import (
     format_tool_info,
     format_tool_info_catalog,
     format_tool_list,
+    format_tool_list_merged,
     format_workspace_result,
 )
 from autobio.core.catalog import Mode, Tool
@@ -375,3 +376,44 @@ def test_format_tool_info_catalog_json_shape() -> None:
 def test_format_tool_info_catalog_table_runs() -> None:
     out = format_tool_info_catalog(_tool_for_info(), OutputFormat.TABLE)
     assert "demo" in out and "Alpha" in out
+
+
+# ---------------------------------------------------------------------------
+# format_tool_list_merged
+# ---------------------------------------------------------------------------
+
+
+def _flat_entry() -> ToolEntry:
+    return ToolEntry(
+        image_tag="prodigy:1.0.0",
+        category=ToolCategory.SCORING,
+        requires_gpu=False,
+        gpu_count=0,
+        input_schema=_InInfo,
+        output_schema=_OutInfo,
+        default_timeout=300,
+        supports_batch=False,
+        description="legacy tool",
+        version="1.0.0",
+    )
+
+
+def test_format_tool_list_merged_json_has_both() -> None:
+    rows = json.loads(
+        format_tool_list_merged(
+            {"prodigy": _flat_entry()}, {"demo": _tool_for_info()}, OutputFormat.JSON
+        )
+    )
+    by_name = {r["name"]: r for r in rows}
+    assert set(by_name) == {"prodigy", "demo"}
+    assert by_name["demo"]["modes"] == ["a", "b"]
+    assert by_name["demo"]["categories"] == ["scoring", "simulation"]
+    assert "modes" not in by_name["prodigy"]  # legacy row keeps the old shape
+    assert [r["name"] for r in rows] == ["demo", "prodigy"]  # sorted by name
+
+
+def test_format_tool_list_merged_table_runs() -> None:
+    out = format_tool_list_merged(
+        {"prodigy": _flat_entry()}, {"demo": _tool_for_info()}, OutputFormat.TABLE
+    )
+    assert "prodigy" in out and "demo" in out

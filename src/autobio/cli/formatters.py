@@ -77,6 +77,83 @@ def format_tool_list(
     return _render_table(table)
 
 
+def format_tool_list_merged(
+    flat: dict[str, ToolEntry],
+    tools: dict[str, Tool],
+    fmt: OutputFormat = OutputFormat.TABLE,
+) -> str:
+    """Format legacy flat tools and catalog Tools together, sorted by name.
+
+    Args:
+        flat: Legacy tool name → :class:`ToolEntry` (not yet migrated).
+        tools: Catalog tool name → :class:`~autobio.core.catalog.Tool`.
+        fmt: Output format.
+
+    Returns:
+        Formatted string.
+    """
+    if fmt == OutputFormat.JSON:
+        rows: list[dict[str, object]] = []
+        for name, entry in flat.items():
+            rows.append(
+                {
+                    "name": name,
+                    "category": entry.category.value,
+                    "gpu": entry.requires_gpu,
+                    "version": entry.version,
+                    "description": entry.description,
+                }
+            )
+        for name, tool in tools.items():
+            rows.append(
+                {
+                    "name": name,
+                    "display_name": tool.display_name,
+                    "category": tool.category.value,
+                    "categories": [c.value for c in tool_categories(tool)],
+                    "gpu": tool.requires_gpu,
+                    "version": tool.version,
+                    "description": tool.description,
+                    "modes": list(tool.modes),
+                    "keywords": list(tool.keywords),
+                }
+            )
+        rows.sort(key=lambda r: str(r["name"]))
+        return json.dumps(rows, indent=2)
+
+    if not flat and not tools:
+        return "No tools registered."
+
+    table = Table(title="Available Tools")
+    table.add_column("Name", style="cyan")
+    table.add_column("Category")
+    table.add_column("GPU")
+    table.add_column("Version")
+    table.add_column("Modes")
+    table.add_column("Description")
+
+    combined: list[tuple[str, str, bool, str, str, str]] = []
+    for name, entry in flat.items():
+        combined.append(
+            (name, entry.category.value, entry.requires_gpu, entry.version, "-", entry.description)
+        )
+    for name, tool in tools.items():
+        combined.append(
+            (
+                name,
+                tool.category.value,
+                tool.requires_gpu,
+                tool.version,
+                ", ".join(tool.modes),
+                tool.description,
+            )
+        )
+    for name, category, gpu, version, modes, description in sorted(combined, key=lambda r: r[0]):
+        table.add_row(name, category, "yes" if gpu else "no", version, modes, description)
+
+    return _render_table(table)
+
+
 def format_tool_info(name: str, entry: ToolEntry, fmt: OutputFormat = OutputFormat.TABLE) -> str:
     """Format detailed information about a single tool.
 
