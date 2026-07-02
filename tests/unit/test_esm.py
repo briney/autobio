@@ -188,6 +188,16 @@ def test_parse_output_multiple_embeddings(tmp_path: Path) -> None:
         ws.cleanup()
 
 
+def test_extra_shadowing_typed_field_rejected(tmp_path: Path) -> None:
+    from autobio.schemas.embedding import ESMEmbedInput
+
+    runner = _make_runner("esm1b")
+    with pytest.raises(AutobioError, match="shadow typed input fields"):
+        _written_config(
+            runner, ESMEmbedInput(sequences={"s1": "MKT"}, extra={"layer": 5}), tmp_path
+        )
+
+
 def test_info_snapshot_esm2() -> None:
     import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog

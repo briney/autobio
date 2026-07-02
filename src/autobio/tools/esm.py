@@ -55,9 +55,6 @@ _ESM2_CHECKPOINTS: dict[str, dict[str, str | int]] = {
     "15B": {"model_name": "facebook/esm2_t48_15B_UR50D", "num_layers": 48, "embedding_dim": 5120},
 }
 
-# All formerly-consumed keys (checkpoint) are now typed fields; nothing is stripped from extra.
-_CONSUMED_EXTRA_KEYS: frozenset[str] = frozenset()
-
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -90,9 +87,7 @@ class ESMRunner(ToolRunner):
             "pooling": input_data.pooling,
             "hf_cache": _HF_CACHE,
         }
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 

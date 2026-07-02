@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from autobio.core.catalog import CATALOG, Mode, Tool, get_tool
 from autobio.core.container import ContainerManager
@@ -196,6 +196,33 @@ class ToolRunner(ABC):
             raise AutobioError(
                 f"Unknown mode {name!r} for tool {self.tool_name!r}. Available modes: {available}"
             ) from None
+
+    def _apply_extra(self, config: dict[str, Any], input_data: BaseInput) -> None:
+        """Merge ``input_data.extra`` into *config*, rejecting typed-field shadows.
+
+        ``extra`` is the escape hatch for parameters not promoted to typed fields
+        on a mode's input schema. A key in ``extra`` that names a typed field
+        would silently override (or duplicate) that field in ``config.json``, so
+        such keys are rejected fail-fast rather than written.
+
+        Args:
+            config: The mapping being assembled for ``config.json``; mutated in
+                place with the accepted ``extra`` keys.
+            input_data: The validated input whose ``extra`` dict is merged.
+
+        Raises:
+            AutobioError: If ``extra`` contains a key that shadows a typed field
+                on the active mode's input schema.
+        """
+        assert self.current_mode is not None
+        typed_fields = set(self.current_mode.input_schema.model_fields) - {"extra"}
+        shadowed = sorted(key for key in input_data.extra if key in typed_fields)
+        if shadowed:
+            raise AutobioError(
+                "extra must not contain keys that shadow typed input fields: "
+                f"{', '.join(shadowed)}. Pass these as typed config fields, not via 'extra'."
+            )
+        config.update(input_data.extra)
 
     def _image_tag(self) -> str:
         """Container image tag for the current run (mode override, else tool/entry)."""

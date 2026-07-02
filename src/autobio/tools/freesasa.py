@@ -38,9 +38,6 @@ from autobio.tools.base import ToolRunner
 if TYPE_CHECKING:
     from autobio.core.workspace import Workspace
 
-# All formerly-consumed keys are now typed fields; nothing is stripped from extra.
-_CONSUMED_EXTRA_KEYS: frozenset[str] = frozenset()
-
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -84,9 +81,7 @@ class FreeSASARunner(ToolRunner):
             config["partner1"] = input_data.partner1
             config["partner2"] = input_data.partner2
 
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
