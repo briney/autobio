@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autobio.core.catalog import CATALOG, Mode, Tool, get_tool
@@ -16,8 +17,6 @@ from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
 from autobio.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from autobio.core.config import AutobioConfig
 
 logger = get_logger("tools.base")
@@ -300,3 +299,13 @@ class ToolRunner(ABC):
             return stderr_log.read_text()
         except OSError:
             return ""
+
+    @staticmethod
+    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
+        """Map a container-internal ``/workspace/...`` path to the host workspace."""
+        container_path = Path(container_path_str)
+        try:
+            relative = container_path.relative_to("/workspace")
+        except ValueError:
+            return container_path
+        return workspace.root / relative

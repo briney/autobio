@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autobio.core.catalog import Mode, Tool, register
@@ -295,16 +294,6 @@ class AntibodyLMRunner(ToolRunner):
             raise AutobioError(
                 f"pooling must be one of {sorted(_VALID_POOLING)}, got {input_data.pooling!r}."
             )
-
-    @staticmethod
-    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
-        """Map a container-internal ``/workspace/...`` path to the host workspace."""
-        container_path = Path(container_path_str)
-        try:
-            relative = container_path.relative_to("/workspace")
-        except ValueError:
-            return container_path
-        return workspace.root / relative
 
 
 # ---------------------------------------------------------------------------

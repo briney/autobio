@@ -119,22 +119,6 @@ class RFD3Runner(ToolRunner):
         )
 
     @staticmethod
-    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
-        """Map a container-internal ``/workspace/...`` path to the host workspace.
-
-        The standardize.py script inside the container writes absolute paths
-        rooted at ``/workspace``. This method strips that prefix and resolves
-        the remainder against the host-side workspace root.
-        """
-        container_path = Path(container_path_str)
-        try:
-            relative = container_path.relative_to("/workspace")
-        except ValueError:
-            # Not a container path — return as-is
-            return container_path
-        return workspace.root / relative
-
-    @staticmethod
     def _validate_inputs(input_data: RFD3Input) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.design_specs:
