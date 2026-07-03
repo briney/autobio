@@ -12,24 +12,6 @@ from autobio.schemas.hints import Tier, Widget, ui
 from autobio.schemas.sequences import GenericSequenceSet  # noqa: TC001 - needed at runtime
 
 
-class StructurePredictionInput(BaseInput):
-    """Input schema for structure prediction tools (e.g., AlphaFold, ESMFold)."""
-
-    sequences: dict[str, str] = Field(
-        description=(
-            "Mapping of chain ID to amino acid sequence (e.g., {'A': 'MKLL...', 'B': 'GVSE...'})."
-        ),
-    )
-    num_models: int = Field(
-        default=1,
-        description="Number of structure models to generate.",
-    )
-    templates: list[Path] | None = Field(
-        default=None,
-        description="Paths to template structures (PDB or mmCIF) for template-based prediction.",
-    )
-
-
 class PredictedStructure(BaseModel):
     """A single predicted structure model with confidence metrics."""
 

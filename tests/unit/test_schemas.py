@@ -15,7 +15,7 @@ from autobio.schemas.antibody import (
     AntibodySequence,
     SequencePLL,
 )
-from autobio.schemas.embedding import EmbeddingInput, EmbeddingOutput, SequenceEmbedding
+from autobio.schemas.embedding import EmbeddingOutput, SequenceEmbedding
 from autobio.schemas.inverse_folding import (
     DesignedSequence,
     InverseFoldingInput,
@@ -26,13 +26,11 @@ from autobio.schemas.structure_design import (
     DesignedStructure as DesignDesignedStructure,
 )
 from autobio.schemas.structure_design import (
-    StructureDesignInput,
     StructureDesignOutput,
 )
 from autobio.schemas.structure_prediction import (
     ConfidenceMetrics,
     PredictedStructure,
-    StructurePredictionInput,
     StructurePredictionOutput,
 )
 
@@ -53,44 +51,6 @@ _METADATA: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 # StructurePrediction
 # ---------------------------------------------------------------------------
-
-
-class TestStructurePredictionInput:
-    def test_required_sequences(self) -> None:
-        inp = StructurePredictionInput(sequences={"A": "MKLLVVF"})
-        assert inp.sequences == {"A": "MKLLVVF"}
-        assert inp.num_models == 1
-        assert inp.templates is None
-
-    def test_optional_fields(self) -> None:
-        inp = StructurePredictionInput(
-            sequences={"A": "MKLLVVF"},
-            num_models=5,
-            templates=[Path("/data/template.pdb")],
-        )
-        assert inp.num_models == 5
-        assert inp.templates == [Path("/data/template.pdb")]
-
-    def test_missing_sequences_raises(self) -> None:
-        with pytest.raises(ValidationError):
-            StructurePredictionInput()  # type: ignore[call-arg]
-
-    def test_extra_dict_passthrough(self) -> None:
-        inp = StructurePredictionInput(
-            sequences={"A": "MK"},
-            extra={"recycles": 3},
-        )
-        assert inp.extra["recycles"] == 3
-
-    def test_round_trip(self) -> None:
-        inp = StructurePredictionInput(
-            sequences={"A": "MKLLVVF", "B": "GVSEK"},
-            num_models=3,
-        )
-        dumped = inp.model_dump()
-        restored = StructurePredictionInput.model_validate(dumped)
-        assert restored.sequences == inp.sequences
-        assert restored.num_models == inp.num_models
 
 
 class TestPredictedStructure:
@@ -165,45 +125,6 @@ class TestStructurePredictionOutput:
 # ---------------------------------------------------------------------------
 # Embedding
 # ---------------------------------------------------------------------------
-
-
-class TestEmbeddingInput:
-    def test_required_sequences(self) -> None:
-        inp = EmbeddingInput(sequences={"seq1": "MKLLVVF"})
-        assert inp.sequences == {"seq1": "MKLLVVF"}
-        assert inp.layer is None
-        assert inp.pooling is None
-
-    def test_optional_fields(self) -> None:
-        inp = EmbeddingInput(
-            sequences={"seq1": "MK"},
-            layer=33,
-            pooling="mean",
-        )
-        assert inp.layer == 33
-        assert inp.pooling == "mean"
-
-    def test_missing_sequences_raises(self) -> None:
-        with pytest.raises(ValidationError):
-            EmbeddingInput()  # type: ignore[call-arg]
-
-    def test_extra_dict_passthrough(self) -> None:
-        inp = EmbeddingInput(
-            sequences={"seq1": "MK"},
-            extra={"batch_size": 32},
-        )
-        assert inp.extra["batch_size"] == 32
-
-    def test_round_trip(self) -> None:
-        inp = EmbeddingInput(
-            sequences={"seq1": "MKLLVVF", "seq2": "GVSEK"},
-            layer=33,
-            pooling="mean",
-        )
-        dumped = inp.model_dump()
-        restored = EmbeddingInput.model_validate(dumped)
-        assert restored.sequences == inp.sequences
-        assert restored.layer == 33
 
 
 class TestSequenceEmbedding:
@@ -601,49 +522,6 @@ class TestScoringOutput:
 # ---------------------------------------------------------------------------
 
 
-class TestStructureDesignInput:
-    def test_required_design_specs(self) -> None:
-        inp = StructureDesignInput(design_specs={"test": {"length": "50"}})
-        assert "test" in inp.design_specs
-        assert inp.n_batches == 1
-        assert inp.input_structures == []
-
-    def test_optional_fields(self) -> None:
-        inp = StructureDesignInput(
-            design_specs={"test": {"length": "50"}},
-            input_structures=[Path("/data/target.pdb")],
-            n_batches=3,
-        )
-        assert inp.n_batches == 3
-        assert inp.input_structures == [Path("/data/target.pdb")]
-
-    def test_missing_design_specs_raises(self) -> None:
-        with pytest.raises(ValidationError):
-            StructureDesignInput()  # type: ignore[call-arg]
-
-    def test_extra_dict_passthrough(self) -> None:
-        inp = StructureDesignInput(
-            design_specs={"test": {"length": "50"}},
-            extra={"step_scale": 3.0, "gamma_0": 0.2},
-        )
-        assert inp.extra["step_scale"] == 3.0
-        assert inp.extra["gamma_0"] == 0.2
-
-    def test_round_trip(self) -> None:
-        inp = StructureDesignInput(
-            design_specs={
-                "binder": {"input": "target.pdb", "contig": "40-80"},
-                "uncond": {"length": "100"},
-            },
-            input_structures=[Path("/data/target.pdb")],
-            n_batches=2,
-        )
-        dumped = inp.model_dump()
-        restored = StructureDesignInput.model_validate(dumped)
-        assert restored.design_specs == inp.design_specs
-        assert restored.n_batches == inp.n_batches
-
-
 class TestDesignDesignedStructure:
     def test_required_fields(self) -> None:
         ds = DesignDesignedStructure(
@@ -706,22 +584,16 @@ class TestStructureDesignOutput:
 @pytest.mark.parametrize(
     "input_cls,kwargs",
     [
-        (StructurePredictionInput, {"sequences": {"A": "MK"}}),
-        (EmbeddingInput, {"sequences": {"seq1": "MK"}}),
         (InverseFoldingInput, {"structure_path": Path("/x.pdb")}),
         (ScoringInput, {"structure_path": Path("/x.pdb")}),
-        (StructureDesignInput, {"design_specs": {"t": {"length": "50"}}}),
         (
             AntibodyInput,
             {"sequences": [AntibodySequence(id="ab1", heavy_chain="EVQLV")]},
         ),
     ],
     ids=[
-        "structure_prediction",
-        "embedding",
         "inverse_folding",
         "scoring",
-        "structure_design",
         "antibody",
     ],
 )
