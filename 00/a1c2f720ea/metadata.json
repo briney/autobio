@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "00a1c2f720ea",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4b-sp-singletons",
+  "checkpoints_count": 15,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/00/a1c2f720ea/0/metadata.json",
+      "transcript": "/00/a1c2f720ea/0/full.jsonl",
+      "compact_transcript": "/00/a1c2f720ea/0/transcript.jsonl",
+      "content_hash": "/00/a1c2f720ea/0/content_hash.txt",
+      "prompt": "/00/a1c2f720ea/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11662,
+    "cache_creation_tokens": 451365,
+    "cache_read_tokens": 36150004,
+    "output_tokens": 263694,
+    "api_call_count": 138
+  }
+}
