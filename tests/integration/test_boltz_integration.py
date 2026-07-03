@@ -14,10 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import BoltzInput, StructurePredictionOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -55,7 +52,7 @@ class TestBoltz2SingleProtein:
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Run Boltz-2 end-to-end and verify output structure."""
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
             extra={
@@ -77,7 +74,7 @@ class TestBoltz2SingleProtein:
 
     def test_confidence_scores(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Verify confidence metrics are populated."""
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
             extra={
@@ -101,7 +98,7 @@ class TestBoltz2SingleProtein:
 
     def test_multiple_models(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Request 3 models and verify count and ranking."""
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=3,
             extra={
@@ -134,7 +131,7 @@ class TestBoltz2MultiChain:
 
     def test_two_chain_complex(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Predict a 2-chain insulin complex."""
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": _INSULIN_A, "B": _INSULIN_B},
             num_models=1,
             extra={
@@ -166,7 +163,7 @@ class TestBoltz1Prediction:
 
     def test_boltz1_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Run Boltz-1 and verify it produces output."""
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
             extra={
@@ -203,10 +200,10 @@ class TestBoltzRawYAML:
                 {"protein": {"id": "A", "sequence": _CRAMBIN_SEQ}},
             ],
         }
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={},
+            boltz_yaml=boltz_yaml,
             extra={
-                "boltz_yaml": boltz_yaml,
                 "sampling_steps": 50,
                 "recycling_steps": 1,
             },

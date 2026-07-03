@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 - Pydantic needs at runtime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -113,4 +114,72 @@ class ESMFoldInput(BaseInput):
         default=None,
         description="Template structures. ESMFold does not use templates; must be None/empty.",
         json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
+    )
+
+
+class BoltzInput(BaseInput):
+    """Input for Boltz-1 / Boltz-2 structure prediction (shared by both Tools)."""
+
+    sequences: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of chain ID to sequence. Values may be protein/DNA/RNA; for "
+            "ligand chains the value is ignored when SMILES/CCD is given via "
+            "entity_types. May be empty only when boltz_yaml is provided."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.PRIMARY, order=0),
+    )
+    num_models: int = Field(
+        default=1,
+        ge=1,
+        description="Number of structures to generate (maps to diffusion_samples).",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    templates: list[Path] | None = Field(
+        default=None,
+        description="Template structures (PDB/mmCIF) copied into the workspace.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
+    )
+    entity_types: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Per-chain entity type: 'protein'/'dna'/'rna', or a dict "
+            "{'smiles': 'CC...'} / {'ccd': 'ATP'} for ligands. Default 'protein'."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=12),
+    )
+    use_msa_server: bool = Field(
+        default=True,
+        description="Use ColabFold MMseqs2 MSA server (needs network). Set False to disable.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=13),
+    )
+    msa_paths: list[str] | None = Field(
+        default=None,
+        description=(
+            "Pre-computed MSA file paths (filename starts with the chain ID, e.g. 'A.a3m')."
+        ),
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=14),
+    )
+    constraints: list[Any] | None = Field(
+        default=None,
+        description="Boltz YAML 'constraints' section (bond/pocket/contact entries).",
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=15),
+    )
+    properties: list[Any] | None = Field(
+        default=None,
+        description="Boltz YAML 'properties' section (Boltz-2).",
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=16),
+    )
+    modifications: list[Any] | None = Field(
+        default=None,
+        description="Boltz YAML 'modifications' section.",
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=17),
+    )
+    boltz_yaml: dict[str, Any] | str | None = Field(
+        default=None,
+        description=(
+            "Raw Boltz YAML (dict or string) — bypasses automatic YAML generation "
+            "for full control over sequences/constraints/modifications/properties."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=18),
     )
