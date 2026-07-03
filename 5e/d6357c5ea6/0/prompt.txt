@@ -2751,3 +2751,86 @@ None. Clean mechanical refactor.
 **Approved** — Textbook execution of test-import hygiene. All 96 redundant per-method imports removed, conftest centralization correct, aliased imports preserved, full test suite green, lint clean.</result>
 <usage><subagent_tokens>50386</subagent_tokens><tool_uses>20</tool_uses><duration_ms>66855</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>aeb43bf08f263e3c9</task-id>
+<tool-use-id>toolu_01Pyo4FA8qkCyXNVCA3tbqEz</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/aeb43bf08f263e3c9.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement cleanup Task 5 docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Working tree is clean aside from the gitignored `.superpowers/sdd/` scratch directory.
+
+## Summary
+
+**Status:** Done. **Commit:** `81bf888` on branch `feature/tools-modes-teardown-cleanup`.
+
+Rewrote three doc files to the catalog `Tool`/`Mode` model:
+- `/home/briney/git/autobio/README.md` — fixed all stale flat tool names in the tool tables (structure design, embedding, structure utilities, energy minimization, scoring, simulation) to `&lt;tool&gt;` / `&lt;tool&gt; --mode &lt;mode&gt;` form; added `--mode` documentation to the CLI section.
+- `/home/briney/git/autobio/src/autobio/cli/README.md` — documented `--mode` in `autobio run`'s options/examples and mode-awareness in `list`/`info`.
+- `/home/briney/git/autobio/src/autobio/tools/TOOL_SPEC.md` — full rewrite of the "Adding a New Tool" walkthrough using real `esmfold.py` (single-mode) and `freesasa.py` (multi-mode) as reference examples.
+- `/home/briney/git/autobio/src/autobio/schemas/SCHEMA_SPEC.md` — replaced the `TOOL_REGISTRY["diffdock"] = ToolEntry(...)` snippet with the `register(Tool(..., modes={...}))` equivalent.
+
+Verification: stale-name grep and `TOOL_REGISTRY`/`ToolEntry` grep both zero; `pytest -m "not docker and not gpu"` all pass; `ruff check`/`ruff format --check`/`mypy src/` all clean; every tool/mode name cross-checked against a freshly regenerated catalog map (matches `scratchpad/catalog_map.txt` exactly). Only the 4 intended files changed; historical docs and `docs/CREDIT_SYSTEM.md` untouched.
+
+Full report written to `/home/briney/git/autobio/.superpowers/sdd/task-5-report.md` (note: that path is gitignored by `.superpowers/sdd/.gitignore`, so it wasn't part of the commit — this is expected/pre-existing).
+
+No concerns beyond one documented style choice: default-mode rows (e.g. `evoef2` for the old `evoef2_repair`) get a "(default mode `X`)" annotation in the description, mirroring the existing `freesasa` row's style, to clarify why no `--mode` flag appears.</result>
+<usage><subagent_tokens>141930</subagent_tokens><tool_uses>44</tool_uses><duration_ms>416204</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3f0eae360a804331</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a3f0eae360a804331.output</output-file>
+<status>completed</status>
+<summary>Agent "Review cleanup Task 5 docs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Code Review: Task 5 (docs rewrite) — autobio teardown PR #21
+
+## Spec Compliance
+
+| Item | Status |
+|---|---|
+| Stale flat tool names removed from README.md tables (5a) | ✅ — every `complexa_*`, `*_pll`, `evoef2_*`, `rosetta_*`, `openmm_*`, `antifold_score`, `esm_if1_score` row rewritten to `&lt;tool&gt;`/`&lt;tool&gt; --mode &lt;mode&gt;`, cross-checked row-by-row against `catalog_map.txt` — all real |
+| No stale names remain (grep) | ✅ zero hits |
+| `TOOL_REGISTRY`/`ToolEntry` removed from TOOL_SPEC.md/SCHEMA_SPEC.md | ✅ zero hits |
+| `--mode` documented in README + cli/README.md | ✅ present, accurate, wired to the real `--mode` Typer option in `src/autobio/cli/run.py:24-26` |
+| `proteinmpnn` quick-start/API examples preserved | ✅ untouched |
+| SCHEMA_SPEC.md `register(Tool(...))` example valid | ✅ every field/type matches `catalog.py`'s `Tool`/`Mode` dataclasses exactly, including `ToolCategory.STRUCTURE_PREDICTION` |
+| TOOL_SPEC.md API-accurate | ❌ one fabricated field (`Mode.input_format`) carried forward, see Critical below |
+| Boundary (only 4 files touched) | ✅ `git diff --stat 38c6aa4..81bf888` shows exactly README.md, cli/README.md, SCHEMA_SPEC.md, TOOL_SPEC.md; historical docs/CREDIT_SYSTEM.md/code untouched |
+| Tests/lint/type-check unaffected | ✅ `pytest -m "not docker and not gpu"` exit 0, `ruff check` clean, `mypy src/` clean |
+
+## Strengths
+
+- The `esmfold.py`/`freesasa.py` code blocks in TOOL_SPEC.md §4.1/§4.2 are verbatim (trimmed of docstrings, as advertised) quotes of the real files — I diffed them line by line against `src/autobio/tools/esmfold.py` and `src/autobio/tools/freesasa.py` and every field, method, and value matches.
+- Every one of the ~25 rewritten README rows was verified against the authoritative `catalog_map.txt`; all tool names, mode names, category placements, and default-mode annotations are correct (complexa, evoef2, rosetta, openmm, antifold, esm_if1, the six antibody LMs, freesasa).
+- `base.py`'s `ToolRunner.run()`/`_apply_extra`/`_resolve_mode`/`_resolve_container_path` behavior is described accurately, including the subtle but correct detail that `self.current_mode` is resolved *before* `prepare_workspace` runs.
+- `§4.4` shared-runner claim ("`proteinmpnn`/`ligandmpnn` map to `MPNNRunner`") verified against `mpnn.py` and `tools/__init__.py`.
+- `§6` testing patterns (`_make_runner`, `test_freesasa_registered_as_tool_not_flat`) match real content in `tests/unit/test_freesasa.py`.
+
+## Issues
+
+**Critical — TOOL_SPEC.md:589 (`input_format`), pre-existing but carried forward through this rewrite**
+The doc states: *"`input_format`, where used, is a tuple of strings documenting the tool's native input format (on `Mode`, alongside `notes`)... surfaced by `autobio info &lt;tool&gt;` as a separate 'Input Format' section (table mode) or `"input_format"` key (JSON mode) per mode."* This field does **not exist**:
+- `Mode` in `src/autobio/core/catalog.py:20-37` has no `input_format` field (only `name, display_name, description, input_schema, output_schema, default_timeout, supports_batch, image_tag, category, notes`).
+- `format_tool_info_catalog()` in `src/autobio/cli/formatters.py:85-152` never emits an "Input Format" section/key.
+- It's not used by any real `Tool`/`Mode` registration in the codebase (confirmed by grepping `input_format` across `src/`).
+This field was a leftover from the pre-refactor `ToolEntry` (confirmed in `docs/REFACTOR.md:48` and the design spec, both of which list `input_format` as a *legacy* `ToolEntry` attribute that the new `Mode` dataclass explicitly dropped). The task's diff (`git diff 38c6aa4..81bf888` line ~985/590) only reworded this paragraph to say "on `Mode`" instead of removing it or flagging it as unimplemented — so it now asserts, more strongly than before, that this is current `Mode` API. A developer following this instruction would write `Mode(..., input_format=(...))` and get `TypeError: Mode.__init__() got an unexpected keyword argument 'input_format'`. This falls squarely inside Task 5's mandate to make TOOL_SPEC.md API-accurate against the real catalog.
+
+**Minor — TOOL_SPEC.md:439 (dispatch-style naming)**
+"*Dict-driven dispatch (`rosetta.py`, `evoef2.py`, `complexa.py`, `openmm.py`) ... looked up once via `_MODE_CONFIG[self.current_mode.name]`*" is only literally true for `rosetta.py`/`complexa.py`. `openmm.py` uses `_VARIANT_CONFIG` (confirmed in its own module docstring and code), and `evoef2.py` uses a small `_MODE_COMMAND` dict for the command string plus separate `if mode == "binding"` / `if mode == "build_mutant"` blocks for the rest of the config (a hybrid, not "looked up once"). A developer grepping `openmm.py`/`evoef2.py` for `_MODE_CONFIG` per this doc's guidance won't find it. Low impact (informational aside, not the core walkthrough), but still an inaccurate code-identifier claim.
+
+**Minor — CLAUDE.md drift (out of Task 5's scope, noted for follow-up)**
+The root `CLAUDE.md` "Adding a New Tool" summary (lines 70, 86) still says *"Register a `ToolEntry` in `TOOL_REGISTRY` at module level"* — stale relative to the now-correct TOOL_SPEC.md. `CLAUDE.md` isn't in Task 5's file list and wasn't touched (correctly, per boundary rules), but the brief's instruction to "align with the current CLAUDE.md" summary is now backwards — TOOL_SPEC.md is accurate and CLAUDE.md is stale. Worth a follow-up task to update CLAUDE.md's summary to match.
+
+## Task quality: **Approved, with one required fix**
+
+Reasoning: The core deliverable — README.md's tool/mode tables, the `--mode` CLI docs, and SCHEMA_SPEC.md's `register(Tool(...))` example — is accurate, thorough, and independently verified against `catalog.py`, `base.py`, `tools/__init__.py`, and the real `esmfold.py`/`freesasa.py`/`mpnn.py` source. All stale flat names are gone, no `TOOL_REGISTRY`/`ToolEntry` remain, the diff boundary is clean (only the 4 target files touched), and the test/lint/type suite is unaffected (pytest 0 failures, ruff clean, mypy clean). However, the Critical finding — TOOL_SPEC.md documenting a non-existent `Mode.input_format` field and a non-existent "Input Format" CLI section as if they were live API — is exactly the kind of API-inaccuracy this task was chartered to eliminate, and it's a quick, well-scoped fix (delete the paragraph or clearly mark it as unimplemented/aspirational) before this can be called fully done.</result>
+<usage><subagent_tokens>138890</subagent_tokens><tool_uses>56</tool_uses><duration_ms>387817</duration_ms></usage>
+</task-notification>
