@@ -1,0 +1,239 @@
+<task-notification>
+<task-id>aa799268b547464c2</task-id>
+<tool-use-id>toolu_011HDopGEyfpKfMBbVDvb9mN</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/aa799268b547464c2.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 1: extra-shadow guard" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+- Commit: `16b5177` — "tools: add fail-fast _apply_extra shadow guard; adopt in freesasa/esm" (6 files changed, 87 insertions, 13 deletions)
+- Test summary: focused suite (test_freesasa.py + test_esm.py + test_tool_runner_modes.py) 30/30 passed; full unit suite (`-m "not docker and not gpu"`) all passed; ruff check/format clean; mypy clean (56 source files)
+- Concerns: none — brief followed verbatim, byte-compat tests (`test_sasa_config_unchanged`, `test_esm1b_config_model_name`, etc.) remain green, only the 6 intended files touched
+- Report: `/home/briney/git/autobio/.superpowers/sdd/task-1-report.md`</result>
+<usage><subagent_tokens>74079</subagent_tokens><tool_uses>35</tool_uses><duration_ms>157930</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7e6e08c54bc64501</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a7e6e08c54bc64501.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 1 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed no other call sites exist — scope is exactly freesasa and esm as required, and no other tool files (still using `_CONSUMED_EXTRA_KEYS`) were touched, consistent with "scope is autobio core ONLY" / no container changes.
+
+### Strengths
+- `_apply_extra` (base.py:200–225) is a clean, minimal, well-documented shared helper — Google-style docstring, correct `AutobioError` usage, single responsibility.
+- Fail-fast contract exactly matches the interface spec: rejects any `extra` key naming a typed field (excluding `extra` itself), otherwise merges unchanged — verified against `Mode.input_schema.model_fields` semantics in `core/catalog.py`.
+- `freesasa.py`/`esm.py` changes are minimal one-line swaps; dead `_CONSUMED_EXTRA_KEYS` constants removed cleanly, no stray references left (`grep` confirms no remaining references anywhere).
+- Tests use real Pydantic models and real `Workspace`/`config.json` round-trips (`tests/unit/test_freesasa.py:35-43`, `tests/unit/test_esm.py:27-35`) — not mocks — genuinely exercising `prepare_workspace` behavior.
+- Shadow tests target real typed fields confirmed to exist (`probe_radius` on `FreeSASABaseInput`, `layer` on `ESMEmbedInput`), not coincidentally-unmatched names.
+- Byte-compatibility preserved: existing `test_sasa_config_unchanged`/`test_esm1b_config_model_name` tests are untouched and reportedly still pass; the merge behavior for non-shadowing `extra` keys is unchanged (still a flat `dict.update`).
+- Scope strictly respected — only the 6 files named in the brief were touched; no container/protocol changes.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- `src/autobio/tools/base.py:217` — `assert self.current_mode is not None` will raise a bare `AssertionError` (stripped under `python -O`) rather than an `AutobioError` if `_apply_extra` is ever called from a legacy (non-catalog) runner. This mirrors pre-existing patterns (`_image_tag`, `_default_timeout`) so it's consistent with the codebase's established convention, and is explicitly scoped as "catalog tools only" per the brief — not a defect introduced by this task, just worth flagging if a future migration calls this from a legacy runner path.
+- `src/autobio/tools/base.py:222-223` — error message says "Pass these as typed config fields, not via 'extra'" — technically accurate but slightly imprecise phrasing (it's the *input schema's* typed fields, not "config fields"); purely cosmetic, doesn't affect the `match="shadow typed input fields"` test assertions.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** Implementation matches the brief's interface contract exactly (verified `current_mode` sequencing in `run()` and both call sites' config-dict identity directly in code), tests exercise real behavior against real typed-field names, scope is strictly limited to the six named files, and reported lint/format/mypy/test results are consistent with what's visible in the diff.</result>
+<usage><subagent_tokens>59121</subagent_tokens><tool_uses>14</tool_uses><duration_ms>86053</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac1cd961d0d70ca20</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ac1cd961d0d70ca20.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 2: disjointness guard test" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+
+**Commit:** 851f22f — test: guard CATALOG/TOOL_REGISTRY disjointness against half-migrations
+
+**Test Summary:** Step 2: 1 passed; Step 3: 31 passed (12 catalog + 18 registry + 1 disjoint guard); Step 4: ruff/mypy clean.
+
+**Concerns:** None.
+
+**Report:** `/home/briney/git/autobio/.superpowers/sdd/task-2-report.md`</result>
+<usage><subagent_tokens>40187</subagent_tokens><tool_uses>13</tool_uses><duration_ms>112787</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a27128b28ca7a6579</task-id>
+<tool-use-id>toolu_01XDuvgyyCGC1iYjq6VoekQe</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a27128b28ca7a6579.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 2 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+
+✅ **File creation** — Single new file `tests/unit/test_registry_disjoint.py` created; no source or other test modifications. [file:1-19]
+
+✅ **Content matches brief exactly** — Docstring, imports, function signature, assertion logic, and error message format are identical to specification. [file:1-35]
+
+✅ **Registry imports at runtime** — `autobio.tools` imported inside the test function to ensure both `CATALOG` and `TOOL_REGISTRY` are populated before the disjointness check. [file:30]
+
+✅ **No registry-clearing fixture** — Function-level test only; no autouse or parametrized fixtures present. [file:29-35]
+
+✅ **Constraint compliance** — Python 3.11+ syntax (`from __future__ import annotations`); longest line (assert statement) is 98 characters [file:35]; ruff selects respected; uses `# noqa: F401` appropriately for intentional side-effect import.
+
+### Strengths
+
+- **Precise implementation** — Code matches the provided specification verbatim; no interpretation ambiguity.
+- **Clean disjointness logic** — Set intersection (`set(CATALOG) &amp; set(TOOL_REGISTRY)`) is idiomatic and efficient.
+- **Actionable error message** — Includes sorted overlap list for debugging half-migrations.
+- **Correct isolation strategy** — Placed in its own file to avoid registry-clearing fixtures from `test_catalog.py` / `test_registry.py` that would mask the real state.
+- **Guard test design** — Will catch future migrations that leave a name in both registries (the stated threat model).
+
+### Issues
+
+None identified.
+
+### Assessment
+
+**Task quality:** Approved
+
+**Reasoning:** Implementation is exact, correct, and complete. The test properly observes the real populated registries, asserts their disjointness with clear semantics, and is positioned to guard against half-finished migrations. Spec compliance, code quality, and guard-test design are all sound.</result>
+<usage><subagent_tokens>21827</subagent_tokens><tool_uses>3</tool_uses><duration_ms>26001</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af6ebe6f6221ac307</task-id>
+<tool-use-id>toolu_018fUBk1q8kv9B8Q92VqHUFi</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/af6ebe6f6221ac307.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 3: esm Tool constants" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Task 3 Complete
+
+**Status:** DONE
+
+**Commit:** 4496b55 esm: extract ESM1B_TOOL/ESM2_TOOL constants for the standard convention
+
+**Test Results:** All 13 tests in test_esm.py pass (including new test_esm_tool_constants_registered)
+
+**Concerns:** None
+
+**Report:** `/home/briney/git/autobio/.superpowers/sdd/task-3-report.md`</result>
+<usage><subagent_tokens>40758</subagent_tokens><tool_uses>17</tool_uses><duration_ms>87776</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a607ba3455ff2ac58</task-id>
+<tool-use-id>toolu_01BF9ifdXoYXXNkGYVFWusgY</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a607ba3455ff2ac58.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 3 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed line-length is 100 and ruff check/format both pass clean on the two changed files.
+
+### Spec Compliance
+- ✅ `src/autobio/tools/esm.py:186-215` — `ESM1B_TOOL = Tool(...)` extracted with every field (`name`, `display_name`, `category`, `description`, `version`, `image_tag`, `requires_gpu`, `gpu_count`, `default_mode`, `modes["embed"]` incl. `input_schema=ESMEmbedInput`, `output_schema=EmbeddingOutput`, `default_timeout=600`, `supports_batch=True`, `notes=_ESM_NOTES`, `keywords`) byte-for-byte identical to the removed inline block; `register(ESM1B_TOOL)` preserved.
+- ✅ `src/autobio/tools/esm.py:217-247` — Same verification for `ESM2_TOOL`: all fields (incl. `input_schema=ESM2Input`, `notes=_ESM2_NOTES`, `keywords=("esm","esm2",...)`) match the original exactly; `register(ESM2_TOOL)` preserved.
+- ✅ `tests/unit/test_esm.py:219-226` — `test_esm_tool_constants_registered` matches the brief's Step 1 verbatim, and does verify real registration identity: `get_tool("esm1b") is ESM1B_TOOL` / `get_tool("esm2") is ESM2_TOOL` (identity, not equality), so it would fail if `register()` deep-copied or the catalog held a different instance.
+- ✅ Scope respected: diff touches only `src/autobio/tools/esm.py` and `tests/unit/test_esm.py`.
+- ✅ Docstrings added on both constants, following the exact wording specified in the brief.
+
+I diffed every field of both `Tool` declarations line-by-line against the pre-image (per the NAMED RISK instruction) — no value, keyword, mode name, schema class, timeout, or image tag differs; only indentation changed plus the `ESM*_TOOL =` binding, the attached docstring, and `register(...)` argument. I also independently ran `ruff check` and `ruff format --check` (read-only, no mutation) on both changed files — both pass clean, and `pyproject.toml:42` confirms `line-length = 100` is respected.
+
+### Strengths
+- Textbook pure extraction — zero behavioral drift, confirmed by both manual field-diff and passing existing tests (`test_esm_registered_as_single_mode_tools`, `test_info_snapshot_esm2` untouched and still valid).
+- New test asserts identity (`is`), which is the correct check for "same registered object" — a weaker `==` check would have missed a re-instantiation bug.
+- Attribute-docstring convention (bare string literal following the assignment) matches the `freesasa` precedent this task is standardizing toward.
+- Report is accurate: claimed diffs, test counts, and lint/format/mypy results match what's observable in the diff and my own reproduction.
+
+### Issues
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- `tests/unit/test_esm.py:220` / `:202` / `:39` — `import autobio.tools  # noqa: F401` is repeated per-test rather than hoisted to module scope; pre-existing pattern in this file (not introduced by this task), so out of scope to fix here, but worth flagging for the next migration's test template.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** The change is a verified byte-for-byte field-preserving extraction with correct `register(...)` wiring, a properly-scoped identity-based test, clean lint/format, and no scope creep beyond the two permitted files.</result>
+<usage><subagent_tokens>47156</subagent_tokens><tool_uses>7</tool_uses><duration_ms>61660</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae2c08a184249b743</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ae2c08a184249b743.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 4: info schema micro-opt" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+Commit: `41a1e1a` — cli: compute info JSON schemas only in the JSON branch (micro-opt)
+Tests: formatter+snapshot suite 31 passed; full non-docker/gpu suite 1325 passed; ruff check/format + mypy all clean.
+Concerns: none.
+Report: `/home/briney/git/autobio/.superpowers/sdd/task-4-report.md`</result>
+<usage><subagent_tokens>63518</subagent_tokens><tool_uses>25</tool_uses><duration_ms>147559</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2569c99578e8f87a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a2569c99578e8f87a.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 4 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All within the 100-char limit; these are pre-existing lines unrelated to this diff.
+
+Both files check out. Now presenting the review.
+
+### Spec Compliance
+- ✅ JSON branch: `modes` list built with the identical 8 keys (name, display_name, description, category, default_timeout, supports_batch, input_schema, output_schema) and `data` dict with the identical 12 keys in the same order (name, display_name, category, categories, version, image_tag, requires_gpu, gpu_count, description, keywords, default_mode, modes), verified at `src/autobio/cli/formatters.py:222-250`.
+- ✅ TABLE branch: identical row sequence (Display Name, Category, Categories, Image, GPU Required, GPU Count, Version, Description, Keywords-if-any, Default Mode, per-mode `Mode: &lt;name&gt;` rows) with the same category-fallback (`mode.category or tool.category`) and timeout formatting string, verified at `formatters.py:252-273`. Values now read directly off the `Mode` dataclass attributes (`mode.name`, `mode.display_name`, etc.) rather than a pre-built dict — `Mode` (in `src/autobio/core/catalog.py:20-38`) exposes exactly those fields, so this is a semantics-preserving substitution, not a behavior change.
+- ✅ The only behavioral change is `model_json_schema()` moving into the `if fmt == OutputFormat.JSON:` block — confirmed by the diff showing the `modes = [...]` comprehension relocated from before the branch to inside it (`formatters.py:222-235`), with the TABLE path never calling `.model_json_schema()`.
+- ✅ Scope respected: diff touches only `src/autobio/cli/formatters.py` and `tests/unit/test_formatters.py` (per diff stat).
+- ✅ Existing tests `test_format_tool_info_catalog_json_shape` (`tests/unit/test_formatters.py:364-375`) and `test_format_tool_info_catalog_table_runs` (`:378-380`) are present, unmodified — only `import pytest` (line 8) and the new test (`:424-449`) were added.
+
+### Strengths
+- Restructure matches the brief's Step 3 replacement body verbatim (confirmed by reading the resulting file directly) — no scope creep, no incidental reformatting of unrelated code.
+- The new test correctly proves both halves of the risk in one assertion pair: TABLE renders (`"Mode: a" in out`) using an input schema class whose `model_json_schema` is booby-trapped to raise, and the same tool's JSON call is asserted to raise via `pytest.raises`, which only makes sense if JSON still invokes the schema. This is exactly the "exploding schema" style test the risk criteria call for, not a shallow check.
+- `_ExplodingInput` overrides `model_json_schema` at the class level (a `classmethod`), matching how Pydantic models actually expose it, so the trap fires on the real call site (`mode.input_schema.model_json_schema()`) rather than an unrelated method.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- The category-fallback expression `(mode.category or tool.category).value` is now written twice — once inside the JSON dict comprehension (`formatters.py:228`) and once as a local in the TABLE loop (`formatters.py:267`) — versus once previously. This is inherent to the brief's required branch split (TABLE must not build the mode-dict at all) and is only a 1-line expression, so it's not worth a shared helper, but worth noting as the one place the refactor trades a small amount of duplication for the perf win.
+- The new test only makes `input_schema` explode (`output_schema` stays as plain `_OutInfo`); since both `model_json_schema()` calls sit in the same comprehension iteration, this is sufficient to catch the regression, but a maximally rigorous test would trap both to independently pin each field. Not a real gap given the code structure — flagged only for completeness.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** The diff is a byte-for-byte match to the brief's prescribed replacement, output field order/content is unchanged for both JSON and TABLE, and the added regression test genuinely exercises the named risk (TABLE must not compute schemas, JSON still must) rather than only checking one side.</result>
+<usage><subagent_tokens>54225</subagent_tokens><tool_uses>9</tool_uses><duration_ms>97337</duration_ms></usage>
+</task-notification>
