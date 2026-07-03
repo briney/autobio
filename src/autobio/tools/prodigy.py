@@ -16,11 +16,12 @@ import json
 import shutil
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.protein_binding_affinity import (
-    ProteinBindingAffinityInput,
+    ProdigyInput,
     ProteinBindingAffinityOutput,
     ProteinBindingAffinityPrediction,
 )
@@ -28,10 +29,6 @@ from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
     from autobio.core.workspace import Workspace
-
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset({"distance_cutoff", "contact_list"})
 
 # ---------------------------------------------------------------------------
 # Runner
@@ -51,7 +48,7 @@ class ProdigyRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, ProteinBindingAffinityInput)
+        assert isinstance(input_data, ProdigyInput)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
@@ -67,15 +64,12 @@ class ProdigyRunner(ToolRunner):
             "structure_path": container_structure_path,
             "selection": input_data.chain_selection,
             "temperature": input_data.temperature,
-            "distance_cutoff": input_data.extra.get("distance_cutoff", 5.5),
-            "contact_list": input_data.extra.get("contact_list", False),
+            "distance_cutoff": input_data.distance_cutoff,
+            "contact_list": input_data.contact_list,
             "output_dir": "/workspace/outputs/raw",
         }
 
-        # Flat-merge extra dict (excluding consumed keys)
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -105,7 +99,7 @@ class ProdigyRunner(ToolRunner):
     # -- Private helpers ----------------------------------------------------
 
     @staticmethod
-    def _validate_inputs(input_data: ProteinBindingAffinityInput) -> None:
+    def _validate_inputs(input_data: ProdigyInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
@@ -121,7 +115,7 @@ class ProdigyRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _PRODIGY_NOTES = (
@@ -138,31 +132,36 @@ _PRODIGY_NOTES = (
     "predicted delta-G, Kd (temperature-dependent), and a full breakdown of "
     "contact counts and surface properties.",
     "CPU-only — no GPU required. Typical runtime is seconds for a single complex.",
-    "Key parameters (via extra dict): 'distance_cutoff' (default 5.5 angstrom), "
-    "'contact_list' (boolean, default False — include detailed contact list).",
+    "Key parameters: distance_cutoff (default 5.5 angstrom), "
+    "contact_list (boolean, default False — include detailed contact list).",
 )
 
-_PRODIGY_INPUT_FORMAT = (
-    "Provide a protein-protein complex PDB via structure_path. Optionally "
-    "specify chain_selection (e.g., 'A B') and temperature (default 25.0 °C). "
-    "Tool-specific parameters like distance_cutoff can be passed via extra.",
-)
-
-TOOL_REGISTRY["prodigy"] = ToolEntry(
-    image_tag="prodigy:2.4.0",
+PRODIGY_TOOL = Tool(
+    name="prodigy",
+    display_name="PRODIGY",
     category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
-    input_schema=ProteinBindingAffinityInput,
-    output_schema=ProteinBindingAffinityOutput,
-    default_timeout=300,
-    supports_batch=False,
     description=(
-        "Predict protein-protein binding affinity (delta-G and Kd) from a 3D "
-        "complex structure using PRODIGY. Uses interatomic contact counting "
-        "with a linear model. CPU-only, no GPU required."
+        "Predict protein-protein binding affinity (delta-G and Kd) from a 3D complex "
+        "using PRODIGY (interatomic contact counting). CPU-only."
     ),
     version="2.4.0",
-    notes=_PRODIGY_NOTES,
-    input_format=_PRODIGY_INPUT_FORMAT,
+    image_tag="prodigy:2.4.0",
+    requires_gpu=False,
+    gpu_count=0,
+    default_mode="predict",
+    modes={
+        "predict": Mode(
+            name="predict",
+            display_name="Predict affinity",
+            description="Predict protein-protein binding affinity (delta-G, Kd).",
+            input_schema=ProdigyInput,
+            output_schema=ProteinBindingAffinityOutput,
+            default_timeout=300,
+            notes=_PRODIGY_NOTES,
+        )
+    },
+    keywords=("prodigy", "binding affinity", "protein-protein", "delta-g", "kd"),
 )
+"""Catalog Tool for PRODIGY — exposed for tests re-registering after CATALOG-clearing fixtures."""
+
+register(PRODIGY_TOOL)

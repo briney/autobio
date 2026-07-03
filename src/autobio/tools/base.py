@@ -198,29 +198,36 @@ class ToolRunner(ABC):
             ) from None
 
     def _apply_extra(self, config: dict[str, Any], input_data: BaseInput) -> None:
-        """Merge ``input_data.extra`` into *config*, rejecting typed-field shadows.
+        """Merge ``input_data.extra`` into *config*, rejecting key collisions.
 
         ``extra`` is the escape hatch for parameters not promoted to typed fields
-        on a mode's input schema. A key in ``extra`` that names a typed field
-        would silently override (or duplicate) that field in ``config.json``, so
-        such keys are rejected fail-fast rather than written.
+        on a mode's input schema. A key in ``extra`` is rejected fail-fast (rather
+        than silently applied via ``config.update``) if it either:
+
+        - names a typed field on the active mode's input schema, or
+        - already exists in *config* — i.e. it collides with a runner-derived
+          config key (e.g. ``output_dir``, ``pdb_path``) written earlier in
+          ``prepare_workspace``.
 
         Args:
-            config: The mapping being assembled for ``config.json``; mutated in
-                place with the accepted ``extra`` keys.
+            config: The mapping being assembled for ``config.json``, as it stands
+                at call time (i.e. with all runner-derived keys already present);
+                mutated in place with the accepted ``extra`` keys.
             input_data: The validated input whose ``extra`` dict is merged.
 
         Raises:
-            AutobioError: If ``extra`` contains a key that shadows a typed field
-                on the active mode's input schema.
+            AutobioError: If ``extra`` contains a key that collides with a typed
+                field on the active mode's input schema or with a runner-derived
+                key already present in *config*.
         """
         assert self.current_mode is not None
         typed_fields = set(self.current_mode.input_schema.model_fields) - {"extra"}
-        shadowed = sorted(key for key in input_data.extra if key in typed_fields)
-        if shadowed:
+        collisions = sorted(key for key in input_data.extra if key in typed_fields or key in config)
+        if collisions:
             raise AutobioError(
-                "extra must not contain keys that shadow typed input fields: "
-                f"{', '.join(shadowed)}. Pass these as typed config fields, not via 'extra'."
+                "extra must not contain keys that collide with typed input fields or "
+                f"runner-derived config keys: {', '.join(collisions)}. Pass tool-specific "
+                "parameters under new keys; set typed parameters as top-level input fields."
             )
         config.update(input_data.extra)
 

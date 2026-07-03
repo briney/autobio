@@ -16,11 +16,12 @@ import json
 import shutil
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.binding_affinity import (
-    BindingAffinityInput,
+    AntipastiInput,
     BindingAffinityOutput,
     BindingAffinityPrediction,
 )
@@ -38,10 +39,6 @@ _DEFAULT_CHECKPOINT = (
     f"{_ANTIPASTI_DIR}/checkpoints/full_ags_all_modes/"
     "model_epochs_1044_modes_all_pool_1_filters_4_size_4.pt"
 )
-
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset({"modes"})
 
 # ---------------------------------------------------------------------------
 # Runner
@@ -61,7 +58,7 @@ class AntipastiRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, BindingAffinityInput)
+        assert isinstance(input_data, AntipastiInput)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
@@ -81,13 +78,10 @@ class AntipastiRunner(ToolRunner):
             "checkpoint_path": _DEFAULT_CHECKPOINT,
             "output_dir": "/workspace/outputs/raw",
             "antipasti_dir": _ANTIPASTI_DIR,
-            "modes": input_data.extra.get("modes", "all"),
+            "modes": input_data.modes,
         }
 
-        # Flat-merge extra dict (excluding consumed keys)
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -117,7 +111,7 @@ class AntipastiRunner(ToolRunner):
     # -- Private helpers ----------------------------------------------------
 
     @staticmethod
-    def _validate_inputs(input_data: BindingAffinityInput) -> None:
+    def _validate_inputs(input_data: AntipastiInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
@@ -150,7 +144,7 @@ class AntipastiRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _ANTIPASTI_NOTES = (
@@ -165,32 +159,36 @@ _ANTIPASTI_NOTES = (
     "binding affinity. No GPU required.",
     "Output log10(Kd) values: more negative = tighter binding. For example, "
     "-9.0 corresponds to Kd ~1 nM (nanomolar), -6.0 to Kd ~1 µM (micromolar).",
-    "Key parameter (via extra dict): 'modes' (default 'all', or an integer "
+    "Key parameter: modes (default 'all', or an integer "
     "for the number of normal modes to use in the DCCM calculation).",
 )
 
-_ANTIPASTI_INPUT_FORMAT = (
-    "Provide an antibody-antigen complex PDB via structure_path. Specify "
-    "heavy_chain (e.g., 'H'), light_chain (e.g., 'L'), and antigen_chains "
-    "(e.g., ['A']) to identify the chains in the structure.",
-)
-
-TOOL_REGISTRY["antipasti"] = ToolEntry(
-    image_tag="antipasti:1.0.0",
+ANTIPASTI_TOOL = Tool(
+    name="antipasti",
+    display_name="ANTIPASTI",
     category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
-    input_schema=BindingAffinityInput,
-    output_schema=BindingAffinityOutput,
-    default_timeout=1800,
-    supports_batch=False,
     description=(
-        "Predict antibody-antigen binding affinity (log10 Kd) from a 3D PDB "
-        "complex structure using ANTIPASTI. Computes Normal Mode Correlation "
-        "Maps (DCCM) via bio3d and runs a lightweight CNN to predict binding "
-        "affinity. CPU-only, no GPU required."
+        "Predict antibody-antigen binding affinity (log10 Kd) from a 3D PDB complex "
+        "using ANTIPASTI (Normal Mode Correlation Maps + CNN). CPU-only."
     ),
     version="1.0.0",
-    notes=_ANTIPASTI_NOTES,
-    input_format=_ANTIPASTI_INPUT_FORMAT,
+    image_tag="antipasti:1.0.0",
+    requires_gpu=False,
+    gpu_count=0,
+    default_mode="predict",
+    modes={
+        "predict": Mode(
+            name="predict",
+            display_name="Predict affinity",
+            description="Predict antibody-antigen binding affinity (log10 Kd).",
+            input_schema=AntipastiInput,
+            output_schema=BindingAffinityOutput,
+            default_timeout=1800,
+            notes=_ANTIPASTI_NOTES,
+        )
+    },
+    keywords=("antipasti", "binding affinity", "antibody", "antigen", "kd"),
 )
+"""Catalog Tool for ANTIPASTI — exposed for tests re-registering after CATALOG-clearing fixtures."""
+
+register(ANTIPASTI_TOOL)

@@ -9,7 +9,7 @@ import pytest
 
 from autobio.core.catalog import CATALOG, Mode, Tool, register
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import ToolCategory
+from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput, BaseOutput
 from autobio.tools.base import ToolRunner
@@ -17,11 +17,14 @@ from autobio.tools.base import ToolRunner
 
 @pytest.fixture(autouse=True)
 def _clean_catalog():
-    snapshot = dict(CATALOG)
+    catalog_snapshot = dict(CATALOG)
+    registry_snapshot = dict(TOOL_REGISTRY)
     CATALOG.clear()
     yield
     CATALOG.clear()
-    CATALOG.update(snapshot)
+    CATALOG.update(catalog_snapshot)
+    TOOL_REGISTRY.clear()
+    TOOL_REGISTRY.update(registry_snapshot)
 
 
 class _Input(BaseInput):
@@ -83,6 +86,22 @@ def _register_faketool() -> None:
     )
 
 
+def _register_fake_legacy_tool() -> None:
+    """Register a fake flat ``TOOL_REGISTRY`` entry (legacy, non-catalog tool)."""
+    TOOL_REGISTRY["fakelegacytool"] = ToolEntry(
+        image_tag="fake-legacy:1.0.0",
+        category=ToolCategory.SCORING,
+        requires_gpu=False,
+        gpu_count=0,
+        input_schema=_Input,
+        output_schema=_Output,
+        default_timeout=111,
+        supports_batch=False,
+        description="fake legacy tool",
+        version="9.9.9",
+    )
+
+
 def _make_runner(tool_name: str) -> _CaptureRunner:
     with patch("autobio.tools.base.ContainerManager"), patch("autobio.tools.base.GPUManager"):
         return _CaptureRunner(tool_name, AutobioConfig.resolve())
@@ -129,8 +148,17 @@ def test_apply_extra_rejects_shadowing_typed_field() -> None:
     _register_faketool()
     runner = _make_runner("faketool")
     runner.current_mode = _typed_mode()
-    with pytest.raises(AutobioError, match="shadow typed input fields: alpha_param"):
+    with pytest.raises(AutobioError, match="collide with typed input fields.*alpha_param"):
         runner._apply_extra({}, _TypedInput(extra={"alpha_param": 5}))
+
+
+def test_apply_extra_rejects_derived_config_key_collision() -> None:
+    _register_faketool()
+    runner = _make_runner("faketool")
+    runner.current_mode = _typed_mode()
+    # "output_dir" is NOT a typed field on _TypedInput, but it is already in config.
+    with pytest.raises(AutobioError, match="collide.*output_dir"):
+        runner._apply_extra({"output_dir": "/x"}, _TypedInput(extra={"output_dir": "/y"}))
 
 
 def test_image_and_timeout_use_mode_override() -> None:
@@ -160,11 +188,11 @@ def test_run_sets_current_mode_and_mode_metadata(tmp_path, monkeypatch) -> None:
 
 
 def test_run_rejects_mode_for_legacy_tool() -> None:
-    # 'prodigy' is a legacy flat tool (in TOOL_REGISTRY, not CATALOG) — imported for real.
-    import autobio.tools  # noqa: F401 - populate registries
+    # A fake flat tool (in TOOL_REGISTRY, not CATALOG) — exercises the legacy path.
+    _register_fake_legacy_tool()
 
     with patch("autobio.tools.base.ContainerManager"), patch("autobio.tools.base.GPUManager"):
-        runner = _CaptureRunner("prodigy", AutobioConfig.resolve())
+        runner = _CaptureRunner("fakelegacytool", AutobioConfig.resolve())
     assert runner.entry is not None
     assert runner.tool is None
     with pytest.raises(AutobioError, match="does not support modes"):

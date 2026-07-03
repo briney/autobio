@@ -16,10 +16,11 @@ import json
 import shutil
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
-from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.scoring import BAddGInput, ScoredStructure, ScoringOutput
 from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
@@ -32,18 +33,6 @@ if TYPE_CHECKING:
 _BADDG_DIR = "/app/baddg"
 _DEFAULT_MPNN_CHECKPOINT = f"{_BADDG_DIR}/ckpt/soluble_model_weights/v_48_020.pt"
 _DEFAULT_DDG_CHECKPOINT = f"{_BADDG_DIR}/ckpt/ddg_model.ckpt"
-
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset(
-    {
-        "mutations",
-        "chains",
-        "n_folds",
-        "seed",
-        "device",
-    }
-)
 
 # ---------------------------------------------------------------------------
 # Runner
@@ -63,7 +52,7 @@ class BAddGRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
+        assert isinstance(input_data, BAddGInput)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
@@ -75,23 +64,19 @@ class BAddGRunner(ToolRunner):
         container_structure_path = f"/workspace/inputs/{dest_name}"
 
         # -- Build config.json ----------------------------------------------
-        mutations: list[str] = input_data.extra.get("mutations", [])
         config: dict[str, Any] = {
             "pdb_path": container_structure_path,
-            "mutations": ",".join(mutations),
-            "chains": input_data.extra["chains"],
+            "mutations": ",".join(input_data.mutations),
+            "chains": input_data.chains,
             "mpnn_checkpoint_path": _DEFAULT_MPNN_CHECKPOINT,
             "ddg_checkpoint_path": _DEFAULT_DDG_CHECKPOINT,
             "output_dir": "/workspace/outputs/raw",
-            "n_folds": input_data.extra.get("n_folds", 3),
-            "seed": input_data.extra.get("seed", 0),
-            "device": input_data.extra.get("device", "auto"),
+            "n_folds": input_data.n_folds,
+            "seed": input_data.seed,
+            "device": input_data.device,
         }
 
-        # Flat-merge extra dict (excluding consumed keys)
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -124,34 +109,22 @@ class BAddGRunner(ToolRunner):
     # -- Private helpers ----------------------------------------------------
 
     @staticmethod
-    def _validate_inputs(input_data: ScoringInput) -> None:
+    def _validate_inputs(input_data: BAddGInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
 
         # Mutations are required
-        mutations = input_data.extra.get("mutations")
-        if not mutations:
-            raise AutobioError(
-                "BA-ddG requires 'mutations' in the extra dict. "
-                "Provide a list of mutation strings in format: "
-                "[WT_AA][ChainID][Resnum][Mut_AA] (e.g., ['YH103H', 'QD30V'])."
-            )
-        if not isinstance(mutations, list) or not all(isinstance(m, str) for m in mutations):
-            raise AutobioError(
-                f"'mutations' must be a list of strings, got {type(mutations).__name__}. "
-                "Each mutation should be in format: "
-                "[WT_AA][ChainID][Resnum][Mut_AA] (e.g., 'YH103H')."
-            )
+        if not input_data.mutations:
+            raise AutobioError("BA-ddG requires at least one mutation.")
 
         # Chains specification is required
-        chains = input_data.extra.get("chains")
+        chains = input_data.chains
         if not chains:
             raise AutobioError(
-                "BA-ddG requires 'chains' in the extra dict. "
-                "Provide a string in 'binder1_binder2' format (e.g., 'ABC_DE')."
+                "BA-ddG requires a non-empty 'chains' interface specification (e.g., 'ABC_DE')."
             )
-        if not isinstance(chains, str) or chains.count("_") != 1:
+        if chains.count("_") != 1:
             raise AutobioError(
                 f"'chains' must be a string with exactly one underscore separator "
                 f"(e.g., 'ABC_DE'), got {chains!r}."
@@ -159,7 +132,7 @@ class BAddGRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _BADDG_NOTES = (
@@ -174,34 +147,37 @@ _BADDG_NOTES = (
     "format. For example, 'ABC_DE' defines the interface between chains A,B,C "
     "and chains D,E.",
     "Predictions are averaged across 3 cross-validation folds by default. "
-    "Set extra['n_folds'] to 1 or 2 for faster (but less robust) predictions.",
+    "Set n_folds to 1 or 2 for faster (but less robust) predictions.",
     "Output ddG is in kcal/mol. Positive values indicate destabilization "
     "(weaker binding), negative values indicate stabilization (stronger binding).",
 )
 
-_BADDG_INPUT_FORMAT = (
-    "Provide a protein complex PDB via structure_path. Specify "
-    "extra['mutations'] as a list of mutation strings "
-    "(e.g., ['YH103H', 'QD30V']) and extra['chains'] as a string "
-    "defining the binding interface (e.g., 'ABC_DE').",
-)
-
-TOOL_REGISTRY["baddg"] = ToolEntry(
-    image_tag="baddg:1.0.0",
+BADDG_TOOL = Tool(
+    name="baddg",
+    display_name="BA-ddG",
     category=ToolCategory.SCORING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
     description=(
-        "Predict binding ddG at protein-protein interfaces using BA-ddG, "
-        "a Boltzmann-aligned inverse folding model (ICLR 2025). Uses a "
-        "thermodynamic cycle with ProteinMPNN to score complex and unbound "
-        "states. Returns ddG in kcal/mol for mutations in protein complexes."
+        "Predict binding ddG at protein-protein interfaces using BA-ddG, a "
+        "Boltzmann-aligned inverse folding model. Returns ddG in kcal/mol."
     ),
     version="1.0.0",
-    notes=_BADDG_NOTES,
-    input_format=_BADDG_INPUT_FORMAT,
+    image_tag="baddg:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="predict",
+    modes={
+        "predict": Mode(
+            name="predict",
+            display_name="Predict ddG",
+            description="Predict binding ddG for mutations in a protein complex.",
+            input_schema=BAddGInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            notes=_BADDG_NOTES,
+        )
+    },
+    keywords=("baddg", "ddg", "binding affinity", "mutation", "interface"),
 )
+"""Catalog Tool for BA-ddG — exposed for tests re-registering after CATALOG-clearing fixtures."""
+
+register(BADDG_TOOL)

@@ -1,4 +1,4 @@
-"""Tests for BAddGRunner — prepare_workspace, parse_output, and registration."""
+"""Unit tests for the migrated baddg Tool (mode: predict)."""
 
 from __future__ import annotations
 
@@ -8,11 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import BAddGInput, ScoringOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
 from autobio.tools.baddg import BAddGRunner
 
@@ -30,14 +31,20 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> BAddGRunner:
-    """Create a BAddGRunner with mocked deps."""
+def _make_runner() -> BAddGRunner:
+    """Create a BAddGRunner with mocked deps, current_mode set to 'predict'."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return BAddGRunner("baddg", config)
+        runner = BAddGRunner("baddg", AutobioConfig.resolve())
+    runner.current_mode = get_tool("baddg").modes["predict"]
+    return runner
+
+
+@pytest.fixture()
+def runner() -> BAddGRunner:
+    return _make_runner()
 
 
 @pytest.fixture()
@@ -55,6 +62,15 @@ def sample_pdb(tmp_path: Path) -> Path:
     return pdb_path
 
 
+def _written_config(runner: BAddGRunner, input_data: BAddGInput, tmp_path: Path) -> dict:
+    ws = Workspace.create(tmp_path / "ws")
+    try:
+        runner.prepare_workspace(input_data, ws)
+        return json.loads((ws.root / "config.json").read_text())
+    finally:
+        ws.cleanup()
+
+
 # ---------------------------------------------------------------------------
 # TestBAddGPrepareWorkspace
 # ---------------------------------------------------------------------------
@@ -65,14 +81,13 @@ class TestBAddGPrepareWorkspace:
 
     def test_basic_config(self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path) -> None:
         """Config contains correct fields for BA-ddG."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
-        runner.prepare_workspace(input_data, workspace)
+        cfg = _written_config(runner, input_data, tmp_path)
 
-        cfg = json.loads(workspace.config_path.read_text())
         assert cfg["pdb_path"] == "/workspace/inputs/complex.pdb"
         assert cfg["mutations"] == "EA63Q"
         assert cfg["chains"] == "A_B"
@@ -85,9 +100,10 @@ class TestBAddGPrepareWorkspace:
     ) -> None:
         """Input structure is copied to inputs/ and config references container path."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -99,116 +115,122 @@ class TestBAddGPrepareWorkspace:
         self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         """Multiple mutations are joined into comma-separated string."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["YH103H", "QD30V", "KA66A"], "chains": "ABC_DE"},
+            mutations=["YH103H", "QD30V", "KA66A"],
+            chains="ABC_DE",
         )
-        runner.prepare_workspace(input_data, workspace)
+        cfg = _written_config(runner, input_data, tmp_path)
 
-        cfg = json.loads(workspace.config_path.read_text())
         assert cfg["mutations"] == "YH103H,QD30V,KA66A"
 
     def test_chains_passthrough(
         self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         """Chain specification is passed through as-is."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "ABC_DE"},
+            mutations=["EA63Q"],
+            chains="ABC_DE",
         )
-        runner.prepare_workspace(input_data, workspace)
+        cfg = _written_config(runner, input_data, tmp_path)
 
-        cfg = json.loads(workspace.config_path.read_text())
         assert cfg["chains"] == "ABC_DE"
 
     def test_default_params(self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path) -> None:
         """Default parameter values are written to config."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
-        runner.prepare_workspace(input_data, workspace)
+        cfg = _written_config(runner, input_data, tmp_path)
 
-        cfg = json.loads(workspace.config_path.read_text())
         assert cfg["n_folds"] == 3
         assert cfg["seed"] == 0
         assert cfg["device"] == "auto"
 
-    def test_extra_override_params(
-        self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
-    ) -> None:
-        """Extra dict values override defaults."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+    def test_override_params(self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path) -> None:
+        """Non-default typed field values override defaults."""
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={
-                "mutations": ["EA63Q"],
-                "chains": "A_B",
-                "n_folds": 1,
-                "seed": 42,
-                "device": "cpu",
-            },
+            mutations=["EA63Q"],
+            chains="A_B",
+            n_folds=1,
+            seed=42,
+            device="cpu",
         )
-        runner.prepare_workspace(input_data, workspace)
+        cfg = _written_config(runner, input_data, tmp_path)
 
-        cfg = json.loads(workspace.config_path.read_text())
         assert cfg["n_folds"] == 1
         assert cfg["seed"] == 42
         assert cfg["device"] == "cpu"
 
     def test_extra_dict_merged(self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path) -> None:
-        """Non-consumed extra dict keys appear at top level of config.json."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        """Non-typed extra dict keys appear at top level of config.json."""
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={
-                "mutations": ["EA63Q"],
-                "chains": "A_B",
-                "custom_flag": "value",
-            },
+            mutations=["EA63Q"],
+            chains="A_B",
+            extra={"custom_flag": "value"},
         )
-        runner.prepare_workspace(input_data, workspace)
+        cfg = _written_config(runner, input_data, tmp_path)
 
-        cfg = json.loads(workspace.config_path.read_text())
         assert cfg["custom_flag"] == "value"
 
-    def test_consumed_keys_not_leaked(
+    def test_extra_shadowing_typed_field_rejected(
         self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Consumed keys are placed explicitly, not duplicated at top level."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        """extra keys colliding with typed fields are rejected fail-fast."""
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={
-                "mutations": ["EA63Q"],
-                "chains": "A_B",
-                "n_folds": 2,
-            },
+            mutations=["EA63Q"],
+            chains="A_B",
+            extra={"n_folds": 2},
         )
-        runner.prepare_workspace(input_data, workspace)
-
-        cfg = json.loads(workspace.config_path.read_text())
-        # n_folds should appear exactly once with overridden value
-        assert cfg["n_folds"] == 2
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            _written_config(runner, input_data, tmp_path)
 
     def test_two_checkpoint_paths(
         self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         """Config has both MPNN backbone and fine-tuned DDG checkpoint paths."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
-        runner.prepare_workspace(input_data, workspace)
+        cfg = _written_config(runner, input_data, tmp_path)
 
-        cfg = json.loads(workspace.config_path.read_text())
         assert "mpnn_checkpoint_path" in cfg
         assert "ddg_checkpoint_path" in cfg
         assert cfg["mpnn_checkpoint_path"] != cfg["ddg_checkpoint_path"]
+
+    def test_full_config_byte_compat(
+        self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Full config.json equality — byte-compat contract, incl. checkpoint paths."""
+        input_data = BAddGInput(
+            structure_path=sample_pdb,
+            mutations=["YH103H", "QD30V"],
+            chains="ABC_DE",
+            n_folds=1,
+            seed=42,
+            device="cpu",
+        )
+        cfg = _written_config(runner, input_data, tmp_path)
+
+        assert cfg == {
+            "pdb_path": "/workspace/inputs/complex.pdb",
+            "mutations": "YH103H,QD30V",
+            "chains": "ABC_DE",
+            "mpnn_checkpoint_path": "/app/baddg/ckpt/soluble_model_weights/v_48_020.pt",
+            "ddg_checkpoint_path": "/app/baddg/ckpt/ddg_model.ckpt",
+            "output_dir": "/workspace/outputs/raw",
+            "n_folds": 1,
+            "seed": 42,
+            "device": "cpu",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -223,23 +245,12 @@ class TestBAddGValidation:
         """Missing structure file raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
         fake_path = tmp_path / "nonexistent.pdb"
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=fake_path,
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
         with pytest.raises(AutobioError, match="does not exist"):
-            runner.prepare_workspace(input_data, workspace)
-
-    def test_missing_mutations_raises(
-        self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
-    ) -> None:
-        """Missing mutations raises AutobioError."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=sample_pdb,
-            extra={"chains": "A_B"},
-        )
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_empty_mutations_raises(
@@ -247,35 +258,25 @@ class TestBAddGValidation:
     ) -> None:
         """Empty mutations list raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": [], "chains": "A_B"},
+            mutations=[],
+            chains="A_B",
         )
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
-            runner.prepare_workspace(input_data, workspace)
-
-    def test_invalid_mutations_type_raises(
-        self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
-    ) -> None:
-        """Non-list mutations raises AutobioError."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=sample_pdb,
-            extra={"mutations": "EA63Q", "chains": "A_B"},
-        )
-        with pytest.raises(AutobioError, match="must be a list"):
+        with pytest.raises(AutobioError, match="requires at least one mutation"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_missing_chains_raises(
         self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Missing chains raises AutobioError."""
+        """Empty chains raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"]},
+            mutations=["EA63Q"],
+            chains="",
         )
-        with pytest.raises(AutobioError, match="requires 'chains'"):
+        with pytest.raises(AutobioError, match="requires a non-empty 'chains'"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_chains_no_underscore_raises(
@@ -283,9 +284,10 @@ class TestBAddGValidation:
     ) -> None:
         """Chains without underscore raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "ABC"},
+            mutations=["EA63Q"],
+            chains="ABC",
         )
         with pytest.raises(AutobioError, match="exactly one underscore"):
             runner.prepare_workspace(input_data, workspace)
@@ -295,9 +297,10 @@ class TestBAddGValidation:
     ) -> None:
         """Chains with multiple underscores raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=sample_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B_C"},
+            mutations=["EA63Q"],
+            chains="A_B_C",
         )
         with pytest.raises(AutobioError, match="exactly one underscore"):
             runner.prepare_workspace(input_data, workspace)
@@ -418,30 +421,40 @@ class TestBAddGParseOutput:
 
 
 class TestBAddGRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for tool and runner registration in the catalog."""
 
-    def test_in_tool_registry(self) -> None:
-        assert "baddg" in TOOL_REGISTRY
+    def test_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.core.catalog import CATALOG
+        from autobio.core.registry import TOOL_REGISTRY
+
+        assert "baddg" in CATALOG
+        assert set(get_tool("baddg").modes) == {"predict"}
+        assert get_tool("baddg").default_mode == "predict"
+        assert "baddg" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
         assert "baddg" in TOOL_RUNNERS
         assert TOOL_RUNNERS["baddg"] is BAddGRunner
 
     def test_scoring_category(self) -> None:
-        assert TOOL_REGISTRY["baddg"].category == ToolCategory.SCORING
+        assert get_tool("baddg").category == ToolCategory.SCORING
 
     def test_gpu_required(self) -> None:
-        entry = TOOL_REGISTRY["baddg"]
-        assert entry.requires_gpu is True
-        assert entry.gpu_count == 1
+        tool = get_tool("baddg")
+        assert tool.requires_gpu is True
+        assert tool.gpu_count == 1
 
     def test_schema_types(self) -> None:
-        entry = TOOL_REGISTRY["baddg"]
-        assert entry.input_schema is ScoringInput
-        assert entry.output_schema is ScoringOutput
+        mode = get_tool("baddg").modes["predict"]
+        assert mode.input_schema is BAddGInput
+        assert mode.output_schema is ScoringOutput
 
     def test_image_tag(self) -> None:
-        assert TOOL_REGISTRY["baddg"].image_tag == "baddg:1.0.0"
+        assert get_tool("baddg").image_tag == "baddg:1.0.0"
+
+    def test_timeout(self) -> None:
+        assert get_tool("baddg").modes["predict"].default_timeout == 600
 
     def test_get_runner_returns_baddg_runner(self, config: AutobioConfig) -> None:
         with (
@@ -451,3 +464,22 @@ class TestBAddGRegistration:
             r = get_runner("baddg", config)
         assert isinstance(r, BAddGRunner)
         assert r.tool_name == "baddg"
+
+    def test_tool_constant_registered(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.tools.baddg import BADDG_TOOL
+
+        assert BADDG_TOOL.name == "baddg"
+        assert get_tool("baddg") is BADDG_TOOL
+
+
+def test_info_snapshot_baddg() -> None:
+    import autobio.tools  # noqa: F401
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("baddg"), OutputFormat.JSON))
+    assert [m["name"] for m in parsed["modes"]] == ["predict"]
+    predict = parsed["modes"][0]
+    struct = predict["input_schema"]["properties"]["structure_path"]
+    assert struct["x-autobio"]["widget"] == "file"
+    assert "output_schema" in predict

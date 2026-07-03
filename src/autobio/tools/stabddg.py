@@ -15,10 +15,11 @@ import json
 import shutil
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
-from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.scoring import ScoredStructure, ScoringOutput, StaBddGInput
 from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
@@ -30,21 +31,6 @@ if TYPE_CHECKING:
 
 _STABDDG_DIR = "/app/stabddg"
 _DEFAULT_CHECKPOINT = f"{_STABDDG_DIR}/model_ckpts/stabddg.pt"
-
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset(
-    {
-        "mutations",
-        "chains",
-        "mc_samples",
-        "noise_level",
-        "batch_size",
-        "trials",
-        "seed",
-        "device",
-    }
-)
 
 # ---------------------------------------------------------------------------
 # Runner
@@ -64,7 +50,7 @@ class StaBddGRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
+        assert isinstance(input_data, StaBddGInput)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
@@ -76,25 +62,21 @@ class StaBddGRunner(ToolRunner):
         container_structure_path = f"/workspace/inputs/{dest_name}"
 
         # -- Build config.json ----------------------------------------------
-        mutations: list[str] = input_data.extra.get("mutations", [])
         config: dict[str, Any] = {
             "pdb_path": container_structure_path,
-            "mutations": ",".join(mutations),
-            "chains": input_data.extra["chains"],
+            "mutations": ",".join(input_data.mutations),
+            "chains": input_data.chains,
             "checkpoint_path": _DEFAULT_CHECKPOINT,
             "output_dir": "/workspace/outputs/raw",
-            "mc_samples": input_data.extra.get("mc_samples", 20),
-            "noise_level": input_data.extra.get("noise_level", 0.1),
-            "batch_size": input_data.extra.get("batch_size", 10000),
-            "trials": input_data.extra.get("trials", 1),
-            "seed": input_data.extra.get("seed", 0),
-            "device": input_data.extra.get("device", "auto"),
+            "mc_samples": input_data.mc_samples,
+            "noise_level": input_data.noise_level,
+            "batch_size": input_data.batch_size,
+            "trials": input_data.trials,
+            "seed": input_data.seed,
+            "device": input_data.device,
         }
 
-        # Flat-merge extra dict (excluding consumed keys)
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -127,34 +109,22 @@ class StaBddGRunner(ToolRunner):
     # -- Private helpers ----------------------------------------------------
 
     @staticmethod
-    def _validate_inputs(input_data: ScoringInput) -> None:
+    def _validate_inputs(input_data: StaBddGInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
 
         # Mutations are required
-        mutations = input_data.extra.get("mutations")
-        if not mutations:
-            raise AutobioError(
-                "StaB-ddG requires 'mutations' in the extra dict. "
-                "Provide a list of mutation strings in StaB-ddG format: "
-                "[WT_AA][ChainID][Resnum][Mut_AA] (e.g., ['YH103H', 'QD30V'])."
-            )
-        if not isinstance(mutations, list) or not all(isinstance(m, str) for m in mutations):
-            raise AutobioError(
-                f"'mutations' must be a list of strings, got {type(mutations).__name__}. "
-                "Each mutation should be in StaB-ddG format: "
-                "[WT_AA][ChainID][Resnum][Mut_AA] (e.g., 'YH103H')."
-            )
+        if not input_data.mutations:
+            raise AutobioError("StaB-ddG requires at least one mutation.")
 
         # Chains specification is required
-        chains = input_data.extra.get("chains")
+        chains = input_data.chains
         if not chains:
             raise AutobioError(
-                "StaB-ddG requires 'chains' in the extra dict. "
-                "Provide a string in 'binder1_binder2' format (e.g., 'ABC_DE')."
+                "StaB-ddG requires a non-empty 'chains' interface specification (e.g., 'ABC_DE')."
             )
-        if not isinstance(chains, str) or chains.count("_") != 1:
+        if chains.count("_") != 1:
             raise AutobioError(
                 f"'chains' must be a string with exactly one underscore separator "
                 f"(e.g., 'ABC_DE'), got {chains!r}."
@@ -162,7 +132,7 @@ class StaBddGRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _STABDDG_NOTES = (
@@ -175,36 +145,39 @@ _STABDDG_NOTES = (
     "The 'chains' parameter specifies the binding interface in 'binder1_binder2' "
     "format. For example, 'ABC_DE' defines the interface between chains A,B,C "
     "and chains D,E.",
-    "Key parameters (via extra dict): 'mc_samples' (default 20, controls "
-    "variance reduction), 'noise_level' (default 0.1, backbone perturbation), "
-    "'trials' (default 1, number of independent predictions), 'seed' (default 0).",
+    "Key parameters: mc_samples (default 20, controls "
+    "variance reduction), noise_level (default 0.1, backbone perturbation), "
+    "trials (default 1, number of independent predictions), seed (default 0).",
     "Output ddG is in kcal/mol. Positive values indicate destabilization "
     "(weaker binding), negative values indicate stabilization (stronger binding).",
 )
 
-_STABDDG_INPUT_FORMAT = (
-    "Provide a protein complex PDB via structure_path. Specify "
-    "extra['mutations'] as a list of mutation strings in StaB-ddG format "
-    "(e.g., ['YH103H', 'QD30V']) and extra['chains'] as a string "
-    "defining the binding interface (e.g., 'ABC_DE').",
-)
-
-TOOL_REGISTRY["stabddg"] = ToolEntry(
-    image_tag="stabddg:1.0.0",
+STABDDG_TOOL = Tool(
+    name="stabddg",
+    display_name="StaB-ddG",
     category=ToolCategory.SCORING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
     description=(
-        "Predict binding ddG at protein-protein interfaces using StaB-ddG, "
-        "an ML method based on the ProteinMPNN architecture. Faster than "
-        "physics-based methods (seconds vs. hours) with competitive accuracy. "
-        "Returns ddG in kcal/mol for mutations in protein-protein complexes."
+        "Predict binding ddG at protein-protein interfaces using StaB-ddG, a "
+        "ProteinMPNN-based ML method. Returns ddG in kcal/mol."
     ),
     version="1.0.0",
-    notes=_STABDDG_NOTES,
-    input_format=_STABDDG_INPUT_FORMAT,
+    image_tag="stabddg:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="predict",
+    modes={
+        "predict": Mode(
+            name="predict",
+            display_name="Predict ddG",
+            description="Predict binding ddG for mutations in a protein complex.",
+            input_schema=StaBddGInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            notes=_STABDDG_NOTES,
+        )
+    },
+    keywords=("stabddg", "ddg", "binding affinity", "mutation", "interface"),
 )
+"""Catalog Tool for StaB-ddG — exposed for tests re-registering after CATALOG-clearing fixtures."""
+
+register(STABDDG_TOOL)

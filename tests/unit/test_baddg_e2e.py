@@ -19,10 +19,11 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import BAddGInput, ScoringOutput
 from autobio.tools.baddg import BAddGRunner
 
 # ---------------------------------------------------------------------------
@@ -80,7 +81,9 @@ def _make_runner(config: AutobioConfig) -> BAddGRunner:
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return BAddGRunner("baddg", config)
+        runner = BAddGRunner("baddg", config)
+    runner.current_mode = get_tool("baddg").modes["predict"]
+    return runner
 
 
 def _import_standardize():
@@ -95,7 +98,7 @@ def _import_standardize():
 
 def _run_e2e(
     config: AutobioConfig,
-    input_data: ScoringInput,
+    input_data: BAddGInput,
     raw_csv_content: str,
     tmp_path: Path,
 ) -> ScoringOutput:
@@ -147,9 +150,11 @@ class TestBAddGSingleFoldE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Single mutation, single fold — basic pipeline."""
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B", "n_folds": 1},
+            mutations=["EA63Q"],
+            chains="A_B",
+            n_folds=1,
         )
         output = _run_e2e(config, input_data, _SINGLE_FOLD_CSV, tmp_path)
 
@@ -164,9 +169,11 @@ class TestBAddGSingleFoldE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Mutations list is preserved in output."""
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B", "n_folds": 1},
+            mutations=["EA63Q"],
+            chains="A_B",
+            n_folds=1,
         )
         output = _run_e2e(config, input_data, _SINGLE_FOLD_CSV, tmp_path)
         assert output.scores[0].mutations == ["EA63Q"]
@@ -175,9 +182,11 @@ class TestBAddGSingleFoldE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Chain specification is included in score breakdown."""
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B", "n_folds": 1},
+            mutations=["EA63Q"],
+            chains="A_B",
+            n_folds=1,
         )
         output = _run_e2e(config, input_data, _SINGLE_FOLD_CSV, tmp_path)
         assert output.scores[0].score_breakdown is not None
@@ -196,9 +205,10 @@ class TestBAddGMultiFoldE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multi-fold output averages ddG across folds."""
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
         output = _run_e2e(config, input_data, _MULTI_FOLD_CSV, tmp_path)
 
@@ -212,9 +222,10 @@ class TestBAddGMultiFoldE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multi-fold output includes fold values in breakdown."""
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
         output = _run_e2e(config, input_data, _MULTI_FOLD_CSV, tmp_path)
 
@@ -237,9 +248,10 @@ class TestBAddGMultiMutationE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multiple mutations predict combined ddG."""
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["YH103H", "QD30V"], "chains": "ABC_DE"},
+            mutations=["YH103H", "QD30V"],
+            chains="ABC_DE",
         )
         output = _run_e2e(config, input_data, _MULTI_MUTATION_CSV, tmp_path)
 
@@ -261,9 +273,10 @@ class TestBAddGMultiRowE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multiple CSV rows produce multiple ScoredStructure entries."""
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q", "KA66A"], "chains": "A_B"},
+            mutations=["EA63Q", "KA66A"],
+            chains="A_B",
         )
         output = _run_e2e(config, input_data, _MULTI_ROW_CSV, tmp_path)
 
@@ -286,15 +299,13 @@ class TestBAddGConfigE2E:
         """All parameters are correctly written to config.json."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={
-                "mutations": ["EA63Q"],
-                "chains": "A_B",
-                "n_folds": 2,
-                "seed": 42,
-                "device": "cpu",
-            },
+            mutations=["EA63Q"],
+            chains="A_B",
+            n_folds=2,
+            seed=42,
+            device="cpu",
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -307,9 +318,10 @@ class TestBAddGConfigE2E:
         """Nonexistent input structure raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=tmp_path / "nonexistent.pdb",
-            extra={"mutations": ["EA63Q"], "chains": "A_B"},
+            mutations=["EA63Q"],
+            chains="A_B",
         )
         with pytest.raises(AutobioError, match="does not exist"):
             runner.prepare_workspace(input_data, workspace)
@@ -317,14 +329,15 @@ class TestBAddGConfigE2E:
     def test_missing_mutations_fails(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
-        """Missing mutations raises host-side validation error."""
+        """Empty mutations raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"chains": "A_B"},
+            mutations=[],
+            chains="A_B",
         )
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
+        with pytest.raises(AutobioError, match="requires at least one mutation"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_chains_format_fails(
@@ -333,9 +346,10 @@ class TestBAddGConfigE2E:
         """Invalid chains format raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = BAddGInput(
             structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"], "chains": "AB"},
+            mutations=["EA63Q"],
+            chains="AB",
         )
         with pytest.raises(AutobioError, match="exactly one underscore"):
             runner.prepare_workspace(input_data, workspace)

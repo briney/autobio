@@ -19,10 +19,11 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.binding_affinity import BindingAffinityInput, BindingAffinityOutput
+from autobio.schemas.binding_affinity import AntipastiInput, BindingAffinityOutput
 from autobio.tools.antipasti import AntipastiRunner
 
 # ---------------------------------------------------------------------------
@@ -75,6 +76,20 @@ _MULTI_ANTIGEN_OUTPUT_JSON = json.dumps(
     }
 )
 
+# Custom-modes output (integer normal-mode count)
+_CUSTOM_MODES_OUTPUT_JSON = json.dumps(
+    {
+        "pdb_id": "complex",
+        "log10_kd": -7.310,
+        "kd_molar": 4.9e-8,
+        "heavy_chain": "H",
+        "light_chain": "L",
+        "antigen_chains": ["A"],
+        "modes": 100,
+        "checkpoint": "model_epochs_1044_modes_all_pool_1_filters_4_size_4",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -100,7 +115,9 @@ def _make_runner(config: AutobioConfig) -> AntipastiRunner:
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return AntipastiRunner("antipasti", config)
+        runner = AntipastiRunner("antipasti", config)
+    runner.current_mode = get_tool("antipasti").modes["predict"]
+    return runner
 
 
 def _import_standardize():
@@ -115,7 +132,7 @@ def _import_standardize():
 
 def _run_e2e(
     config: AutobioConfig,
-    input_data: BindingAffinityInput,
+    input_data: AntipastiInput,
     raw_json_content: str,
     tmp_path: Path,
 ) -> BindingAffinityOutput:
@@ -166,7 +183,7 @@ class TestAntipastiBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Single structure, single antigen chain — basic pipeline."""
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -184,7 +201,7 @@ class TestAntipastiBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Chain information is preserved in score breakdown."""
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -202,7 +219,7 @@ class TestAntipastiBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Normal modes setting is captured in score breakdown."""
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -218,7 +235,7 @@ class TestAntipastiBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Checkpoint name is captured in score breakdown."""
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -243,7 +260,7 @@ class TestAntipastiMultiAntigenE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multi-chain antigen with different chain IDs."""
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="A",
             light_chain="B",
@@ -260,7 +277,7 @@ class TestAntipastiMultiAntigenE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multi-chain antigen chain IDs are preserved."""
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="A",
             light_chain="B",
@@ -271,6 +288,37 @@ class TestAntipastiMultiAntigenE2E:
         breakdown = output.predictions[0].score_breakdown
         assert breakdown is not None
         assert breakdown["antigen_chains"] == ["C", "D"]
+
+
+# ---------------------------------------------------------------------------
+# TestAntipastiCustomModesE2E
+# ---------------------------------------------------------------------------
+
+
+class TestAntipastiCustomModesE2E:
+    """End-to-end test for an integer 'modes' override."""
+
+    def test_integer_modes_pipeline(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """modes=100 (typed field) flows through config.json and breakdown."""
+        input_data = AntipastiInput(
+            structure_path=complex_pdb,
+            heavy_chain="H",
+            light_chain="L",
+            antigen_chains=["A"],
+            modes=100,
+        )
+        runner = _make_runner(config)
+        workspace = Workspace.create(tmp_path / "ws")
+        runner.prepare_workspace(input_data, workspace)
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["modes"] == 100
+
+        output = _run_e2e(config, input_data, _CUSTOM_MODES_OUTPUT_JSON, tmp_path)
+        breakdown = output.predictions[0].score_breakdown
+        assert breakdown is not None
+        assert breakdown["modes"] == 100
 
 
 # ---------------------------------------------------------------------------
@@ -287,12 +335,12 @@ class TestAntipastiConfigE2E:
         """All parameters are correctly written to config.json."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="H",
             light_chain="L",
             antigen_chains=["A"],
-            extra={"modes": 100},
+            modes=100,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -307,7 +355,7 @@ class TestAntipastiConfigE2E:
         """Nonexistent input structure raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=tmp_path / "nonexistent.pdb",
             heavy_chain="H",
             light_chain="L",
@@ -322,7 +370,7 @@ class TestAntipastiConfigE2E:
         """Duplicate chain IDs raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="A",
             light_chain="B",
@@ -337,7 +385,7 @@ class TestAntipastiConfigE2E:
         """Empty antigen chains list raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=complex_pdb,
             heavy_chain="H",
             light_chain="L",
