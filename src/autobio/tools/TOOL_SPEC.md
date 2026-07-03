@@ -381,7 +381,7 @@ register(FREESASA_TOOL)
 Each `Mode` on a multi-mode `Tool` can have a **distinct input schema** (`FreeSASASASAInput` vs. `FreeSASABSAInput` above) — the CLI (`autobio run <tool> --mode <mode>`) and `get_runner().run(..., mode=...)` both select the mode's `input_schema` to validate the config against before calling `prepare_workspace`. Modes commonly share an output schema (both above use `ScoringOutput`), but that isn't required.
 
 Other real multi-mode tools use different dispatch styles worth knowing about:
-- **Dict-driven dispatch** (`rosetta.py`, `evoef2.py`, `complexa.py`, `openmm.py`) — a module-level `dict` keyed by mode name holds per-mode config (binary/protocol paths, checkpoint names, etc.), looked up once via `_MODE_CONFIG[self.current_mode.name]`, avoiding a long `if`/`elif` chain.
+- **Dict-driven dispatch** (`rosetta.py`, `complexa.py`, `openmm.py`, `evoef2.py`) — a module-level `dict` keyed by mode name holds per-mode config (binary/protocol paths, checkpoint names, variant flags, etc.), looked up once via `<CONFIG>[self.current_mode.name]` (`_MODE_CONFIG` in `rosetta.py`/`complexa.py`, `_VARIANT_CONFIG` in `openmm.py`, `_MODE_COMMAND` in `evoef2.py`), avoiding a long `if`/`elif` chain; a mode needing extra per-mode logic can still add a small `if self.current_mode.name == ...` block (as `evoef2.py` does for `binding`/`build_mutant`).
 - **Binary `if`/`else` dispatch** (`esm_if1.py`, `antifold.py`) — for tools with exactly two modes (`design`/`score`) where the two code paths differ substantially.
 
 Pick whichever shape best fits the number of modes and how much they diverge; `is_bsa`-style boolean flags (as above) work well for two modes with mostly-shared logic.
@@ -507,12 +507,7 @@ register(PROTEINMPNN_TOOL)
 - **Specific**: reference concrete error messages, thresholds, or input characteristics.
 - **Discovered empirically**: capture things that aren't obvious from the tool's documentation — parser quirks, input format restrictions, performance cliffs, etc.
 
-**`input_format`**, where used, is a tuple of strings documenting the tool's native input format (on `Mode`, alongside `notes`). Use it to describe how to construct valid inputs: the file format (FASTA, YAML, JSON, etc.), entity specification syntax, special cases (ligands, modified residues, constraints), and concrete examples. This is surfaced by `autobio info <tool>` as a separate "Input Format" section (table mode) or `"input_format"` key (JSON mode) per mode, making it easy for agents to programmatically distinguish input construction guidance from operational notes. Omit it (or leave it empty) for modes with trivial inputs (e.g., a single PDB file path). Good `input_format` entries:
-
-- **Show the native syntax**: include actual format examples (FASTA headers, YAML structure, JSON hierarchy).
-- **Cover all entity types**: proteins, DNA, RNA, ligands, and any special cases (glycans, non-canonical residues).
-- **Include a complete example**: a full, valid input that an agent could adapt for a real prediction.
-- **Document the raw override**: mention the `extra` key for bypassing auto-generation (e.g., `extra['chai_fasta']`).
+**Input-construction guidance goes in `notes`** — the `Mode` dataclass has no separate `input_format` field. When a mode has a non-trivial native input format, fold that guidance into its `notes` tuple alongside the operational caveats: show the native syntax (FASTA headers, YAML/JSON structure), cover all entity types (proteins, DNA, RNA, ligands, and special cases like glycans or non-canonical residues), include a complete adaptable example, and mention any `extra` raw-override key for bypassing auto-generation (e.g., `extra['chai_fasta']`). The richer typed input schema (with `x-autobio` field hints) is the primary machine-readable description of a mode's inputs; `notes` carries the prose that a schema can't.
 
 ### 5.2 Runner Registration
 

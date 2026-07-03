@@ -65,12 +65,12 @@ Autobio provides a unified, agentic-friendly interface to computational biology 
 7. Read `result.json`, call `parse_output()` — subclass hook returns typed output
 8. Attach `RunMetadata` and return
 
-### Two-Level Registry
+### Catalog & Runners
 
-- **`TOOL_REGISTRY`** (`core/registry.py`) — maps tool names to `ToolEntry` metadata (image tag, category, GPU requirements, schemas, timeout)
-- **`TOOL_RUNNERS`** (`tools/__init__.py`) — maps tool names to runner classes
+- **`CATALOG`** (`core/catalog.py`) — maps tool names to `Tool` objects. Each `Tool` (one coherent model/engine) owns one or more named `Mode`s; per-mode metadata includes the input/output schemas, default timeout, and optional `image_tag`/`category` overrides, while image tag, GPU requirements, and primary category live on the `Tool`. `ToolCategory` (the category enum) also lives in `core/registry.py`.
+- **`TOOL_RUNNERS`** (`tools/__init__.py`) — maps tool names to runner classes.
 
-Multiple tool names can share a runner class (e.g., `proteinmpnn` and `ligandmpnn` both use `MPNNRunner`; all four `rosetta_*` tools use `RosettaRunner`). The runner uses `self.tool_name` to differentiate behavior.
+Multiple tool names can share a runner class (e.g., `proteinmpnn` and `ligandmpnn` both use `MPNNRunner`). A single Tool with multiple modes (e.g. `rosetta` with `score`/`relax`/`minimize`/`flexddg`) uses one runner that dispatches on `self.current_mode.name`.
 
 ### Schemas (`src/autobio/schemas/`)
 
@@ -83,7 +83,7 @@ Each tool has a directory under `containers/` containing: `Dockerfile`, `validat
 ### Adding a New Tool
 
 1. **Schema** — use an existing category schema or create a new one in `src/autobio/schemas/`
-2. **Runner** — create `src/autobio/tools/newtool.py` with a `ToolRunner` subclass implementing `prepare_workspace()` and `parse_output()`. Register a `ToolEntry` in `TOOL_REGISTRY` at module level
+2. **Runner** — create `src/autobio/tools/newtool.py` with a `ToolRunner` subclass implementing `prepare_workspace()` and `parse_output()`. Define a `Tool` (with its `Mode`s) and call `register(TOOL)` at module level (see `src/autobio/tools/TOOL_SPEC.md`)
 3. **Wire up** — add the runner to `TOOL_RUNNERS` in `src/autobio/tools/__init__.py`
 4. **Container** — create `containers/newtool/` with Dockerfile and the four protocol scripts
 5. **Tests** — add `tests/unit/test_newtool.py` and `tests/integration/test_newtool_integration.py`
