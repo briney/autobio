@@ -24,9 +24,11 @@ autobio list -f json
 | `--category`, `-c` | Filter by tool category (`structure-prediction`, `embedding`, `inverse-folding`, `scoring`) |
 | `--format`, `-f` | Output format: `table` (default) or `json` |
 
+`autobio list` shows one row per tool, not per mode — a tool that supports multiple modes (e.g. `rosetta`) is listed once. Use `autobio info <tool>` to see its modes.
+
 ## `autobio info`
 
-Show detailed information about a tool, including its description, input/output schemas, GPU requirements, and default timeout.
+Show detailed information about a tool: its description, GPU requirements, and every mode it supports (each mode's own description, input/output schemas, default timeout, and notes). Tools with a single mode still list that one mode, which doubles as the default.
 
 ```bash
 autobio info proteinmpnn
@@ -53,6 +55,9 @@ Execute a tool. Reads input parameters from a JSON config file, runs the tool in
 # Basic usage
 autobio run proteinmpnn --config design.json
 
+# Select a non-default mode (rosetta defaults to "score"; here we run "relax" instead)
+autobio run rosetta --config relax.json --mode relax
+
 # Specify GPU and timeout
 autobio run proteinmpnn --config design.json --gpu 0,1 --timeout 3600
 
@@ -77,10 +82,13 @@ autobio run proteinmpnn --config design.json -f json
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--config` | *(required)* | Path to input config JSON file |
+| `--mode` | Tool's default mode | Mode to run, for tools with more than one (e.g. `relax` for `rosetta`). See `autobio info <tool>` for available modes |
 | `--gpu` | `auto` | GPU spec: `auto` (use tool's default), `none`, or comma-separated device IDs (e.g., `0,1`) |
 | `--timeout` | Tool default | Maximum wall-clock seconds before the container is killed |
 | `--output-dir` | *(temp dir)* | Persist the workspace to this directory. Without this flag, the workspace is cleaned up after the run |
 | `--format`, `-f` | `table` | Output format: `table` or `json` |
+
+Each mode may declare its own input schema, so the required `config.json` fields can differ between modes of the same tool (e.g. `freesasa`'s `bsa` mode requires `partner1`/`partner2` chain groups that its default `sasa` mode does not). Use `autobio info <tool>` to see the schema for each mode.
 
 ### Config file format
 
