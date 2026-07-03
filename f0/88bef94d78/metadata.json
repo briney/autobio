@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "f088bef94d78",
+  "strategy": "manual-commit",
+  "branch": "fix/openfold3-chai-templates-msa",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f0/88bef94d78/0/metadata.json",
+      "transcript": "/f0/88bef94d78/0/full.jsonl",
+      "compact_transcript": "/f0/88bef94d78/0/transcript.jsonl",
+      "content_hash": "/f0/88bef94d78/0/content_hash.txt",
+      "prompt": "/f0/88bef94d78/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44473,
+    "cache_creation_tokens": 2490804,
+    "cache_read_tokens": 234835786,
+    "output_tokens": 867617,
+    "api_call_count": 519
+  }
+}
