@@ -1001,3 +1001,26 @@ None.
 **Reasoning:** The migration meets every stated invariant — byte-compat config + generated-input files are exactly pinned, footguns are resolved consistently across validate/prepare, promotion is complete with no residual `extra` reads, `StructurePredictionInput` is untouched, and the copied-but-unwired behavior is preserved with explicit negative assertions. Only cosmetic/untested-branch minors remain, none blocking.</result>
 <usage><subagent_tokens>123189</subagent_tokens><tool_uses>11</tool_uses><duration_ms>189036</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a817623976cc3b9c2</task-id>
+<tool-use-id>toolu_018oogn54jaD785CUVsu3FpE</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a817623976cc3b9c2.output</output-file>
+<status>completed</status>
+<summary>Agent "Add tool-level notes test" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status**: Complete. Added two focused tests for tool-level notes rendering in `format_tool_info_catalog`.
+
+**Commit**: `e5a8d05 test: cover tool-level notes rendering in catalog info`
+
+**Test result**: All 33 tests in test_formatters.py pass; full suite passes (1008 tests, no docker/gpu).
+
+**Details**: Created `test_format_tool_info_catalog_json_includes_tool_notes()` and `test_format_tool_info_catalog_table_includes_tool_notes()` as self-contained tests. Each builds a Tool inline with tool-level notes and asserts the formatter output includes them (JSON at `data["notes"]`, TABLE in rendered string). No source changes, no helper modifications.</result>
+<usage><subagent_tokens>33561</subagent_tokens><tool_uses>12</tool_uses><duration_ms>42702</duration_ms></usage>
+</task-notification>
+
+---
+
+PR merged and branch deleted. Switch back to main and go ahead with 4d
