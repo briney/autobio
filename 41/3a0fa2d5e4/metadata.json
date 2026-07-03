@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "413a0fa2d5e4",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4e-mpnn",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "src/autobio/schemas/scoring.py",
+    "src/autobio/tools/ligandmpnn_packer.py",
+    "tests/integration/test_ligandmpnn_packer_integration.py",
+    "tests/unit/test_ligandmpnn_packer_e2e.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/41/3a0fa2d5e4/0/metadata.json",
+      "transcript": "/41/3a0fa2d5e4/0/full.jsonl",
+      "compact_transcript": "/41/3a0fa2d5e4/0/transcript.jsonl",
+      "content_hash": "/41/3a0fa2d5e4/0/content_hash.txt",
+      "prompt": "/41/3a0fa2d5e4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13932,
+    "cache_creation_tokens": 711809,
+    "cache_read_tokens": 97706236,
+    "output_tokens": 422159,
+    "api_call_count": 241
+  }
+}
