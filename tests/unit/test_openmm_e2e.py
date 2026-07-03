@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
@@ -98,13 +99,15 @@ def sample_pdb(tmp_path: Path) -> Path:
     return pdb_path
 
 
-def _make_runner(tool_name: str, config: AutobioConfig) -> OpenMMRunner:
+def _make_runner(mode_name: str, config: AutobioConfig) -> OpenMMRunner:
     """Create a runner with mocked container/GPU (we simulate container output)."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return OpenMMRunner(tool_name, config)
+        runner = OpenMMRunner("openmm", config)
+    runner.current_mode = get_tool("openmm").modes[mode_name]
+    return runner
 
 
 def _import_standardize():
@@ -134,7 +137,7 @@ def _run_e2e(
     3. Run the container's standardize.py
     4. parse_output
     """
-    runner = _make_runner("openmm_amber_minimize", config)
+    runner = _make_runner("amber_minimize", config)
     workspace = Workspace.create(tmp_path / "ws")
 
     # Step 1: prepare workspace (host-side validation + config writing)
@@ -282,7 +285,7 @@ class TestOpenMMAmberMinimizeE2E:
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Verify default config values written to config.json."""
-        runner = _make_runner("openmm_amber_minimize", config)
+        runner = _make_runner("amber_minimize", config)
         workspace = Workspace.create(tmp_path / "ws")
         input_data = ScoringInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
@@ -300,7 +303,7 @@ class TestOpenMMAmberMinimizeE2E:
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Custom parameters are written to config.json."""
-        runner = _make_runner("openmm_amber_minimize", config)
+        runner = _make_runner("amber_minimize", config)
         workspace = Workspace.create(tmp_path / "ws")
         input_data = ScoringInput(
             structure_path=sample_pdb,
@@ -336,7 +339,7 @@ class TestOpenMMInputValidation:
 
     def test_nonexistent_structure_fails(self, config: AutobioConfig, tmp_path: Path) -> None:
         """Rejects nonexistent input structures."""
-        runner = _make_runner("openmm_amber_minimize", config)
+        runner = _make_runner("amber_minimize", config)
         workspace = Workspace.create(tmp_path / "ws")
         input_data = ScoringInput(structure_path=tmp_path / "nonexistent.pdb")
         with pytest.raises(AutobioError, match="does not exist"):
@@ -346,7 +349,7 @@ class TestOpenMMInputValidation:
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Input structure is copied to workspace inputs/."""
-        runner = _make_runner("openmm_amber_minimize", config)
+        runner = _make_runner("amber_minimize", config)
         workspace = Workspace.create(tmp_path / "ws")
         input_data = ScoringInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)

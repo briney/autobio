@@ -1,13 +1,15 @@
-"""Tests for OpenMMRunner — prepare_workspace, parse_output, and registration."""
+"""Tests for the migrated openmm Tool (modes: amber_minimize, amber_relax, md_simulate)."""
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool, list_tools, tool_categories
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
@@ -33,9 +35,11 @@ from autobio.tools.openmm import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+_OLD_FLAT_NAMES = ("openmm_amber_minimize", "openmm_amber_relax", "openmm_md_simulate")
+
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
@@ -44,32 +48,31 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> OpenMMRunner:
-    """Create an OpenMMRunner for openmm_amber_minimize with mocked deps."""
+def _make_runner(mode_name: str, config: AutobioConfig) -> OpenMMRunner:
+    """Create an OpenMMRunner with mocked deps, current_mode pinned to *mode_name*."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return OpenMMRunner("openmm_amber_minimize", config)
+        runner = OpenMMRunner("openmm", config)
+    runner.current_mode = get_tool("openmm").modes[mode_name]
+    return runner
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> OpenMMRunner:
+    """Amber-minimize mode runner (the common case)."""
+    return _make_runner("amber_minimize", config)
 
 
 @pytest.fixture()
 def relax_runner(config: AutobioConfig) -> OpenMMRunner:
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return OpenMMRunner("openmm_amber_relax", config)
+    return _make_runner("amber_relax", config)
 
 
 @pytest.fixture()
 def simulate_runner(config: AutobioConfig) -> OpenMMRunner:
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return OpenMMRunner("openmm_md_simulate", config)
+    return _make_runner("md_simulate", config)
 
 
 @pytest.fixture()
@@ -81,14 +84,14 @@ def sample_pdb(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# TestOpenMMPrepareWorkspace (minimize)
+# TestOpenMMPrepareWorkspace (amber_minimize)
 # ---------------------------------------------------------------------------
 
-_ALL_TOOL_NAMES = list(_VARIANT_CONFIG.keys())
+_ALL_MODE_NAMES = list(_VARIANT_CONFIG.keys())
 
 
 class TestOpenMMPrepareWorkspace:
-    """Tests for OpenMMRunner.prepare_workspace (minimize variant)."""
+    """Tests for OpenMMRunner.prepare_workspace (amber_minimize mode)."""
 
     def test_basic_config(self, runner: OpenMMRunner, tmp_path: Path, sample_pdb: Path) -> None:
         """Config contains correct protocol, force_field, and tolerance."""
@@ -192,7 +195,7 @@ class TestOpenMMPrepareWorkspace:
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
-        variant = _VARIANT_CONFIG["openmm_amber_minimize"]
+        variant = _VARIANT_CONFIG["amber_minimize"]
         assert cfg["force_field"] == variant["default_force_field"]
         assert cfg["tolerance"] == pytest.approx(variant["default_tolerance"])
         assert cfg["max_iterations"] == variant["default_max_iterations"]
@@ -238,12 +241,12 @@ class TestOpenMMPrepareWorkspace:
 
 
 # ---------------------------------------------------------------------------
-# TestOpenMMValidation (minimize)
+# TestOpenMMValidation (amber_minimize)
 # ---------------------------------------------------------------------------
 
 
 class TestOpenMMValidation:
-    """Tests for host-side input validation (minimize variant)."""
+    """Tests for host-side input validation (amber_minimize mode)."""
 
     def test_missing_structure_raises(self, runner: OpenMMRunner, tmp_path: Path) -> None:
         """Missing structure file raises AutobioError."""
@@ -295,7 +298,7 @@ class TestOpenMMValidation:
 
 
 # ---------------------------------------------------------------------------
-# TestOpenMMParseOutput (minimize)
+# TestOpenMMParseOutput (amber_minimize)
 # ---------------------------------------------------------------------------
 
 _MINIMIZE_RESULT = {
@@ -322,7 +325,7 @@ _MINIMIZE_RESULT = {
 
 
 class TestOpenMMParseOutput:
-    """Tests for OpenMMRunner.parse_output (minimize variant)."""
+    """Tests for OpenMMRunner.parse_output (amber_minimize mode)."""
 
     def test_parse_minimize_output(self, runner: OpenMMRunner, tmp_path: Path) -> None:
         """Reads result_data.json and returns correct ScoringOutput."""
@@ -390,73 +393,299 @@ class TestOpenMMParseOutput:
 
 
 # ---------------------------------------------------------------------------
+# TestOpenMMByteCompatConfig — full-dict config.json equality, per mode
+# ---------------------------------------------------------------------------
+
+
+class TestOpenMMByteCompatConfig:
+    """Full-dict ``config.json`` equality tests, pinning key order per mode.
+
+    Key orders are taken verbatim from ``.superpowers/sdd/recon/openmm.md``.
+    """
+
+    def test_amber_minimize_full_config_defaults(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        r = _make_runner("amber_minimize", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(ScoringInput(structure_path=sample_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "protocol": "amber_minimize",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "out_dir": "/workspace/outputs/raw",
+            "force_field": "amber14-all.xml",
+            "tolerance": 2.39,
+            "max_iterations": 0,
+            "restraint_set": "none",
+            "restraint_stiffness": 10.0,
+            "implicit_solvent": True,
+            "max_outer_iterations": 20,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_amber_relax_full_config_defaults(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        r = _make_runner("amber_relax", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(ScoringInput(structure_path=sample_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "protocol": "amber_relax",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "out_dir": "/workspace/outputs/raw",
+            "force_field": "amber14-all.xml",
+            "implicit_solvent": False,
+            "water_model": "tip3p",
+            "box_shape": "cubic",
+            "box_padding": 1.0,
+            "ion_type": "NaCl",
+            "ion_concentration": 0.15,
+            "temperature": 300.0,
+            "pressure": 1.0,
+            "restraint_set": "heavy_atoms",
+            "restraint_stiffness": 10.0,
+            "timestep": 2.0,
+            "minimize_max_iterations": 0,
+            "heating_steps": 25000,
+            "nvt_steps": 25000,
+            "npt_steps": 50000,
+            "production_steps": 25000,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_md_simulate_full_config_defaults(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        r = _make_runner("md_simulate", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(SimulationInput(structure_path=sample_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "protocol": "md_simulate",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "out_dir": "/workspace/outputs/raw",
+            "force_field": "amber14-all.xml",
+            "implicit_solvent": False,
+            "water_model": "tip3p",
+            "box_shape": "cubic",
+            "box_padding": 1.0,
+            "ion_type": "NaCl",
+            "ion_concentration": 0.15,
+            "temperature": 300.0,
+            "pressure": 1.0,
+            "timestep": 2.0,
+            "total_time_ns": 10.0,
+            "reporting_interval_steps": 5000,
+            "trajectory_format": "dcd",
+            "restraint_set": "none",
+            "restraint_stiffness": 10.0,
+            "minimize_max_iterations": 0,
+            "equilibration_nvt_steps": 50000,
+            "equilibration_npt_steps": 100000,
+            "platform": "CUDA",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_amber_relax_full_config_with_consumed_overrides(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Consumed extra keys (force_field, temperature) override in place — no duplicate key."""
+        r = _make_runner("amber_relax", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            ScoringInput(
+                structure_path=sample_pdb,
+                extra={"force_field": "charmm36.xml", "temperature": 310.0},
+            ),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "protocol": "amber_relax",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "out_dir": "/workspace/outputs/raw",
+            "force_field": "charmm36.xml",
+            "implicit_solvent": False,
+            "water_model": "tip3p",
+            "box_shape": "cubic",
+            "box_padding": 1.0,
+            "ion_type": "NaCl",
+            "ion_concentration": 0.15,
+            "temperature": 310.0,
+            "pressure": 1.0,
+            "restraint_set": "heavy_atoms",
+            "restraint_stiffness": 10.0,
+            "timestep": 2.0,
+            "minimize_max_iterations": 0,
+            "heating_steps": 25000,
+            "nvt_steps": 25000,
+            "npt_steps": 50000,
+            "production_steps": 25000,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_amber_minimize_full_config_with_flat_extra(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """A non-consumed extra key flat-merges after the fixed keys."""
+        r = _make_runner("amber_minimize", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            ScoringInput(structure_path=sample_pdb, extra={"custom_flag": "value"}),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "protocol": "amber_minimize",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "out_dir": "/workspace/outputs/raw",
+            "force_field": "amber14-all.xml",
+            "tolerance": 2.39,
+            "max_iterations": 0,
+            "restraint_set": "none",
+            "restraint_stiffness": 10.0,
+            "implicit_solvent": True,
+            "max_outer_iterations": 20,
+            "custom_flag": "value",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_md_simulate_full_config_with_n_steps_and_flat_extra(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """n_steps lands after the default loop and before flat-merged extra keys."""
+        r = _make_runner("md_simulate", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            SimulationInput(
+                structure_path=sample_pdb,
+                extra={"n_steps": 123456, "custom_flag": "value"},
+            ),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "protocol": "md_simulate",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "out_dir": "/workspace/outputs/raw",
+            "force_field": "amber14-all.xml",
+            "implicit_solvent": False,
+            "water_model": "tip3p",
+            "box_shape": "cubic",
+            "box_padding": 1.0,
+            "ion_type": "NaCl",
+            "ion_concentration": 0.15,
+            "temperature": 300.0,
+            "pressure": 1.0,
+            "timestep": 2.0,
+            "total_time_ns": 10.0,
+            "reporting_interval_steps": 5000,
+            "trajectory_format": "dcd",
+            "restraint_set": "none",
+            "restraint_stiffness": 10.0,
+            "minimize_max_iterations": 0,
+            "equilibration_nvt_steps": 50000,
+            "equilibration_npt_steps": 100000,
+            "platform": "CUDA",
+            "n_steps": 123456,
+            "custom_flag": "value",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+
+# ---------------------------------------------------------------------------
 # TestOpenMMRegistration
 # ---------------------------------------------------------------------------
 
-_EXPECTED_CATEGORIES = {
-    "openmm_amber_minimize": ToolCategory.SCORING,
-    "openmm_amber_relax": ToolCategory.SCORING,
-    "openmm_md_simulate": ToolCategory.SIMULATION,
-}
-
-_EXPECTED_GPU_REQUIRED = {
-    "openmm_amber_minimize": True,
-    "openmm_amber_relax": True,
-    "openmm_md_simulate": True,
-}
-
-_EXPECTED_INPUT_SCHEMA = {
-    "openmm_amber_minimize": ScoringInput,
-    "openmm_amber_relax": ScoringInput,
-    "openmm_md_simulate": SimulationInput,
-}
-
-_EXPECTED_OUTPUT_SCHEMA = {
-    "openmm_amber_minimize": ScoringOutput,
-    "openmm_amber_relax": ScoringOutput,
-    "openmm_md_simulate": SimulationOutput,
-}
-
 
 class TestOpenMMRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for the catalog Tool + runner registration."""
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_in_tool_registry(self, tool_name: str) -> None:
-        assert tool_name in TOOL_REGISTRY
+    def test_openmm_registered_as_single_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - populate registries
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_in_tool_runners(self, tool_name: str) -> None:
-        assert tool_name in TOOL_RUNNERS
-        assert TOOL_RUNNERS[tool_name] is OpenMMRunner
+        tool = get_tool("openmm")
+        assert sorted(tool.modes) == ["amber_minimize", "amber_relax", "md_simulate"]
+        assert tool.default_mode == "amber_minimize"
+        assert tool.category == ToolCategory.SCORING
+        assert tool.requires_gpu is True
+        assert tool.gpu_count == 1
+        assert tool.image_tag == "openmm-amber-minimize:1.1.0"
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_correct_category(self, tool_name: str) -> None:
-        assert TOOL_REGISTRY[tool_name].category == _EXPECTED_CATEGORIES[tool_name]
+    @pytest.mark.parametrize("flat_name", ("openmm", *_OLD_FLAT_NAMES))
+    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_gpu_config(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.requires_gpu is _EXPECTED_GPU_REQUIRED[tool_name]
-        if entry.requires_gpu:
-            assert entry.gpu_count > 0
-        else:
-            assert entry.gpu_count == 0
+        assert flat_name not in TOOL_REGISTRY
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_schema_types(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.input_schema is _EXPECTED_INPUT_SCHEMA[tool_name]
-        assert entry.output_schema is _EXPECTED_OUTPUT_SCHEMA[tool_name]
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_RUNNERS
+
+    def test_openmm_in_tool_runners(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert "openmm" in TOOL_RUNNERS
+        assert TOOL_RUNNERS["openmm"] is OpenMMRunner
+
+    @pytest.mark.parametrize(
+        ("mode_name", "timeout"),
+        [("amber_minimize", 600), ("amber_relax", 3600), ("md_simulate", 86400)],
+    )
+    def test_modes_have_per_mode_timeout(self, mode_name: str, timeout: int) -> None:
+        assert get_tool("openmm").modes[mode_name].default_timeout == timeout
+
+    @pytest.mark.parametrize(
+        ("mode_name", "image_tag"),
+        [
+            ("amber_minimize", "openmm-amber-minimize:1.1.0"),
+            ("amber_relax", "openmm-amber-relax:1.1.0"),
+            ("md_simulate", "openmm-md-simulate:1.1.0"),
+        ],
+    )
+    def test_modes_have_per_mode_image_tag(self, mode_name: str, image_tag: str) -> None:
+        assert get_tool("openmm").modes[mode_name].image_tag == image_tag
+
+    def test_mode_schemas(self) -> None:
+        tool = get_tool("openmm")
+        assert tool.modes["amber_minimize"].input_schema is ScoringInput
+        assert tool.modes["amber_minimize"].output_schema is ScoringOutput
+        assert tool.modes["amber_relax"].input_schema is ScoringInput
+        assert tool.modes["amber_relax"].output_schema is ScoringOutput
+        assert tool.modes["md_simulate"].input_schema is SimulationInput
+        assert tool.modes["md_simulate"].output_schema is SimulationOutput
 
     def test_get_runner_returns_openmm_runner(self, config: AutobioConfig) -> None:
         with (
             patch("autobio.tools.base.ContainerManager"),
             patch("autobio.tools.base.GPUManager"),
         ):
-            r = get_runner("openmm_amber_minimize", config)
+            r = get_runner("openmm", config)
         assert isinstance(r, OpenMMRunner)
-        assert r.tool_name == "openmm_amber_minimize"
+        assert r.tool_name == "openmm"
+
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_get_runner_removed_flat_name_raises(
+        self, flat_name: str, config: AutobioConfig
+    ) -> None:
+        with pytest.raises(KeyError, match=flat_name):
+            get_runner(flat_name, config)
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +694,7 @@ class TestOpenMMRegistration:
 
 
 class TestOpenMMRelaxPrepareWorkspace:
-    """Tests for OpenMMRunner.prepare_workspace (relax variant)."""
+    """Tests for OpenMMRunner.prepare_workspace (amber_relax mode)."""
 
     def test_basic_config(
         self, relax_runner: OpenMMRunner, tmp_path: Path, sample_pdb: Path
@@ -613,7 +842,7 @@ class TestOpenMMRelaxPrepareWorkspace:
 
 
 class TestOpenMMRelaxValidation:
-    """Tests for host-side input validation (relax variant)."""
+    """Tests for host-side input validation (amber_relax mode)."""
 
     def test_invalid_water_model_raises(
         self, relax_runner: OpenMMRunner, tmp_path: Path, sample_pdb: Path
@@ -731,7 +960,7 @@ class TestOpenMMRelaxValidation:
 
 
 class TestOpenMMSimulatePrepareWorkspace:
-    """Tests for OpenMMRunner.prepare_workspace (md_simulate variant)."""
+    """Tests for OpenMMRunner.prepare_workspace (md_simulate mode)."""
 
     def test_basic_config(
         self, simulate_runner: OpenMMRunner, tmp_path: Path, sample_pdb: Path
@@ -847,7 +1076,7 @@ class TestOpenMMSimulatePrepareWorkspace:
 
 
 class TestOpenMMSimulateValidation:
-    """Tests for host-side input validation (md_simulate variant)."""
+    """Tests for host-side input validation (md_simulate mode)."""
 
     def test_negative_total_time_raises(
         self, simulate_runner: OpenMMRunner, tmp_path: Path, sample_pdb: Path
@@ -961,7 +1190,7 @@ _SIMULATE_RESULT = {
 
 
 class TestOpenMMSimulateParseOutput:
-    """Tests for OpenMMRunner.parse_output (md_simulate variant)."""
+    """Tests for OpenMMRunner.parse_output (md_simulate mode)."""
 
     def test_parse_simulation_output(self, simulate_runner: OpenMMRunner, tmp_path: Path) -> None:
         """Reads result_data.json and returns correct SimulationOutput."""
@@ -1054,3 +1283,139 @@ class TestOpenMMSimulateParseOutput:
 
         output = simulate_runner.parse_output(workspace)
         assert output.raw_output_path == workspace.raw_output_dir
+
+
+# ---------------------------------------------------------------------------
+# TestOpenMMCrossCategory — modes span SCORING and SIMULATION
+# ---------------------------------------------------------------------------
+
+
+class TestOpenMMCrossCategory:
+    """openmm's modes span SCORING (minimize, relax) and SIMULATION (md_simulate)."""
+
+    def test_tool_categories_union(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        tool = get_tool("openmm")
+        assert tool_categories(tool) == (ToolCategory.SCORING, ToolCategory.SIMULATION)
+
+    def test_listed_under_scoring(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert "openmm" in list_tools(category=ToolCategory.SCORING)
+
+    def test_listed_under_simulation(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert "openmm" in list_tools(category=ToolCategory.SIMULATION)
+
+
+# ---------------------------------------------------------------------------
+# TestOpenMMInfoSnapshot
+# ---------------------------------------------------------------------------
+
+
+class TestOpenMMInfoSnapshot:
+    """``autobio info openmm`` output — per-mode notes, output_schema, category."""
+
+    def test_info_snapshot(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+        parsed = json.loads(format_tool_info_catalog(get_tool("openmm"), OutputFormat.JSON))
+        assert [m["name"] for m in parsed["modes"]] == [
+            "amber_minimize",
+            "amber_relax",
+            "md_simulate",
+        ]
+
+        minimize_mode, relax_mode, simulate_mode = parsed["modes"]
+
+        assert len(minimize_mode["notes"]) > 0
+        assert "output_schema" in minimize_mode
+        assert minimize_mode["category"] == "scoring"
+
+        assert len(relax_mode["notes"]) > 0
+        assert "output_schema" in relax_mode
+        assert relax_mode["category"] == "scoring"
+
+        assert len(simulate_mode["notes"]) > 0
+        assert "output_schema" in simulate_mode
+        assert simulate_mode["category"] == "simulation"
+
+
+# ---------------------------------------------------------------------------
+# TestOpenMMRunMetadataMode — full run() lifecycle threads mode into metadata
+# ---------------------------------------------------------------------------
+
+
+class TestOpenMMRunMetadataMode:
+    """``run(...).metadata.mode`` reflects the selected mode for each mode."""
+
+    def test_run_metadata_mode_amber_minimize(
+        self,
+        config: AutobioConfig,
+        tmp_path: Path,
+        sample_pdb: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import autobio.tools  # noqa: F401
+
+        output_dir = tmp_path / "ws"
+        std_dir = output_dir / "outputs" / "standardized"
+        std_dir.mkdir(parents=True)
+        (std_dir / "result_data.json").write_text(json.dumps(_MINIMIZE_RESULT))
+
+        monkeypatch.setattr(
+            "autobio.core.workspace.Workspace.read_result",
+            lambda self: SimpleNamespace(
+                status="success", phase="run", exit_code=0, error_message=None
+            ),
+        )
+
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = OpenMMRunner("openmm", config)
+
+        input_data = ScoringInput(structure_path=sample_pdb)
+        out = r.run(input_data, gpu="none", output_dir=output_dir, mode="amber_minimize")
+        assert out.metadata.mode == "amber_minimize"
+        assert out.metadata.tool_name == "openmm"
+        assert isinstance(out, ScoringOutput)
+
+    def test_run_metadata_mode_md_simulate(
+        self,
+        config: AutobioConfig,
+        tmp_path: Path,
+        sample_pdb: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import autobio.tools  # noqa: F401
+
+        output_dir = tmp_path / "ws"
+        std_dir = output_dir / "outputs" / "standardized"
+        std_dir.mkdir(parents=True)
+        (std_dir / "trajectory.dcd").write_bytes(b"\x00")
+        (std_dir / "final.pdb").write_text("ATOM  final\nEND\n")
+        (std_dir / "result_data.json").write_text(json.dumps(_SIMULATE_RESULT))
+
+        monkeypatch.setattr(
+            "autobio.core.workspace.Workspace.read_result",
+            lambda self: SimpleNamespace(
+                status="success", phase="run", exit_code=0, error_message=None
+            ),
+        )
+
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = OpenMMRunner("openmm", config)
+
+        input_data = SimulationInput(structure_path=sample_pdb)
+        out = r.run(input_data, gpu="none", output_dir=output_dir, mode="md_simulate")
+        assert out.metadata.mode == "md_simulate"
+        assert out.metadata.tool_name == "openmm"
+        assert isinstance(out, SimulationOutput)
