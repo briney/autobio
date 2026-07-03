@@ -1,11 +1,11 @@
-"""ESM-IF1 inverse folding and sequence scoring tool runners.
+"""ESM-IF1 inverse folding and sequence scoring tool runner.
 
 ESM-IF1 (esm_if1_gvp4_t16_142M_UR50) is a 142M-parameter inverse folding
-model from Facebook Research's ESM team. Two tools share a single Docker
-image:
+model from Facebook Research's ESM team. A single catalog Tool, ``esm_if1``,
+exposes two Modes sharing the ``ESMIF1Runner`` runner class:
 
-- ``esm_if1`` — sequence design (inverse folding) via ``InverseFoldingInput``
-- ``esm_if1_score`` — sequence scoring via ``ScoringInput``
+- ``design`` (default) — sequence design (inverse folding) via ``InverseFoldingInput``.
+- ``score`` — sequence scoring via ``ScoringInput``.
 
 The ``mode`` field in config.json (``"design"`` or ``"score"``) tells the
 container which path to execute.
@@ -25,7 +25,8 @@ import json
 import shutil
 from typing import TYPE_CHECKING
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.inverse_folding import (
     DesignedSequence,
@@ -40,108 +41,92 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Design runner
+# Runner
 # ---------------------------------------------------------------------------
 
 
 class ESMIF1Runner(ToolRunner):
-    """Runner for ESM-IF1 inverse folding (sequence design from backbone).
+    """Runner for ESM-IF1 inverse folding (design mode) and scoring (score mode).
 
-    Maps ``InverseFoldingInput`` fields to the container's config.json with
-    ``mode="design"`` and parses the standardised ``result_data.json`` back
-    into an ``InverseFoldingOutput``.
+    ``prepare_workspace`` copies the input structure into the workspace and
+    writes ``config.json`` — design mode maps ``InverseFoldingInput`` fields
+    with ``mode="design"``; score mode maps ``ScoringInput`` fields with
+    ``mode="score"``.
+
+    ``parse_output`` reads the standardised ``result_data.json`` and returns
+    an ``InverseFoldingOutput`` (design mode) or a ``ScoringOutput`` (score
+    mode).
     """
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy the input structure into the workspace."""
-        assert isinstance(input_data, InverseFoldingInput)
+        assert self.current_mode is not None
+        mode = self.current_mode.name
 
-        # Copy structure file into workspace inputs/
-        src_path = input_data.structure_path
-        dest_name = src_path.name
-        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+        if mode == "design":
+            assert isinstance(input_data, InverseFoldingInput)
 
-        # Build config.json for the container
-        config: dict[str, object] = {
-            "mode": "design",
-            "structure_path": f"/workspace/inputs/{dest_name}",
-            "num_sequences": input_data.num_sequences,
-            "temperature": input_data.temperature,
-        }
+            # Copy structure file into workspace inputs/
+            src_path = input_data.structure_path
+            dest_name = src_path.name
+            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
 
-        if input_data.chains_to_design is not None:
-            config["chains_to_design"] = input_data.chains_to_design
+            # Build config.json for the container
+            config: dict[str, object] = {
+                "mode": "design",
+                "structure_path": f"/workspace/inputs/{dest_name}",
+                "num_sequences": input_data.num_sequences,
+                "temperature": input_data.temperature,
+            }
 
-        if input_data.fixed_positions is not None:
-            config["fixed_positions"] = input_data.fixed_positions
+            if input_data.chains_to_design is not None:
+                config["chains_to_design"] = input_data.chains_to_design
 
-        # Flat-merge extra dict for tool-specific params (seed, etc.)
-        config.update(input_data.extra)
+            if input_data.fixed_positions is not None:
+                config["fixed_positions"] = input_data.fixed_positions
+        else:  # "score"
+            assert isinstance(input_data, ScoringInput)
+
+            # Copy structure file into workspace inputs/
+            src_path = input_data.structure_path
+            dest_name = src_path.name
+            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+
+            # Build config.json for the container
+            config = {
+                "mode": "score",
+                "structure_path": f"/workspace/inputs/{dest_name}",
+                "sequences": input_data.sequences,
+            }
+
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
-    def parse_output(self, workspace: Workspace) -> InverseFoldingOutput:
-        """Read standardised outputs and return an ``InverseFoldingOutput``."""
+    def parse_output(self, workspace: Workspace) -> InverseFoldingOutput | ScoringOutput:
+        """Read standardised outputs and return the mode-appropriate output model."""
+        assert self.current_mode is not None
         result_data_path = workspace.std_output_dir / "result_data.json"
         data = json.loads(result_data_path.read_text())
 
-        designed_sequences = [
-            DesignedSequence(
-                rank=s["rank"],
-                sequence=s["sequence"],
-                score=s.get("score"),
-                recovery=s.get("recovery"),
+        if self.current_mode.name == "design":
+            designed_sequences = [
+                DesignedSequence(
+                    rank=s["rank"],
+                    sequence=s["sequence"],
+                    score=s.get("score"),
+                    recovery=s.get("recovery"),
+                )
+                for s in data["designed_sequences"]
+            ]
+
+            # Placeholder metadata — overwritten by base class run()
+            return InverseFoldingOutput(
+                designed_sequences=designed_sequences,
+                native_sequence=data.get("native_sequence"),
+                metadata=self._build_metadata(workspace, 0.0, [], ""),
+                raw_output_path=workspace.raw_output_dir,
             )
-            for s in data["designed_sequences"]
-        ]
-
-        # Placeholder metadata — overwritten by base class run()
-        return InverseFoldingOutput(
-            designed_sequences=designed_sequences,
-            native_sequence=data.get("native_sequence"),
-            metadata=self._build_metadata(workspace, 0.0, [], ""),
-            raw_output_path=workspace.raw_output_dir,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Scoring runner
-# ---------------------------------------------------------------------------
-
-
-class ESMIF1ScoreRunner(ToolRunner):
-    """Runner for ESM-IF1 sequence scoring (conditional log-likelihood).
-
-    Maps ``ScoringInput`` fields to the container's config.json with
-    ``mode="score"`` and parses the standardised ``result_data.json`` back
-    into a ``ScoringOutput``.
-    """
-
-    def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
-        """Write config.json and copy the input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
-
-        # Copy structure file into workspace inputs/
-        src_path = input_data.structure_path
-        dest_name = src_path.name
-        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
-
-        # Build config.json for the container
-        config: dict[str, object] = {
-            "mode": "score",
-            "structure_path": f"/workspace/inputs/{dest_name}",
-            "sequences": input_data.sequences,
-        }
-
-        # Flat-merge extra dict for tool-specific params
-        config.update(input_data.extra)
-
-        workspace.write_config(config)
-
-    def parse_output(self, workspace: Workspace) -> ScoringOutput:
-        """Read standardised outputs and return a ``ScoringOutput``."""
-        result_data_path = workspace.std_output_dir / "result_data.json"
-        data = json.loads(result_data_path.read_text())
 
         scores = [
             ScoredStructure(
@@ -165,7 +150,7 @@ class ESMIF1ScoreRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entries — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _ESM_IF1_NOTES = (
@@ -176,26 +161,9 @@ _ESM_IF1_NOTES = (
     "support, use proteinmpnn or ligandmpnn.",
     "ESM-IF1 accepts PDB input only (not mmCIF). Convert mmCIF files to PDB format before use.",
     "The score field in design output is null. ESM-IF1 sampling does not return "
-    "per-sequence log-likelihoods. Use esm_if1_score to score designed sequences.",
+    "per-sequence log-likelihoods. Use the score mode to score designed sequences.",
     "Multi-chain inverse folding uses ESM-IF1's complex-aware sampling, which "
     "conditions on the full complex structure when designing each chain.",
-)
-
-TOOL_REGISTRY["esm_if1"] = ToolEntry(
-    image_tag="esm-if1:1.0.0",
-    category=ToolCategory.INVERSE_FOLDING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=InverseFoldingInput,
-    output_schema=InverseFoldingOutput,
-    default_timeout=600,
-    supports_batch=False,
-    description=(
-        "Design protein sequences for given backbone structures using ESM-IF1 "
-        "(142M-parameter inverse folding model from Facebook Research)."
-    ),
-    version="1.0.0",
-    notes=_ESM_IF1_NOTES,
 )
 
 _ESM_IF1_SCORE_NOTES = (
@@ -208,19 +176,42 @@ _ESM_IF1_SCORE_NOTES = (
     "to amino acid sequences to score against the structure.",
 )
 
-TOOL_REGISTRY["esm_if1_score"] = ToolEntry(
-    image_tag="esm-if1:1.0.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=300,
-    supports_batch=False,
+ESM_IF1_TOOL = Tool(
+    name="esm_if1",
+    display_name="ESM-IF1",
+    category=ToolCategory.INVERSE_FOLDING,
     description=(
-        "Score protein sequences against backbone structures using ESM-IF1 "
-        "conditional log-likelihood."
+        "ESM-IF1 (142M) inverse folding: design sequences for a backbone (design mode) "
+        "or score sequences against a backbone by conditional log-likelihood (score mode)."
     ),
     version="1.0.0",
-    notes=_ESM_IF1_SCORE_NOTES,
+    image_tag="esm-if1:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="design",
+    modes={
+        "design": Mode(
+            name="design",
+            display_name="Design sequences",
+            description="Design protein sequences for a backbone structure (inverse folding).",
+            input_schema=InverseFoldingInput,
+            output_schema=InverseFoldingOutput,
+            default_timeout=600,
+            notes=_ESM_IF1_NOTES,
+        ),
+        "score": Mode(
+            name="score",
+            display_name="Score sequences",
+            description="Score sequences against a backbone (conditional log-likelihood).",
+            input_schema=ScoringInput,
+            output_schema=ScoringOutput,
+            default_timeout=300,
+            category=ToolCategory.SCORING,
+            notes=_ESM_IF1_SCORE_NOTES,
+        ),
+    },
+    keywords=("esm-if1", "inverse folding", "sequence design", "scoring", "log-likelihood"),
 )
+"""Catalog Tool for ESM-IF1 (design + score modes)."""
+
+register(ESM_IF1_TOOL)
