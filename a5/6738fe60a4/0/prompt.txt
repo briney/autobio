@@ -3056,3 +3056,56 @@ Full report written to `/home/briney/git/autobio/.superpowers/sdd/task-2-report.
 **Reasoning:** Every named risk was independently verified against the actual repository state (not just the diff/report text): the correct two fields were removed and the correct two were preserved; no dangling code or references remain; the false documentation claim is gone and replaced with accurate guidance; the msa_paths description update matches Task 1; test cleanup is precise with no collateral loss; and scope is exactly the five files with zero `containers/` changes. All verification commands (targeted tests, full suite, ruff check, ruff format check, mypy) pass with exit 0/clean output, independently reproduced.</result>
 <usage><subagent_tokens>69903</subagent_tokens><tool_uses>36</tool_uses><duration_ms>120267</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a47c631c86443b6c8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a47c631c86443b6c8.output</output-file>
+<status>completed</status>
+<summary>Agent "Whole-branch review templates/msa fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All verification complete. Everything checks out. Here is my review.
+
+---
+
+## Final Whole-Branch Review: openfold3/chai templates + MSA bug fix (cf5d72c..108fd41)
+
+### Strengths
+
+- **Wiring exactly matches the ground-truth API.** `_build_query_json` sets `chain["main_msa_file_paths"] = ["/workspace/inputs/&lt;name&gt;"]` keyed by filename-stem→chain-id, which recon §2 confirms is the genuine `Chain.main_msa_file_paths` field on OpenFold3's query-JSON model. The implementation is byte-for-byte the same pattern as the boltz reference (`src/autobio/tools/boltz.py:213-218` — `msa_path.stem` key, `/workspace/inputs/{msa_path.name}` value), so it's consistent with the established working convention.
+- **MSA is correctly scoped to polymer chains only.** The wiring lives inside the `etype in ("protein","dna","rna")` branch; ligand chains never receive `main_msa_file_paths`. Verified end-to-end: a protein+ligand input produced the MSA key on chain A and nothing on ligand L.
+- **Conditional wiring preserves byte-compat.** With no `msa_paths`, `main_msa_file_paths` is absent from the chain dict (verified directly: keys = `['molecule_type','chain_ids','sequence']`). Existing equality tests (`test_config_full_dict_equality_*`, `test_generated_query_json_equality_protein_ligand_noncanonical`) pass unchanged.
+- **Mutual-exclusion is correctly ordered.** In `_validate_inputs` (`openfold3.py:238-248`) the `use_msa_server=True` check fires *before* the file-existence loop, so a bad combination is rejected regardless of whether files exist. The adapted `test_missing_msa_file_raises` correctly sets `use_msa_server=False` so it still exercises the existence path (test not weakened).
+- **Documentation is now honest.** `grep "use the 'templates' field" src/` → zero. `_OPENFOLD3_NOTES` now states "User-supplied template structure files are not supported" and accurately describes server-side `use_templates`. The `msa_paths` field description documents the stem convention + `use_msa_server=False` requirement.
+- **Removal is complete and correctly bounded.** `OpenFold3Input.templates` and `Chai1Input.templates` gone, along with both host copy blocks and both existence-validation blocks. `ESMFoldInput.templates` (line 95), `BoltzInput.templates` (line 120), `OpenFold3Input.use_templates` (line 300), `Chai1Input.msa_directory`, and the notes-only `use_templates_server` passthrough are all intact. No dangling references.
+- **Coherent boundary.** Exactly 6 files changed (plan doc + `structure_prediction.py` + `openfold3.py` + `chai.py` + 2 test files); `git diff --name-only cf5d72c..108fd41 -- containers/` is empty. The two tasks compose cleanly: msa_paths works, templates fields honestly removed, docs accurate.
+
+### Verification results
+- `python -m pytest tests/unit/test_openfold3.py tests/unit/test_chai.py tests/unit/test_boltz.py tests/unit/test_esmfold.py -q` → exit 0
+- Full `python -m pytest -m "not docker and not gpu" -q` → exit 0
+- `ruff check src/ tests/` → All checks passed; `ruff format --check` → already formatted
+- `mypy src/` → Success, no issues (57 files)
+- End-to-end: constructed `OpenFold3Input(sequences={A,L}, msa_paths=[A.a3m], use_msa_server=False)` → query.json wires `main_msa_file_paths` onto A only; mutex raises the exact message; no-msa input omits the key.
+- No `templates=[...]` list usage remains in tests (only the valid `use_templates=False` toggle); all `*_via_extra_rejected` guard tests retained; new substantive tests present (`test_msa_files_not_wired_when_no_matching_chain`, `test_generated_query_json_equality_with_msa_paths`, `test_msa_paths_with_use_msa_server_raises`).
+
+### Issues
+
+**Critical:** None.
+
+**Important:** None.
+
+**Minor (informational, non-blocking):**
+- `src/autobio/schemas/base.py:28` — `BaseInput` uses Pydantic's default `extra="ignore"`, so a caller still passing the now-removed `templates=[...]` kwarg has it silently dropped rather than erroring. Separately, `extra={"templates": ...}` would now pass `_apply_extra` (no longer a typed-field collision) and be forwarded verbatim into `config.json`, where the container ignores it. Both are benign: the field never functioned (previously copied-but-ignored → template-free prediction; now dropped → identical template-free prediction), and forwarding unrecognized `extra` keys is the documented contract. Worth awareness only; no fix needed for this branch.
+- `openfold3.py:303` note says MSA "filenames should start with the chain ID" while the actual logic (and the more precise field description at `structure_prediction.py:281`) is stem-*equality*. This imprecision is copied verbatim from the boltz note (`boltz.py:277`), so it's intentionally consistent with the reference rather than a new defect.
+
+### Assessment
+
+Both tasks were executed exactly to plan and to the recon's feasibility verdict. The one genuinely wireable field (`openfold3.msa_paths`) is wired correctly against the real container API with sound mutual-exclusion and preserved byte-compat; the two inert `templates` fields are removed cleanly with the false documentation corrected; no `containers/` changes. All required verifications pass.
+
+**Ready to merge?** Yes
+
+**Reasoning:** The fix is correct, complete, and honest — msa_paths now genuinely reaches the container via `main_msa_file_paths`, the never-functional templates fields are removed with accurate docs, and the full suite/ruff/mypy are green with no regressions. The only notes are benign informational observations about pass-through semantics.</result>
+<usage><subagent_tokens>83052</subagent_tokens><tool_uses>20</tool_uses><duration_ms>189708</duration_ms></usage>
+</task-notification>
