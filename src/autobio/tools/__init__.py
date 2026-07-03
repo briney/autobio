@@ -5,14 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from autobio.tools.antibody_lm import AntibodyLMRunner
-from autobio.tools.antifold import AntiFoldRunner, AntiFoldScoreRunner
+from autobio.tools.antifold import AntiFoldRunner
 from autobio.tools.antipasti import AntipastiRunner
 from autobio.tools.baddg import BAddGRunner
 from autobio.tools.boltz import BoltzRunner
 from autobio.tools.chai import ChaiRunner
 from autobio.tools.complexa import ComplexaRunner
 from autobio.tools.esm import ESMRunner
-from autobio.tools.esm_if1 import ESMIF1Runner, ESMIF1ScoreRunner
+from autobio.tools.esm_if1 import ESMIF1Runner
 from autobio.tools.esmfold import ESMFoldRunner
 from autobio.tools.evoef2 import EvoEF2Runner
 from autobio.tools.freesasa import FreeSASARunner
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
 TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "antifold": AntiFoldRunner,
-    "antifold_score": AntiFoldScoreRunner,
     "antipasti": AntipastiRunner,
     "currab": AntibodyLMRunner,
     "currab_pll": AntibodyLMRunner,
@@ -48,7 +47,6 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "esm1b": ESMRunner,
     "esm2": ESMRunner,
     "esm_if1": ESMIF1Runner,
-    "esm_if1_score": ESMIF1ScoreRunner,
     "esmfold": ESMFoldRunner,
     "proteinmpnn": MPNNRunner,
     "ligandmpnn": MPNNRunner,

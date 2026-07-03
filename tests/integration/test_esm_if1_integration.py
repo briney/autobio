@@ -78,11 +78,12 @@ class TestESMIF1DesignSingleChain:
             temperature=0.1,
         )
         runner = get_runner("esm_if1", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert isinstance(output, InverseFoldingOutput)
         assert len(output.designed_sequences) == 2
         assert output.metadata.tool_name == "esm_if1"
+        assert output.metadata.mode == "design"
         assert output.metadata.wall_time_seconds > 0
 
         for seq in output.designed_sequences:
@@ -98,7 +99,7 @@ class TestESMIF1DesignSingleChain:
         """Verify native sequence is extracted from the input structure."""
         input_data = InverseFoldingInput(structure_path=rcsb_pdb)
         runner = get_runner("esm_if1", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert output.native_sequence is not None
         assert "A" in output.native_sequence
@@ -114,7 +115,7 @@ class TestESMIF1DesignSingleChain:
             num_sequences=5,
         )
         runner = get_runner("esm_if1", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert len(output.designed_sequences) == 5
         ranks = [s.rank for s in output.designed_sequences]
@@ -142,7 +143,7 @@ class TestESMIF1DesignMultiChain:
             temperature=0.1,
         )
         runner = get_runner("esm_if1", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert isinstance(output, InverseFoldingOutput)
         assert len(output.designed_sequences) == 2
@@ -169,7 +170,7 @@ class TestESMIF1DesignMultiChain:
             temperature=0.1,
         )
         runner = get_runner("esm_if1", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert len(output.designed_sequences) == 1
         seq = output.designed_sequences[0]
@@ -206,7 +207,7 @@ class TestESMIF1FixedPositions:
             fixed_positions=fixed,
         )
         runner = get_runner("esm_if1", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert output.native_sequence is not None
         native = output.native_sequence["A"]
@@ -235,7 +236,7 @@ class TestESMIF1Score:
         design_input = InverseFoldingInput(structure_path=rcsb_pdb)
         design_runner = get_runner("esm_if1", autobio_config)
         design_output = design_runner.run(
-            design_input, gpu="auto", output_dir=tmp_path / "design_ws"
+            design_input, gpu="auto", mode="design", output_dir=tmp_path / "design_ws"
         )
         assert design_output.native_sequence is not None
 
@@ -244,8 +245,10 @@ class TestESMIF1Score:
             structure_path=rcsb_pdb,
             sequences=design_output.native_sequence,
         )
-        score_runner = get_runner("esm_if1_score", autobio_config)
-        output = score_runner.run(score_input, gpu="auto", output_dir=tmp_path / "score_ws")
+        score_runner = get_runner("esm_if1", autobio_config)
+        output = score_runner.run(
+            score_input, gpu="auto", mode="score", output_dir=tmp_path / "score_ws"
+        )
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
@@ -253,4 +256,5 @@ class TestESMIF1Score:
         assert score.total_score < 0  # NLL should be negative
         assert score.units == "avg_nll"
         assert score.score_breakdown is not None
-        assert output.metadata.tool_name == "esm_if1_score"
+        assert output.metadata.tool_name == "esm_if1"
+        assert output.metadata.mode == "score"
