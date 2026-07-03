@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "4a8eaf35b88c",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4d-rfd3",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4a/8eaf35b88c/0/metadata.json",
+      "transcript": "/4a/8eaf35b88c/0/full.jsonl",
+      "compact_transcript": "/4a/8eaf35b88c/0/transcript.jsonl",
+      "content_hash": "/4a/8eaf35b88c/0/content_hash.txt",
+      "prompt": "/4a/8eaf35b88c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13217,
+    "cache_creation_tokens": 630531,
+    "cache_read_tokens": 73839054,
+    "output_tokens": 368966,
+    "api_call_count": 206
+  }
+}
