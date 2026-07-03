@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "5ed6357c5ea6",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-teardown-cleanup",
+  "checkpoints_count": 7,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/5e/d6357c5ea6/0/metadata.json",
+      "transcript": "/5e/d6357c5ea6/0/full.jsonl",
+      "compact_transcript": "/5e/d6357c5ea6/0/transcript.jsonl",
+      "content_hash": "/5e/d6357c5ea6/0/content_hash.txt",
+      "prompt": "/5e/d6357c5ea6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44052,
+    "cache_creation_tokens": 2428486,
+    "cache_read_tokens": 226799631,
+    "output_tokens": 834222,
+    "api_call_count": 502
+  }
+}
