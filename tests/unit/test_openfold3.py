@@ -272,25 +272,8 @@ class TestOpenFold3PrepareWorkspace:
         chains = query["queries"]["query_1"]["chains"]
         assert chains[0]["non_canonical_residues"] == {"3": "MHO", "5": "SEP"}
 
-    def test_templates_copied(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        tmpl = tmp_path / "template.cif"
-        tmpl.write_text("data_test\n_entry.id test\n")
-
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = OpenFold3Input(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            templates=[tmpl],
-        )
-        runner.prepare_workspace(input_data, workspace)
-
-        assert (workspace.inputs_dir / "template.cif").exists()
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert "templates" not in cfg
-        assert "template_path" not in cfg
-
     def test_msa_files_copied(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        """MSA files from the msa_paths field are copied into workspace."""
+        """MSA files from msa_paths are copied and wired into the matching chain."""
         msa_file = tmp_path / "A.a3m"
         msa_file.write_text(">query\nMVLSPADK\n")
 
@@ -298,10 +281,74 @@ class TestOpenFold3PrepareWorkspace:
         input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             msa_paths=[str(msa_file)],
+            use_msa_server=False,
         )
         runner.prepare_workspace(input_data, workspace)
 
         assert (workspace.inputs_dir / "A.a3m").exists()
+
+        query = json.loads((workspace.inputs_dir / "query.json").read_text())
+        chains = query["queries"]["query_1"]["chains"]
+        assert chains[0]["main_msa_file_paths"] == ["/workspace/inputs/A.a3m"]
+
+    def test_msa_files_not_wired_when_no_matching_chain(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """An MSA file whose stem does not match any chain ID is copied but not wired."""
+        msa_file = tmp_path / "Z.a3m"
+        msa_file.write_text(">query\nMVLSPADK\n")
+
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            msa_paths=[str(msa_file)],
+            use_msa_server=False,
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        assert (workspace.inputs_dir / "Z.a3m").exists()
+
+        query = json.loads((workspace.inputs_dir / "query.json").read_text())
+        chains = query["queries"]["query_1"]["chains"]
+        assert "main_msa_file_paths" not in chains[0]
+
+    def test_generated_query_json_equality_with_msa_paths(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """Full query.json byte-compat with msa_paths + use_msa_server=False."""
+        msa_file = tmp_path / "A.a3m"
+        msa_file.write_text(">query\nMVLSPADK\n")
+
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": "CC(=O)NC1=CC=C(O)C=C1"},
+            entity_types={"L": "ligand"},
+            msa_paths=[str(msa_file)],
+            use_msa_server=False,
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        query = json.loads((workspace.inputs_dir / "query.json").read_text())
+        expected = {
+            "queries": {
+                "query_1": {
+                    "chains": [
+                        {
+                            "molecule_type": "protein",
+                            "chain_ids": "A",
+                            "sequence": "MVLSPADKTNVKAAWGKVGA",
+                            "main_msa_file_paths": ["/workspace/inputs/A.a3m"],
+                        },
+                        {
+                            "molecule_type": "ligand",
+                            "chain_ids": "L",
+                            "smiles": "CC(=O)NC1=CC=C(O)C=C1",
+                        },
+                    ]
+                }
+            }
+        }
+        assert query == expected
 
     def test_raw_query_json_passthrough_dict(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         """query_json dict bypasses automatic generation."""
@@ -526,22 +573,33 @@ class TestOpenFold3HostValidation:
         # Should not raise
         runner.prepare_workspace(input_data, workspace)
 
-    def test_missing_template_file_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = OpenFold3Input(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            templates=[tmp_path / "nonexistent.cif"],
-        )
-        with pytest.raises(AutobioError, match="Template file does not exist"):
-            runner.prepare_workspace(input_data, workspace)
-
     def test_missing_msa_file_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             msa_paths=[str(tmp_path / "nonexistent.a3m")],
+            use_msa_server=False,
         )
         with pytest.raises(AutobioError, match="MSA file does not exist"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_msa_paths_with_use_msa_server_raises(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """msa_paths + use_msa_server=True is rejected — ColabFold overwrites precomputed MSAs."""
+        msa_file = tmp_path / "A.a3m"
+        msa_file.write_text(">query\nMVLSPADK\n")
+
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            msa_paths=[str(msa_file)],
+            use_msa_server=True,
+        )
+        with pytest.raises(
+            AutobioError,
+            match="Cannot provide msa_paths with use_msa_server=True",
+        ):
             runner.prepare_workspace(input_data, workspace)
 
     def test_entity_types_unknown_chain_raises(

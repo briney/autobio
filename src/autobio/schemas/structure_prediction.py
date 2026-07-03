@@ -198,11 +198,6 @@ class Chai1Input(BaseInput):
         description="Number of structures to generate (maps to num_diffn_samples).",
         json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
     )
-    templates: list[Path] | None = Field(
-        default=None,
-        description="Template structures (PDB/mmCIF) copied into the workspace.",
-        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
-    )
     entity_types: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -264,11 +259,6 @@ class OpenFold3Input(BaseInput):
         description="Number of structures to generate (maps to num_diffusion_samples).",
         json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
     )
-    templates: list[Path] | None = Field(
-        default=None,
-        description="Template structures (PDB/mmCIF) copied into the workspace.",
-        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
-    )
     entity_types: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -287,7 +277,11 @@ class OpenFold3Input(BaseInput):
     )
     msa_paths: list[str] | None = Field(
         default=None,
-        description="Pre-computed MSA file paths (copied into the workspace).",
+        description=(
+            "Pre-computed MSA file paths (filename stem identifies the target "
+            "chain ID, e.g. 'A.a3m' maps to chain 'A', mirroring boltz's "
+            "convention). Requires use_msa_server=False."
+        ),
         json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=14),
     )
     query_json: dict[str, Any] | str | None = Field(

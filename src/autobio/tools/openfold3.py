@@ -78,11 +78,6 @@ class OpenFold3Runner(ToolRunner):
 
         workspace.write_input_file("query.json", query_content.encode())
 
-        # -- Copy template files into workspace -----------------------------
-        if input_data.templates:
-            for tmpl_path in input_data.templates:
-                shutil.copy2(tmpl_path, workspace.inputs_dir / tmpl_path.name)
-
         # -- Copy MSA files into workspace ----------------------------------
         msa_paths = input_data.msa_paths
         if msa_paths:
@@ -155,10 +150,20 @@ class OpenFold3Runner(ToolRunner):
         Non-canonical residues are specified via ``non_canonical_residues`` as a
         dict mapping chain IDs to dicts of 1-based position → CCD code:
         ``{"A": {"3": "MHO", "5": "SEP"}}``.
+
+        Pre-computed MSAs are specified via ``msa_paths`` (list of file paths).
+        The filename stem identifies the target chain ID (mirroring boltz's
+        convention), e.g. ``"A.a3m"`` is wired onto chain ``"A"`` as
+        ``main_msa_file_paths``. Ligand chains never receive an MSA.
         """
         entity_types: dict[str, object] = input_data.entity_types
         non_canonical: dict[str, object] = input_data.non_canonical_residues
         chains: list[dict[str, object]] = []
+
+        msa_map: dict[str, str] = {}
+        for msa_path_str in input_data.msa_paths or []:
+            msa_path = Path(msa_path_str)
+            msa_map[msa_path.stem] = f"/workspace/inputs/{msa_path.name}"
 
         for chain_id, sequence in input_data.sequences.items():
             etype = entity_types.get(chain_id, "protein")
@@ -172,6 +177,9 @@ class OpenFold3Runner(ToolRunner):
                 # Add non-canonical residues if specified for this chain
                 if chain_id in non_canonical:
                     chain["non_canonical_residues"] = non_canonical[chain_id]
+                # Wire pre-computed MSA file, if provided for this chain
+                if chain_id in msa_map:
+                    chain["main_msa_file_paths"] = [msa_map[chain_id]]
                 chains.append(chain)
 
             elif isinstance(etype, dict):
@@ -226,15 +234,14 @@ class OpenFold3Runner(ToolRunner):
                 "sequences must be non-empty, or provide a raw query JSON via the query_json field."
             )
 
-        # Validate template files exist
-        if input_data.templates:
-            for tmpl_path in input_data.templates:
-                if not tmpl_path.exists():
-                    raise AutobioError(f"Template file does not exist: {tmpl_path}")
-
         # Validate MSA files exist
         msa_paths = input_data.msa_paths
         if msa_paths:
+            if input_data.use_msa_server:
+                raise AutobioError(
+                    "Cannot provide msa_paths with use_msa_server=True — set "
+                    "use_msa_server=False to use precomputed MSAs."
+                )
             for msa_path_str in msa_paths:
                 msa_path = Path(msa_path_str)
                 if not msa_path.exists():
@@ -292,14 +299,17 @@ _OPENFOLD3_NOTES = (
     "(use_msa_server=true). Only protein sequences are submitted to the server. "
     "To disable, set the 'use_msa_server' field to false. To use a private "
     "ColabFold server, set extra['msa_server_url'] to the server URL. "
-    "For high-throughput screening, provide pre-computed MSAs via "
-    "the 'msa_paths' field (list of file paths).",
+    "For high-throughput screening, provide pre-computed MSAs via the "
+    "'msa_paths' field (list of file paths; each filename stem must equal the "
+    "target chain ID, e.g., 'A.a3m' → chain 'A'). Requires 'use_msa_server' set to false — "
+    "OpenFold3's ColabFold step overwrites precomputed MSAs when the server "
+    "is enabled.",
     # Template options
     "Template-based prediction is ENABLED BY DEFAULT (use_templates=true). "
-    "Templates are automatically retrieved when using the ColabFold server. "
-    "To provide custom template structures, use the 'templates' field on "
-    "OpenFold3Input. To disable templates entirely, set the 'use_templates' "
-    "field to false.",
+    "Templates are automatically retrieved server-side by the ColabFold "
+    "search step. Set 'use_templates' to false to disable template-based "
+    "prediction entirely. User-supplied template structure files are not "
+    "supported.",
     # PAE and confidence
     "The PAE (Predicted Aligned Error) head is ENABLED BY DEFAULT "
     "(pae_enabled=true). This produces pTM and ipTM confidence scores and "
