@@ -159,7 +159,7 @@ _ANTIPASTI_NOTES = (
     "binding affinity. No GPU required.",
     "Output log10(Kd) values: more negative = tighter binding. For example, "
     "-9.0 corresponds to Kd ~1 nM (nanomolar), -6.0 to Kd ~1 µM (micromolar).",
-    "Key parameter (via extra dict): 'modes' (default 'all', or an integer "
+    "Key parameter: modes (default 'all', or an integer "
     "for the number of normal modes to use in the DCCM calculation).",
 )
 

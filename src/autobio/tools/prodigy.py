@@ -132,8 +132,8 @@ _PRODIGY_NOTES = (
     "predicted delta-G, Kd (temperature-dependent), and a full breakdown of "
     "contact counts and surface properties.",
     "CPU-only — no GPU required. Typical runtime is seconds for a single complex.",
-    "Key parameters (via extra dict): 'distance_cutoff' (default 5.5 angstrom), "
-    "'contact_list' (boolean, default False — include detailed contact list).",
+    "Key parameters: distance_cutoff (default 5.5 angstrom), "
+    "contact_list (boolean, default False — include detailed contact list).",
 )
 
 PRODIGY_TOOL = Tool(

@@ -116,18 +116,13 @@ class BAddGRunner(ToolRunner):
 
         # Mutations are required
         if not input_data.mutations:
-            raise AutobioError(
-                "BA-ddG requires 'mutations' in the extra dict. "
-                "Provide a list of mutation strings in format: "
-                "[WT_AA][ChainID][Resnum][Mut_AA] (e.g., ['YH103H', 'QD30V'])."
-            )
+            raise AutobioError("BA-ddG requires at least one mutation.")
 
         # Chains specification is required
         chains = input_data.chains
         if not chains:
             raise AutobioError(
-                "BA-ddG requires 'chains' in the extra dict. "
-                "Provide a string in 'binder1_binder2' format (e.g., 'ABC_DE')."
+                "BA-ddG requires a non-empty 'chains' interface specification (e.g., 'ABC_DE')."
             )
         if chains.count("_") != 1:
             raise AutobioError(
@@ -152,7 +147,7 @@ _BADDG_NOTES = (
     "format. For example, 'ABC_DE' defines the interface between chains A,B,C "
     "and chains D,E.",
     "Predictions are averaged across 3 cross-validation folds by default. "
-    "Set extra['n_folds'] to 1 or 2 for faster (but less robust) predictions.",
+    "Set n_folds to 1 or 2 for faster (but less robust) predictions.",
     "Output ddG is in kcal/mol. Positive values indicate destabilization "
     "(weaker binding), negative values indicate stabilization (stronger binding).",
 )

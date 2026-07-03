@@ -337,7 +337,7 @@ class TestBAddGConfigE2E:
             mutations=[],
             chains="A_B",
         )
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
+        with pytest.raises(AutobioError, match="requires at least one mutation"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_chains_format_fails(

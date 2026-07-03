@@ -206,6 +206,32 @@ class TestBAddGPrepareWorkspace:
         assert "ddg_checkpoint_path" in cfg
         assert cfg["mpnn_checkpoint_path"] != cfg["ddg_checkpoint_path"]
 
+    def test_full_config_byte_compat(
+        self, runner: BAddGRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Full config.json equality — byte-compat contract, incl. checkpoint paths."""
+        input_data = BAddGInput(
+            structure_path=sample_pdb,
+            mutations=["YH103H", "QD30V"],
+            chains="ABC_DE",
+            n_folds=1,
+            seed=42,
+            device="cpu",
+        )
+        cfg = _written_config(runner, input_data, tmp_path)
+
+        assert cfg == {
+            "pdb_path": "/workspace/inputs/complex.pdb",
+            "mutations": "YH103H,QD30V",
+            "chains": "ABC_DE",
+            "mpnn_checkpoint_path": "/app/baddg/ckpt/soluble_model_weights/v_48_020.pt",
+            "ddg_checkpoint_path": "/app/baddg/ckpt/ddg_model.ckpt",
+            "output_dir": "/workspace/outputs/raw",
+            "n_folds": 1,
+            "seed": 42,
+            "device": "cpu",
+        }
+
 
 # ---------------------------------------------------------------------------
 # TestBAddGValidation
@@ -237,7 +263,7 @@ class TestBAddGValidation:
             mutations=[],
             chains="A_B",
         )
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
+        with pytest.raises(AutobioError, match="requires at least one mutation"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_missing_chains_raises(
@@ -250,7 +276,7 @@ class TestBAddGValidation:
             mutations=["EA63Q"],
             chains="",
         )
-        with pytest.raises(AutobioError, match="requires 'chains'"):
+        with pytest.raises(AutobioError, match="requires a non-empty 'chains'"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_chains_no_underscore_raises(

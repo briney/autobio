@@ -122,8 +122,7 @@ class StaBddGRunner(ToolRunner):
         chains = input_data.chains
         if not chains:
             raise AutobioError(
-                "StaB-ddG requires 'chains' in the extra dict. "
-                "Provide a string in 'binder1_binder2' format (e.g., 'ABC_DE')."
+                "StaB-ddG requires a non-empty 'chains' interface specification (e.g., 'ABC_DE')."
             )
         if chains.count("_") != 1:
             raise AutobioError(
@@ -146,9 +145,9 @@ _STABDDG_NOTES = (
     "The 'chains' parameter specifies the binding interface in 'binder1_binder2' "
     "format. For example, 'ABC_DE' defines the interface between chains A,B,C "
     "and chains D,E.",
-    "Key parameters (via extra dict): 'mc_samples' (default 20, controls "
-    "variance reduction), 'noise_level' (default 0.1, backbone perturbation), "
-    "'trials' (default 1, number of independent predictions), 'seed' (default 0).",
+    "Key parameters: mc_samples (default 20, controls "
+    "variance reduction), noise_level (default 0.1, backbone perturbation), "
+    "trials (default 1, number of independent predictions), seed (default 0).",
     "Output ddG is in kcal/mol. Positive values indicate destabilization "
     "(weaker binding), negative values indicate stabilization (stronger binding).",
 )

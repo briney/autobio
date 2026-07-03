@@ -276,7 +276,7 @@ class TestStaBddGValidation:
             mutations=["EA63Q"],
             chains="",
         )
-        with pytest.raises(AutobioError, match="requires 'chains'"):
+        with pytest.raises(AutobioError, match="requires a non-empty 'chains'"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_chains_no_underscore_raises(
