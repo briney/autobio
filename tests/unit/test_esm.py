@@ -214,3 +214,13 @@ def test_info_snapshot_esm2() -> None:
     assert props["checkpoint"]["x-autobio"]["widget"] == "select"
     assert props["checkpoint"]["default"] == "650M"
     assert "output_schema" in parsed["modes"][0]
+
+
+def test_esm_tool_constants_registered() -> None:
+    import autobio.tools  # noqa: F401
+    from autobio.tools.esm import ESM1B_TOOL, ESM2_TOOL
+
+    assert ESM1B_TOOL.name == "esm1b"
+    assert ESM2_TOOL.name == "esm2"
+    assert get_tool("esm1b") is ESM1B_TOOL
+    assert get_tool("esm2") is ESM2_TOOL

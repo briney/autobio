@@ -183,61 +183,65 @@ _ESM2_NOTES = _ESM_NOTES + (
     "dedicated image builds and >24GB / >40GB GPU memory respectively.",
 )
 
-register(
-    Tool(
-        name="esm1b",
-        display_name="ESM-1b",
-        category=ToolCategory.EMBEDDING,
-        description=(
-            "Extract protein sequence embeddings using ESM-1b (650M params, 33 layers, 1280-dim)."
-        ),
-        version="1.0.0",
-        image_tag="esm:1.0.0",
-        requires_gpu=True,
-        gpu_count=1,
-        default_mode="embed",
-        modes={
-            "embed": Mode(
-                name="embed",
-                display_name="Embeddings",
-                description="Extract per-sequence or per-residue embeddings.",
-                input_schema=ESMEmbedInput,
-                output_schema=EmbeddingOutput,
-                default_timeout=600,
-                supports_batch=True,
-                notes=_ESM_NOTES,
-            )
-        },
-        keywords=("esm", "embedding", "protein language model"),
-    )
+ESM1B_TOOL = Tool(
+    name="esm1b",
+    display_name="ESM-1b",
+    category=ToolCategory.EMBEDDING,
+    description=(
+        "Extract protein sequence embeddings using ESM-1b (650M params, 33 layers, 1280-dim)."
+    ),
+    version="1.0.0",
+    image_tag="esm:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="embed",
+    modes={
+        "embed": Mode(
+            name="embed",
+            display_name="Embeddings",
+            description="Extract per-sequence or per-residue embeddings.",
+            input_schema=ESMEmbedInput,
+            output_schema=EmbeddingOutput,
+            default_timeout=600,
+            supports_batch=True,
+            notes=_ESM_NOTES,
+        )
+    },
+    keywords=("esm", "embedding", "protein language model"),
 )
+"""The catalog Tool for ESM-1b — exposed for tests that re-register it after
+CATALOG-clearing fixtures (e.g. CLI isolation tests)."""
 
-register(
-    Tool(
-        name="esm2",
-        display_name="ESM-2",
-        category=ToolCategory.EMBEDDING,
-        description=(
-            "Extract protein sequence embeddings using ESM-2. Default checkpoint 650M "
-            "(33 layers, 1280-dim); select 8M/35M/150M/3B/15B via the checkpoint field."
-        ),
-        version="1.0.0",
-        image_tag="esm:1.0.0",
-        requires_gpu=True,
-        gpu_count=1,
-        default_mode="embed",
-        modes={
-            "embed": Mode(
-                name="embed",
-                display_name="Embeddings",
-                description="Extract per-sequence or per-residue embeddings.",
-                input_schema=ESM2Input,
-                output_schema=EmbeddingOutput,
-                default_timeout=600,
-                supports_batch=True,
-                notes=_ESM2_NOTES,
-            )
-        },
-        keywords=("esm", "esm2", "embedding", "protein language model"),
-    )
+register(ESM1B_TOOL)
+
+ESM2_TOOL = Tool(
+    name="esm2",
+    display_name="ESM-2",
+    category=ToolCategory.EMBEDDING,
+    description=(
+        "Extract protein sequence embeddings using ESM-2. Default checkpoint 650M "
+        "(33 layers, 1280-dim); select 8M/35M/150M/3B/15B via the checkpoint field."
+    ),
+    version="1.0.0",
+    image_tag="esm:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="embed",
+    modes={
+        "embed": Mode(
+            name="embed",
+            display_name="Embeddings",
+            description="Extract per-sequence or per-residue embeddings.",
+            input_schema=ESM2Input,
+            output_schema=EmbeddingOutput,
+            default_timeout=600,
+            supports_batch=True,
+            notes=_ESM2_NOTES,
+        )
+    },
+    keywords=("esm", "esm2", "embedding", "protein language model"),
 )
+"""The catalog Tool for ESM-2 — exposed for tests that re-register it after
+CATALOG-clearing fixtures (e.g. CLI isolation tests)."""
+
+register(ESM2_TOOL)
