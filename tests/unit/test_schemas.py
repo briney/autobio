@@ -251,6 +251,20 @@ class TestAntibodyEmbeddingInput:
         assert inp.sequences[0].heavy_chain == "EVQLVESGG"
         assert inp.sequences[0].light_chain == "DIQMTQSPS"
 
+    def test_round_trip(self) -> None:
+        inp = AntibodyEmbeddingInput(
+            sequences=[
+                AntibodySequence(id="ab1", heavy_chain="EVQLV", light_chain="DIQMT"),
+                AntibodySequence(id="ab2", heavy_chain="QVQLV"),
+            ],
+            layer=20,
+            pooling="per_residue",
+        )
+        restored = AntibodyEmbeddingInput.model_validate(inp.model_dump())
+        assert len(restored.sequences) == 2
+        assert restored.layer == 20
+        assert restored.pooling == "per_residue"
+
 
 class TestAntibodyPLLInput:
     def test_required_sequences(self) -> None:
@@ -268,6 +282,15 @@ class TestAntibodyPLLInput:
     def test_no_layer_or_pooling_fields(self) -> None:
         assert "layer" not in AntibodyPLLInput.model_fields
         assert "pooling" not in AntibodyPLLInput.model_fields
+
+    def test_round_trip(self) -> None:
+        inp = AntibodyPLLInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV", light_chain="DIQMT")],
+            per_position=True,
+        )
+        restored = AntibodyPLLInput.model_validate(inp.model_dump())
+        assert len(restored.sequences) == 1
+        assert restored.per_position is True
 
 
 class TestSequencePLL:

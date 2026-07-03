@@ -49,7 +49,7 @@ class AntibodyEmbeddingInput(AntibodyBaseInput):
     )
     pooling: str | None = Field(
         default=None,
-        description=("Pooling strategy for per-residue embeddings ('mean', 'cls', 'per_residue')."),
+        description="Pooling strategy for per-residue embeddings ('mean', 'cls', 'per_residue').",
         json_schema_extra=ui(
             widget=Widget.SELECT,
             tier=Tier.PRIMARY,
