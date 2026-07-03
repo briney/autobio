@@ -1558,3 +1558,7 @@ None. No correctness defects found. The behavior changes below are intentional a
 **Reasoning:** The migration faithfully implements every plan invariant — per-mode byte-compat config (keys and order, both flexddg branches), per-mode image/timeout, additive+threaded `RunMetadata.mode`, `ScoringInput` untouched, `_apply_extra` collision rejection, and a complete `TOOL_RUNNERS` collapse — with meaningful, high-coverage tests and no correctness defects; the only open items are the already-triaged minors and a doc/migration-note deferral.</result>
 <usage><subagent_tokens>94083</subagent_tokens><tool_uses>8</tool_uses><duration_ms>160073</duration_ms></usage>
 </task-notification>
+
+---
+
+PR merged and branch deleted. Switch back to main and go ahead with evoef2 + complexa
