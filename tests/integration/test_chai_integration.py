@@ -14,10 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import Chai1Input, StructurePredictionOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -55,7 +52,7 @@ class TestChai1SingleProtein:
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Run Chai-1 end-to-end and verify output structure."""
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
             extra={
@@ -77,7 +74,7 @@ class TestChai1SingleProtein:
 
     def test_confidence_scores(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Verify confidence metrics are populated."""
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
             extra={
@@ -101,7 +98,7 @@ class TestChai1SingleProtein:
 
     def test_multiple_models(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Request 3 models and verify count and ranking."""
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=3,
             extra={
@@ -134,7 +131,7 @@ class TestChai1MultiChain:
 
     def test_two_chain_complex(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Predict a 2-chain insulin complex."""
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": _INSULIN_A, "B": _INSULIN_B},
             num_models=1,
             extra={
@@ -165,11 +162,11 @@ class TestChai1ProteinLigand:
         """Predict a protein-ligand complex using SMILES notation."""
         # Ibuprofen SMILES
         ibuprofen = "CC(C)Cc1ccc(cc1)C(C)C(O)=O"
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": _CRAMBIN_SEQ, "L": ibuprofen},
             num_models=1,
+            entity_types={"L": "ligand"},
             extra={
-                "entity_types": {"L": "ligand"},
                 "num_trunk_recycles": 1,
                 "num_diffn_timesteps": 50,
             },
@@ -197,11 +194,11 @@ class TestChai1Restraints:
             "min_distance_angstrom,max_distance_angstrom,comment,restraint_id\n"
             "A,C3,B,C7,contact,1.0,0.0,5.5,test-restraint,r1"
         )
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": _INSULIN_A, "B": _INSULIN_B},
             num_models=1,
+            constraints=csv_content,
             extra={
-                "constraints": csv_content,
                 "num_trunk_recycles": 1,
                 "num_diffn_timesteps": 50,
             },
@@ -225,10 +222,10 @@ class TestChai1RawFASTA:
     def test_raw_fasta_prediction(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Provide a raw Chai-1 FASTA and verify prediction."""
         fasta = f">protein|name=A\n{_CRAMBIN_SEQ}\n"
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={},
+            chai_fasta=fasta,
             extra={
-                "chai_fasta": fasta,
                 "num_trunk_recycles": 1,
                 "num_diffn_timesteps": 50,
             },

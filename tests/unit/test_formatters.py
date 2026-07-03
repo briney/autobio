@@ -346,7 +346,15 @@ def _tool_for_info() -> Tool:
         gpu_count=0,
         default_mode="a",
         modes={
-            "a": Mode("a", "Alpha", "alpha mode", _InInfo, _OutInfo, default_timeout=300),
+            "a": Mode(
+                "a",
+                "Alpha",
+                "alpha mode",
+                _InInfo,
+                _OutInfo,
+                default_timeout=300,
+                notes=("First note.", "Second note."),
+            ),
             "b": Mode(
                 "b",
                 "Beta",
@@ -378,6 +386,74 @@ def test_format_tool_info_catalog_json_shape() -> None:
 def test_format_tool_info_catalog_table_runs() -> None:
     out = format_tool_info_catalog(_tool_for_info(), OutputFormat.TABLE)
     assert "demo" in out and "Alpha" in out
+
+
+def test_format_tool_info_catalog_json_includes_notes() -> None:
+    parsed = json.loads(format_tool_info_catalog(_tool_for_info(), OutputFormat.JSON))
+    assert parsed["modes"][0]["notes"] == ["First note.", "Second note."]
+    assert parsed["modes"][1]["notes"] == []  # mode "b" has no notes
+
+
+def test_format_tool_info_catalog_table_includes_notes() -> None:
+    out = format_tool_info_catalog(_tool_for_info(), OutputFormat.TABLE)
+    assert "First note." in out and "Second note." in out
+
+
+def test_format_tool_info_catalog_json_includes_tool_notes() -> None:
+    """JSON output must include tool-level notes at the top level."""
+    tool = Tool(
+        name="noted-tool",
+        display_name="Noted Tool",
+        category=ToolCategory.SCORING,
+        description="A tool with notes.",
+        version="1.0.0",
+        image_tag="noted:1.0.0",
+        requires_gpu=False,
+        gpu_count=0,
+        default_mode="default",
+        modes={
+            "default": Mode(
+                "default",
+                "Default",
+                "default mode",
+                _InInfo,
+                _OutInfo,
+                default_timeout=300,
+            ),
+        },
+        notes=("Important caveat.", "Read the docs."),
+    )
+    parsed = json.loads(format_tool_info_catalog(tool, OutputFormat.JSON))
+    assert parsed["notes"] == ["Important caveat.", "Read the docs."]
+
+
+def test_format_tool_info_catalog_table_includes_tool_notes() -> None:
+    """TABLE output must include tool-level notes as a row."""
+    tool = Tool(
+        name="noted-tool",
+        display_name="Noted Tool",
+        category=ToolCategory.SCORING,
+        description="A tool with notes.",
+        version="1.0.0",
+        image_tag="noted:1.0.0",
+        requires_gpu=False,
+        gpu_count=0,
+        default_mode="default",
+        modes={
+            "default": Mode(
+                "default",
+                "Default",
+                "default mode",
+                _InInfo,
+                _OutInfo,
+                default_timeout=300,
+            ),
+        },
+        notes=("Critical requirement.", "Handle with care."),
+    )
+    out = format_tool_info_catalog(tool, OutputFormat.TABLE)
+    assert "Critical requirement." in out
+    assert "Handle with care." in out
 
 
 # ---------------------------------------------------------------------------

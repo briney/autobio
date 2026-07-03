@@ -196,3 +196,138 @@ class BoltzInput(BaseInput):
         ),
         json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=18),
     )
+
+
+class Chai1Input(BaseInput):
+    """Input for Chai-1 biomolecular structure prediction (single ``predict`` mode)."""
+
+    sequences: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of chain ID to sequence (protein/DNA/RNA). For ligand chains "
+            "(entity_types = 'ligand' or {'smiles': ...}) the value is a SMILES string. "
+            "May be empty only when chai_fasta is provided."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.PRIMARY, order=0),
+    )
+    num_models: int = Field(
+        default=1,
+        ge=1,
+        description="Number of structures to generate (maps to num_diffn_samples).",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    templates: list[Path] | None = Field(
+        default=None,
+        description="Template structures (PDB/mmCIF) copied into the workspace.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
+    )
+    entity_types: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Per-chain entity type: 'protein'/'dna'/'rna'/'ligand', or a dict "
+            "{'smiles': 'CC...'} for ligands. Default 'protein'."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=12),
+    )
+    constraints: str | None = Field(
+        default=None,
+        description=(
+            "Restraints/covalent bonds as CSV content (or a file path). Columns: "
+            "chainA,res_idxA,chainB,res_idxB,connection_type,confidence,"
+            "min_distance_angstrom,max_distance_angstrom,comment,restraint_id. "
+            "connection_type is 'contact', 'pocket', or 'covalent'."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=13),
+    )
+    msa_directory: str | None = Field(
+        default=None,
+        description="Path to a directory of pre-computed MSA .aligned.pqt files.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=14),
+    )
+    chai_fasta: str | None = Field(
+        default=None,
+        description=(
+            "Raw Chai-1 FASTA content (headers '>entity_type|name=chain_id'), "
+            "bypassing automatic FASTA generation from sequences."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=15),
+    )
+    use_msa_server: bool = Field(
+        default=True,
+        description="Use ColabFold MMseqs2 MSA server (needs network). Set False to disable.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=16),
+    )
+    use_esm_embeddings: bool = Field(
+        default=False,
+        description="Enable ESM protein language model embeddings (extra compute).",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=17),
+    )
+
+
+class OpenFold3Input(BaseInput):
+    """Input for OpenFold3 biomolecular structure prediction (single ``predict`` mode)."""
+
+    sequences: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of chain ID to sequence (protein/DNA/RNA). For ligand chains "
+            "(entity_types = 'ligand'/{'smiles': ...}/{'ccd': ...}) the value is a "
+            "SMILES string. May be empty only when query_json is provided."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.PRIMARY, order=0),
+    )
+    num_models: int = Field(
+        default=1,
+        ge=1,
+        description="Number of structures to generate (maps to num_diffusion_samples).",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    templates: list[Path] | None = Field(
+        default=None,
+        description="Template structures (PDB/mmCIF) copied into the workspace.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
+    )
+    entity_types: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Per-chain molecule type: 'protein'/'dna'/'rna'/'ligand', or a dict "
+            "{'smiles': 'CC...'} / {'ccd': 'ATP'} for ligands. Default 'protein'."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=12),
+    )
+    non_canonical_residues: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Per-chain non-canonical residues as {chain_id: {position: CCD_code}}, "
+            "e.g. {'A': {'3': 'MHO', '5': 'SEP'}}."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=13),
+    )
+    msa_paths: list[str] | None = Field(
+        default=None,
+        description="Pre-computed MSA file paths (copied into the workspace).",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=14),
+    )
+    query_json: dict[str, Any] | str | None = Field(
+        default=None,
+        description=(
+            "Raw OpenFold3 query JSON (dict or string) — bypasses automatic query "
+            "generation. See https://openfold-3.readthedocs.io/en/latest/input_format_reference.html."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=15),
+    )
+    use_msa_server: bool = Field(
+        default=True,
+        description="Use ColabFold MMseqs2 MSA server (needs network). Set False to disable.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=16),
+    )
+    use_templates: bool = Field(
+        default=True,
+        description="Enable template-based prediction.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=17),
+    )
+    pae_enabled: bool = Field(
+        default=True,
+        description="Enable the PAE head (produces pTM/ipTM; higher memory).",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=18),
+    )

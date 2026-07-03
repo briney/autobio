@@ -8,16 +8,14 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import Chai1Input, StructurePredictionOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
-from autobio.tools.chai import ChaiRunner
+from autobio.tools.chai import CHAI1_TOOL, ChaiRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,14 +31,26 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> ChaiRunner:
-    """Create a ChaiRunner with mocked ContainerManager and GPUManager."""
+def _make_runner(config: AutobioConfig) -> ChaiRunner:
+    """Create a ChaiRunner with mocked ContainerManager/GPUManager and current_mode set.
+
+    ``current_mode`` is set directly (rather than via ``run()``) so that
+    ``prepare_workspace`` — which calls ``_apply_extra`` — can be exercised
+    in isolation.
+    """
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return ChaiRunner("chai1", config)
+        runner = ChaiRunner("chai1", config)
+    runner.current_mode = get_tool("chai1").modes["predict"]
+    return runner
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> ChaiRunner:
+    """Create a ChaiRunner with mocked ContainerManager and GPUManager."""
+    return _make_runner(config)
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +64,7 @@ class TestChaiPrepareWorkspace:
     def test_fasta_generated_from_sequences(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """Sequences dict is translated into a Chai-1 FASTA input file."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MKWVTFIS", "B": "GVSEKL"})
+        input_data = Chai1Input(sequences={"A": "MKWVTFIS", "B": "GVSEKL"})
         runner.prepare_workspace(input_data, workspace)
 
         fasta_path = workspace.inputs_dir / "input.fasta"
@@ -68,7 +78,7 @@ class TestChaiPrepareWorkspace:
     def test_chain_ordering_sorted(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """Chains are written in sorted order so Chai-1's alphabetical assignment aligns."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"C": "AAA", "A": "GGG", "B": "TTT"})
+        input_data = Chai1Input(sequences={"C": "AAA", "A": "GGG", "B": "TTT"})
         runner.prepare_workspace(input_data, workspace)
 
         content = (workspace.inputs_dir / "input.fasta").read_text()
@@ -77,7 +87,7 @@ class TestChaiPrepareWorkspace:
 
     def test_num_models_maps_to_num_diffn_samples(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"}, num_models=5)
+        input_data = Chai1Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"}, num_models=5)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -86,7 +96,7 @@ class TestChaiPrepareWorkspace:
     def test_num_models_default_sets_one(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """When num_models=1 (default), num_diffn_samples=1 to override Chai-1's default of 5."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = Chai1Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -95,18 +105,18 @@ class TestChaiPrepareWorkspace:
     def test_use_msa_server_default_true(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """use_msa_server defaults to True in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = Chai1Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["use_msa_server"] is True
 
     def test_use_msa_server_can_be_disabled(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        """extra['use_msa_server'] = False overrides the default."""
+        """The top-level use_msa_server field overrides the default."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"use_msa_server": False},
+            use_msa_server=False,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -116,18 +126,18 @@ class TestChaiPrepareWorkspace:
     def test_use_esm_embeddings_default_false(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """use_esm_embeddings defaults to False in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = Chai1Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["use_esm_embeddings"] is False
 
     def test_use_esm_embeddings_can_be_enabled(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        """extra['use_esm_embeddings'] = True overrides the default."""
+        """The top-level use_esm_embeddings field overrides the default."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"use_esm_embeddings": True},
+            use_esm_embeddings=True,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -137,9 +147,9 @@ class TestChaiPrepareWorkspace:
     def test_entity_types_override(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """Non-protein entity types get correct FASTA headers."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "ATCGATCG"},
-            extra={"entity_types": {"B": "dna"}},
+            entity_types={"B": "dna"},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -149,9 +159,9 @@ class TestChaiPrepareWorkspace:
 
     def test_rna_entity_type(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "R": "ACGUACGU"},
-            extra={"entity_types": {"R": "rna"}},
+            entity_types={"R": "rna"},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -162,9 +172,9 @@ class TestChaiPrepareWorkspace:
         """entity_types: {"L": "ligand"} uses sequence value as SMILES."""
         workspace = Workspace.create(tmp_path / "ws")
         smiles = "CC(C)Cc1ccc(cc1)C(C)C(O)=O"
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": smiles},
-            extra={"entity_types": {"L": "ligand"}},
+            entity_types={"L": "ligand"},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -176,9 +186,9 @@ class TestChaiPrepareWorkspace:
         """Ligand entities with SMILES dict are correctly constructed."""
         workspace = Workspace.create(tmp_path / "ws")
         smiles = "CC(=O)NC1=CC=C(O)C=C1"
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
-            extra={"entity_types": {"L": {"smiles": smiles}}},
+            entity_types={"L": {"smiles": smiles}},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -194,9 +204,9 @@ class TestChaiPrepareWorkspace:
             "min_distance_angstrom,max_distance_angstrom,comment,restraint_id\n"
             "A,C387,B,Y101,contact,1.0,0.0,5.5,test,r1"
         )
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "GVSEKL"},
-            extra={"constraints": csv_content},
+            constraints=csv_content,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -213,9 +223,9 @@ class TestChaiPrepareWorkspace:
         constraint_file.write_text("chainA,res_idxA,chainB,res_idxB\nA,C387,B,Y101\n")
 
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "GVSEKL"},
-            extra={"constraints": str(constraint_file)},
+            constraints=str(constraint_file),
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -229,9 +239,9 @@ class TestChaiPrepareWorkspace:
         (msa_dir / "A.aligned.pqt").write_bytes(b"fake parquet data")
 
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"msa_directory": str(msa_dir)},
+            msa_directory=str(msa_dir),
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -241,12 +251,12 @@ class TestChaiPrepareWorkspace:
         assert cfg["msa_directory"] == "/workspace/inputs/msa"
 
     def test_templates_copied(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        """Template files are copied into workspace/inputs/."""
+        """Template files are copied into workspace/inputs/ (but not wired into config)."""
         tmpl = tmp_path / "template.cif"
         tmpl.write_text("data_test\n_entry.id test\n")
 
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             templates=[tmpl],
         )
@@ -254,13 +264,17 @@ class TestChaiPrepareWorkspace:
 
         assert (workspace.inputs_dir / "template.cif").exists()
 
+        cfg = json.loads(workspace.config_path.read_text())
+        assert "templates" not in cfg
+        assert "template_path" not in cfg
+
     def test_raw_fasta_passthrough(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        """extra['chai_fasta'] bypasses automatic FASTA generation."""
+        """chai_fasta bypasses automatic FASTA generation."""
         custom_fasta = ">protein|name=X\nMKWVTFIS\n>ligand|name=Y\nCC(=O)O\n"
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={},
-            extra={"chai_fasta": custom_fasta},
+            chai_fasta=custom_fasta,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -268,15 +282,15 @@ class TestChaiPrepareWorkspace:
         assert content == custom_fasta
 
     def test_extra_dict_merged(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        """CLI-level extra keys appear in config.json, consumed keys do not."""
+        """CLI-level extra keys appear in config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            entity_types={"A": "protein"},
             extra={
                 "num_trunk_recycles": 5,
                 "seed": 42,
                 "num_diffn_timesteps": 100,
-                "entity_types": {"A": "protein"},  # consumed — should NOT appear
             },
         )
         runner.prepare_workspace(input_data, workspace)
@@ -285,30 +299,13 @@ class TestChaiPrepareWorkspace:
         assert cfg["num_trunk_recycles"] == 5
         assert cfg["seed"] == 42
         assert cfg["num_diffn_timesteps"] == 100
+        # entity_types is a typed field, not a config.json key at all
         assert "entity_types" not in cfg
-
-    def test_consumed_keys_excluded(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        """All consumed keys are excluded from config.json."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={
-                "entity_types": {"A": "protein"},
-                "chai_fasta": None,  # even if set to None, should be excluded
-                "constraints": "a,b,c,d,e,f,g,h,i,j\n1,2,3,4,5,6,7,8,9,10",
-            },
-        )
-        runner.prepare_workspace(input_data, workspace)
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert "entity_types" not in cfg
-        assert "chai_fasta" not in cfg
-        assert "constraints" not in cfg
 
     def test_defaults_applied(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """Minimal input produces sensible defaults."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = Chai1Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -321,11 +318,81 @@ class TestChaiPrepareWorkspace:
     def test_no_constraint_path_when_absent(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """constraint_path not in config when no constraints provided."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = Chai1Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert "constraint_path" not in cfg
+
+    def test_config_full_dict_equality_minimal(self, runner: ChaiRunner, tmp_path: Path) -> None:
+        """Full config.json dict is byte-compat with the pre-migration output (minimal input)."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = Chai1Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "fasta_path": "/workspace/inputs/input.fasta",
+            "output_dir": "/workspace/outputs/raw",
+            "downloads_dir": "/app/chai/downloads",
+            "use_msa_server": True,
+            "use_esm_embeddings": False,
+            "num_diffn_samples": 1,
+        }
+
+    def test_config_full_dict_equality_with_overrides(
+        self, runner: ChaiRunner, tmp_path: Path
+    ) -> None:
+        """Full config.json dict with constraints, msa_directory, and extra CLI knobs."""
+        msa_dir = tmp_path / "msas"
+        msa_dir.mkdir()
+        (msa_dir / "A.aligned.pqt").write_bytes(b"fake parquet data")
+
+        workspace = Workspace.create(tmp_path / "ws")
+        csv_content = (
+            "chainA,res_idxA,chainB,res_idxB,connection_type,confidence,"
+            "min_distance_angstrom,max_distance_angstrom,comment,restraint_id\n"
+            "A,C387,B,Y101,contact,1.0,0.0,5.5,test,r1"
+        )
+        input_data = Chai1Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            num_models=3,
+            use_msa_server=False,
+            use_esm_embeddings=True,
+            constraints=csv_content,
+            msa_directory=str(msa_dir),
+            extra={"num_trunk_recycles": 5, "seed": 42},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "fasta_path": "/workspace/inputs/input.fasta",
+            "output_dir": "/workspace/outputs/raw",
+            "downloads_dir": "/app/chai/downloads",
+            "use_msa_server": False,
+            "use_esm_embeddings": True,
+            "num_diffn_samples": 3,
+            "constraint_path": "/workspace/inputs/restraints.csv",
+            "msa_directory": "/workspace/inputs/msa",
+            "num_trunk_recycles": 5,
+            "seed": 42,
+        }
+
+    def test_generated_fasta_equality_protein_ligand(
+        self, runner: ChaiRunner, tmp_path: Path
+    ) -> None:
+        """The generated input.fasta is unchanged for a representative protein+ligand input."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = Chai1Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": "CC(=O)NC1=CC=C(O)C=C1"},
+            entity_types={"L": "ligand"},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        content = (workspace.inputs_dir / "input.fasta").read_text()
+        expected = ">protein|name=A\nMVLSPADKTNVKAAWGKVGA\n>ligand|name=L\nCC(=O)NC1=CC=C(O)C=C1\n"
+        assert content == expected
 
 
 # ---------------------------------------------------------------------------
@@ -338,23 +405,32 @@ class TestChaiHostValidation:
 
     def test_empty_sequences_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={})
+        input_data = Chai1Input(sequences={})
+        with pytest.raises(AutobioError, match="sequences must be non-empty"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_empty_sequences_with_chai_fasta_none_raises(
+        self, runner: ChaiRunner, tmp_path: Path
+    ) -> None:
+        """Footgun resolution: chai_fasta=None with empty sequences fails fast (no empty FASTA)."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = Chai1Input(sequences={}, chai_fasta=None)
         with pytest.raises(AutobioError, match="sequences must be non-empty"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_empty_sequences_ok_with_chai_fasta(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """Empty sequences is allowed when chai_fasta is provided."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={},
-            extra={"chai_fasta": ">protein|name=A\nMKWVTFIS\n"},
+            chai_fasta=">protein|name=A\nMKWVTFIS\n",
         )
         # Should not raise
         runner.prepare_workspace(input_data, workspace)
 
     def test_missing_template_file_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             templates=[tmp_path / "nonexistent.cif"],
         )
@@ -363,47 +439,92 @@ class TestChaiHostValidation:
 
     def test_missing_constraint_file_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"constraints": str(tmp_path / "nonexistent.csv")},
+            constraints=str(tmp_path / "nonexistent.csv"),
         )
         with pytest.raises(AutobioError, match="Constraint file does not exist"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_missing_msa_directory_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"msa_directory": str(tmp_path / "nonexistent_dir")},
+            msa_directory=str(tmp_path / "nonexistent_dir"),
         )
         with pytest.raises(AutobioError, match="MSA directory does not exist"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_entity_types_unknown_chain_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"Z": "dna"}},
+            entity_types={"Z": "dna"},
         )
         with pytest.raises(AutobioError, match="unknown chain IDs"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_entity_type_string_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"A": "peptide"}},
+            entity_types={"A": "peptide"},
         )
         with pytest.raises(AutobioError, match="Invalid entity type"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_entity_type_dict_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = Chai1Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"A": {"invalid_key": "value"}}},
+            entity_types={"A": {"invalid_key": "value"}},
         )
         with pytest.raises(AutobioError, match="must contain 'smiles' key"):
+            runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestChaiExtraShadowRejection
+# ---------------------------------------------------------------------------
+
+
+class TestChaiExtraShadowRejection:
+    """Promoted keys must no longer be accepted via extra — _apply_extra rejects them."""
+
+    def test_entity_types_via_extra_rejected(self, runner: ChaiRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = Chai1Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"entity_types": {"A": "protein"}},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_use_msa_server_via_extra_rejected(self, runner: ChaiRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = Chai1Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"use_msa_server": False},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_chai_fasta_via_extra_rejected(self, runner: ChaiRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = Chai1Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"chai_fasta": ">protein|name=A\nMKWVTFIS\n"},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_constraints_via_extra_rejected(self, runner: ChaiRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = Chai1Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"constraints": "a,b,c,d,e,f,g,h,i,j\n1,2,3,4,5,6,7,8,9,10"},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
             runner.prepare_workspace(input_data, workspace)
 
 
@@ -539,15 +660,23 @@ class TestChaiParseOutput:
 
 
 class TestChaiRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for catalog Tool and runner registration."""
 
-    def test_chai1_in_registry(self) -> None:
-        assert "chai1" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["chai1"]
-        assert entry.category == ToolCategory.STRUCTURE_PREDICTION
-        assert entry.input_schema is StructurePredictionInput
-        assert entry.output_schema is StructurePredictionOutput
-        assert entry.requires_gpu is True
+    def test_chai1_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert "chai1" in CATALOG
+        assert set(get_tool("chai1").modes) == {"predict"}
+        assert get_tool("chai1").default_mode == "predict"
+        assert get_tool("chai1").category == ToolCategory.STRUCTURE_PREDICTION
+        assert get_tool("chai1").requires_gpu is True
+        assert "chai1" not in TOOL_REGISTRY
+
+    def test_chai1_tool_constant_registered(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert CHAI1_TOOL.name == "chai1"
+        assert get_tool("chai1") is CHAI1_TOOL
 
     def test_tool_runners_registered(self) -> None:
         assert "chai1" in TOOL_RUNNERS
@@ -564,15 +693,18 @@ class TestChaiRegistration:
 
     def test_notes_populated(self) -> None:
         """Notes contain key operational topics for agent guidance."""
-        chai_notes = " ".join(TOOL_REGISTRY["chai1"].notes)
+        chai_notes = " ".join(get_tool("chai1").modes["predict"].notes)
         assert "msa" in chai_notes.lower()
 
-    def test_input_format_populated(self) -> None:
-        """Input format contains entity construction and native format info."""
-        fmt = " ".join(TOOL_REGISTRY["chai1"].input_format)
-        assert "entity_types" in fmt
-        assert "restraint" in fmt.lower() or "constraint" in fmt.lower()
-        assert "ligand" in fmt.lower()
-        assert "covalent" in fmt.lower()
-        assert "chai_fasta" in fmt
-        assert "fasta" in fmt.lower()
+
+def test_info_snapshot_chai1() -> None:
+    import autobio.tools  # noqa: F401 - importing populates the catalog
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("chai1"), OutputFormat.JSON))
+    assert parsed["modes"][0]["name"] == "predict"
+    props = parsed["modes"][0]["input_schema"]["properties"]
+    assert props["use_msa_server"]["x-autobio"]["widget"] == "toggle"
+    assert props["entity_types"]["x-autobio"]["tier"] == "advanced"
+    assert "output_schema" in parsed["modes"][0]
+    assert parsed["modes"][0]["notes"]
