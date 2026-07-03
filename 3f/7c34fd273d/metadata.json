@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "3f7c34fd273d",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4e-mpnn",
+  "checkpoints_count": 5,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/3f/7c34fd273d/0/metadata.json",
+      "transcript": "/3f/7c34fd273d/0/full.jsonl",
+      "compact_transcript": "/3f/7c34fd273d/0/transcript.jsonl",
+      "content_hash": "/3f/7c34fd273d/0/content_hash.txt",
+      "prompt": "/3f/7c34fd273d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13654,
+    "cache_creation_tokens": 681240,
+    "cache_read_tokens": 90527998,
+    "output_tokens": 413180,
+    "api_call_count": 231
+  }
+}

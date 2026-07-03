@@ -1,0 +1,260 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "3f7c34fd273d",
+  "session_id": "5ca9ce40-a888-4e1c-b63f-fbca413a01b9",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-03T04:45:21.946745853Z",
+  "branch": "feature/tools-modes-plan4e-mpnn",
+  "checkpoints_count": 5,
+  "save_step_count": 6,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "1b9a3f080f59",
+  "token_usage": {
+    "input_tokens": 13654,
+    "cache_creation_tokens": 681240,
+    "cache_read_tokens": 90527998,
+    "output_tokens": 413180,
+    "api_call_count": 231
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01ThqEeuSL1aAxpW4wdbkuxe",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:executing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1b9a3f080f59",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 20,
+        "end": 21,
+        "entry_ids": [
+          "032d2d95-be7e-4751-9af5-f3609eadc92b"
+        ],
+        "tool_use_id": "toolu_01ThqEeuSL1aAxpW4wdbkuxe"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01ThqEeuSL1aAxpW4wdbkuxe"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:executing-plans",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01KQxdvRg3VNuxjSZ4dmt762",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:writing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1b9a3f080f59",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 51,
+        "end": 52,
+        "entry_ids": [
+          "9fba0c71-efa6-4e23-b321-43b9de43ae1c"
+        ],
+        "tool_use_id": "toolu_01KQxdvRg3VNuxjSZ4dmt762"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01KQxdvRg3VNuxjSZ4dmt762"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:writing-plans",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01UkEhdnesedXsuuPPVf4Pq5",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:subagent-driven-development"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1b9a3f080f59",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 137,
+        "end": 138,
+        "entry_ids": [
+          "b91a69c1-4374-4e5b-b812-885d3f8b4f08"
+        ],
+        "tool_use_id": "toolu_01UkEhdnesedXsuuPPVf4Pq5"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01UkEhdnesedXsuuPPVf4Pq5"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:subagent-driven-development",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_018ScNFdyrePowPXn7XTmRKM",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:finishing-a-development-branch"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "1b9a3f080f59",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 374,
+        "end": 375,
+        "entry_ids": [
+          "280e6ffc-03ab-4737-8656-f97fd706459c"
+        ],
+        "tool_use_id": "toolu_018ScNFdyrePowPXn7XTmRKM"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_018ScNFdyrePowPXn7XTmRKM"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:finishing-a-development-branch",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 50
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 1109,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.json": 84,
+        ".claude/settings.local.json": 43,
+        ".codex/config.toml": 3,
+        ".codex/hooks.json": 52,
+        ".cursor/hooks.json": 40,
+        ".factory/settings.json": 90,
+        ".gemini/settings.json": 141,
+        ".github/hooks/entire.json": 61,
+        ".opencode/plugins/entire.ts": 267,
+        ".pi/extensions/entire/index.ts": 127,
+        "docs/CREDIT_SYSTEM.md": 201
+      }
+    }
+  ]
+}
