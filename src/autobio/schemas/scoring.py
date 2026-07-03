@@ -68,6 +68,71 @@ class FreeSASABSAInput(FreeSASABaseInput):
     )
 
 
+_ROSETTA_SCORE_FUNCTIONS = Literal[
+    "ref2015", "ref2015_cart", "beta_nov16", "score12", "talaris2014", "franklin2019"
+]
+
+
+class RosettaBaseInput(BaseInput):
+    """Shared input for Rosetta score/minimize modes."""
+
+    structure_path: Path = Field(
+        description="Path to the input structure (PDB or mmCIF).",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=0),
+    )
+    score_function: _ROSETTA_SCORE_FUNCTIONS = Field(
+        default="ref2015",
+        description="Rosetta energy score function.",
+        json_schema_extra=ui(widget=Widget.SELECT, tier=Tier.ADVANCED, order=10),
+    )
+    nstruct: int = Field(
+        default=1,
+        ge=1,
+        description="Number of output structures to generate.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=11),
+    )
+
+
+class RosettaRelaxInput(RosettaBaseInput):
+    """Input for Rosetta relax mode (FastRelax; higher nstruct default)."""
+
+    nstruct: int = Field(
+        default=5,
+        ge=1,
+        description="Number of relaxed structures to generate.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=11),
+    )
+
+
+class RosettaFlexDdgInput(RosettaBaseInput):
+    """Input for Rosetta flex-ddG interface-mutation DDG mode."""
+
+    mutations: list[str] = Field(
+        description=(
+            "Mutations to score, e.g. ['A42F'] (original-residue-number-new; "
+            "'A:42:F' for multi-letter chains)."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=1),
+    )
+    chains_to_move: str = Field(
+        description="Chain ID(s) of the binding partner to perturb at the interface (e.g. 'B').",
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=2),
+    )
+    nstruct: int = Field(
+        default=35,
+        ge=1,
+        description="Number of independent backrub samples (use 3 for quick tests).",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=11),
+    )
+    resfile: str | None = Field(
+        default=None,
+        description=(
+            "Raw Rosetta resfile content (power-user override of the generated mutation list)."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=12),
+    )
+
+
 class BAddGInput(BaseInput):
     """Input for BA-ddG binding-ddG prediction (single ``predict`` mode)."""
 
