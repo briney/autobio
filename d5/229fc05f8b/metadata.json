@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "d5229fc05f8b",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4f-multimode",
+  "checkpoints_count": 7,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d5/229fc05f8b/0/metadata.json",
+      "transcript": "/d5/229fc05f8b/0/full.jsonl",
+      "compact_transcript": "/d5/229fc05f8b/0/transcript.jsonl",
+      "content_hash": "/d5/229fc05f8b/0/content_hash.txt",
+      "prompt": "/d5/229fc05f8b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14494,
+    "cache_creation_tokens": 775041,
+    "cache_read_tokens": 114898322,
+    "output_tokens": 471268,
+    "api_call_count": 264
+  }
+}
