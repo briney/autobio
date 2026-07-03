@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.hints import Tier, Widget, ui
 
 
 class StructureDesignInput(BaseInput):
@@ -36,6 +37,41 @@ class StructureDesignInput(BaseInput):
     n_batches: int = Field(
         default=1,
         description="Number of independent design batches per specification.",
+    )
+
+
+class RFD3Input(BaseInput):
+    """Input for RFDiffusion3 generative structure design (single ``generate`` mode)."""
+
+    design_specs: dict[str, dict[str, Any]] = Field(
+        description=(
+            "Named design specifications; each value is a dict of RFD3-native "
+            "parameters. Common keys: 'input' (target structure filename, must match "
+            "an input_structures file), 'contig' (which residues to keep vs design — "
+            "chain+range keeps input e.g. 'A1-10', a bare integer/range designs new "
+            "e.g. '120-130', '/0' is a chain break), 'length' (e.g. '100' or '80-120'), "
+            "the 'select_*' fields (select_fixed_atoms, select_unfixed_sequence, "
+            "select_buried, select_exposed, select_hbond_donor, select_hbond_acceptor, "
+            "select_hotspots — each accepts a bool, a contig string, or a "
+            "{residue_id: atom_names} dict; atom keywords BKBN/ALL/TIP), "
+            "'symmetry' ({'id': 'C3'} — C/D groups), "
+            "'partial_t' (noise Å, 5-15), 'ligand', 'unindex', 'infer_ori_strategy' "
+            "('com'|'hotspots'), 'is_non_loopy'. See the tool notes for use-case recipes."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.PRIMARY, order=0),
+    )
+    input_structures: list[Path] = Field(
+        default_factory=list,
+        description=(
+            "PDB/mmCIF files referenced by design_specs 'input' values. Each is copied "
+            "into the workspace and its 'input' path is rewritten to a container path."
+        ),
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=1),
+    )
+    n_batches: int = Field(
+        default=1,
+        description="Number of independent design batches per specification.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
     )
 
 

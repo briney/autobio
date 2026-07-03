@@ -8,16 +8,14 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.structure_design import (
-    StructureDesignInput,
-    StructureDesignOutput,
-)
+from autobio.schemas.structure_design import RFD3Input, StructureDesignOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
-from autobio.tools.rfd3 import RFD3Runner
+from autobio.tools.rfd3 import RFD3_TOOL, RFD3Runner
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,14 +31,26 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> RFD3Runner:
-    """Create an RFD3Runner with mocked ContainerManager and GPUManager."""
+def _make_runner(config: AutobioConfig) -> RFD3Runner:
+    """Create an RFD3Runner with mocked ContainerManager/GPUManager and current_mode set.
+
+    ``current_mode`` is set directly (rather than via ``run()``) so that
+    ``prepare_workspace`` — which calls ``_apply_extra`` — can be exercised
+    in isolation.
+    """
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return RFD3Runner("rfd3", config)
+        runner = RFD3Runner("rfd3", config)
+    runner.current_mode = get_tool("rfd3").modes["generate"]
+    return runner
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> RFD3Runner:
+    """Create an RFD3Runner with mocked ContainerManager and GPUManager."""
+    return _make_runner(config)
 
 
 @pytest.fixture()
@@ -71,7 +81,7 @@ class TestRFD3PrepareWorkspace:
         self, runner: RFD3Runner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[sample_pdb],
             design_specs={"binder": {"input": str(sample_pdb), "contig": "40-80"}},
         )
@@ -86,7 +96,7 @@ class TestRFD3PrepareWorkspace:
         self, runner: RFD3Runner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[sample_pdb],
             design_specs={"test": {"input": str(sample_pdb), "length": "50"}},
         )
@@ -101,7 +111,7 @@ class TestRFD3PrepareWorkspace:
     ) -> None:
         """'input' values in specs are rewritten to container-internal paths."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[sample_pdb],
             design_specs={"test": {"input": str(sample_pdb), "length": "50"}},
         )
@@ -112,7 +122,7 @@ class TestRFD3PrepareWorkspace:
 
     def test_n_batches_in_config(self, runner: RFD3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={"test": {"length": "50"}},
             n_batches=3,
         )
@@ -123,7 +133,7 @@ class TestRFD3PrepareWorkspace:
 
     def test_out_dir_set(self, runner: RFD3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={"test": {"length": "50"}},
         )
         runner.prepare_workspace(input_data, workspace)
@@ -134,7 +144,7 @@ class TestRFD3PrepareWorkspace:
     def test_extra_dict_merged(self, runner: RFD3Runner, tmp_path: Path) -> None:
         """Extra dict keys appear at the top level of config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={"test": {"length": "50"}},
             extra={"step_scale": 3.0, "gamma_0": 0.2, "low_memory_mode": True},
         )
@@ -148,7 +158,7 @@ class TestRFD3PrepareWorkspace:
     def test_multiple_specs(self, runner: RFD3Runner, tmp_path: Path, sample_pdb: Path) -> None:
         """Multiple named specs are preserved in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[sample_pdb],
             design_specs={
                 "binder_a": {"input": str(sample_pdb), "contig": "40-80,/0,A1-50"},
@@ -167,7 +177,7 @@ class TestRFD3PrepareWorkspace:
     ) -> None:
         """Unconditioned design requires no input structures."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={"uncond": {"length": "100", "is_non_loopy": True}},
         )
         runner.prepare_workspace(input_data, workspace)
@@ -181,7 +191,7 @@ class TestRFD3PrepareWorkspace:
         """prepare_workspace deep-copies specs; original input_data is unchanged."""
         workspace = Workspace.create(tmp_path / "ws")
         original_path = str(sample_pdb)
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[sample_pdb],
             design_specs={"test": {"input": original_path, "length": "50"}},
         )
@@ -189,6 +199,43 @@ class TestRFD3PrepareWorkspace:
 
         # Original input_data should still reference host path
         assert input_data.design_specs["test"]["input"] == original_path
+
+    def test_config_full_dict_equality_minimal(self, runner: RFD3Runner, tmp_path: Path) -> None:
+        """Full config.json dict is byte-compat with the pre-migration output (minimal input)."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = RFD3Input(design_specs={"uncond": {"length": "100"}})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "design_specs": {"uncond": {"length": "100"}},
+            "n_batches": 1,
+            "out_dir": "/workspace/outputs/raw",
+        }
+
+    def test_config_full_dict_equality_with_overrides(
+        self, runner: RFD3Runner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Full config.json dict with a rewritten input path, n_batches, and extra CLI knobs."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = RFD3Input(
+            input_structures=[sample_pdb],
+            design_specs={"binder": {"input": str(sample_pdb), "contig": "40-80"}},
+            n_batches=2,
+            extra={"step_scale": 3.0, "gamma_0": 0.2},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "design_specs": {
+                "binder": {"input": "/workspace/inputs/target.pdb", "contig": "40-80"}
+            },
+            "n_batches": 2,
+            "out_dir": "/workspace/outputs/raw",
+            "step_scale": 3.0,
+            "gamma_0": 0.2,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +248,7 @@ class TestRFD3HostValidation:
 
     def test_empty_design_specs_raises(self, runner: RFD3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(design_specs={})
+        input_data = RFD3Input(design_specs={})
         with pytest.raises(AutobioError, match="at least one specification"):
             runner.prepare_workspace(input_data, workspace)
 
@@ -210,13 +257,13 @@ class TestRFD3HostValidation:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError, match="valid dictionary"):
-            StructureDesignInput(
+            RFD3Input(
                 design_specs={"bad": "not a dict"},  # type: ignore[dict-item]
             )
 
     def test_n_batches_zero_raises(self, runner: RFD3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={"test": {"length": "50"}},
             n_batches=0,
         )
@@ -225,7 +272,7 @@ class TestRFD3HostValidation:
 
     def test_negative_n_batches_raises(self, runner: RFD3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={"test": {"length": "50"}},
             n_batches=-1,
         )
@@ -235,7 +282,7 @@ class TestRFD3HostValidation:
     def test_missing_input_file_raises(self, runner: RFD3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         nonexistent = tmp_path / "nonexistent.pdb"
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[nonexistent],
             design_specs={"test": {"input": str(nonexistent), "length": "50"}},
         )
@@ -245,11 +292,40 @@ class TestRFD3HostValidation:
     def test_unreferenced_spec_input_raises(self, runner: RFD3Runner, tmp_path: Path) -> None:
         """Spec references a file not in input_structures."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[],  # no files provided
             design_specs={"test": {"input": "/some/file.pdb", "length": "50"}},
         )
         with pytest.raises(AutobioError, match="no matching file"):
+            runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestRFD3ExtraShadowRejection
+# ---------------------------------------------------------------------------
+
+
+class TestRFD3ExtraShadowRejection:
+    """Promoted keys must not be accepted via extra — _apply_extra rejects them."""
+
+    def test_n_batches_via_extra_rejected(self, runner: RFD3Runner, tmp_path: Path) -> None:
+        """n_batches is a typed field — passing it via extra collides."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = RFD3Input(
+            design_specs={"test": {"length": "50"}},
+            extra={"n_batches": 5},
+        )
+        with pytest.raises(AutobioError, match="collide"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_out_dir_via_extra_rejected(self, runner: RFD3Runner, tmp_path: Path) -> None:
+        """out_dir is a runner-derived config key — passing it via extra collides."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = RFD3Input(
+            design_specs={"test": {"length": "50"}},
+            extra={"out_dir": "/workspace/outputs/other"},
+        )
+        with pytest.raises(AutobioError, match="collide"):
             runner.prepare_workspace(input_data, workspace)
 
 
@@ -381,16 +457,24 @@ class TestRFD3ParseOutput:
 
 
 class TestRFD3Registration:
-    """Tests for tool and runner registration."""
+    """Tests for catalog Tool and runner registration."""
 
-    def test_rfd3_in_registry(self) -> None:
-        assert "rfd3" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["rfd3"]
-        assert entry.category == ToolCategory.STRUCTURE_DESIGN
-        assert entry.input_schema is StructureDesignInput
-        assert entry.output_schema is StructureDesignOutput
-        assert entry.requires_gpu is True
-        assert entry.gpu_count == 1
+    def test_rfd3_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert "rfd3" in CATALOG
+        assert set(get_tool("rfd3").modes) == {"generate"}
+        assert get_tool("rfd3").default_mode == "generate"
+        assert get_tool("rfd3").category == ToolCategory.STRUCTURE_DESIGN
+        assert get_tool("rfd3").requires_gpu is True
+        assert get_tool("rfd3").gpu_count == 1
+        assert "rfd3" not in TOOL_REGISTRY
+
+    def test_rfd3_tool_constant_registered(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert RFD3_TOOL.name == "rfd3"
+        assert get_tool("rfd3") is RFD3_TOOL
 
     def test_tool_runner_registered(self) -> None:
         assert "rfd3" in TOOL_RUNNERS
@@ -406,24 +490,24 @@ class TestRFD3Registration:
         assert r.tool_name == "rfd3"
 
     def test_notes_populated(self) -> None:
-        entry = TOOL_REGISTRY["rfd3"]
-        assert len(entry.notes) > 0
-        # Notes should cover key operational topics
-        all_notes = " ".join(entry.notes).lower()
-        assert "designability" in all_notes or "diversity" in all_notes
-
-    def test_input_format_populated(self) -> None:
-        entry = TOOL_REGISTRY["rfd3"]
-        assert len(entry.input_format) > 0
-        # Input format should cover contig syntax and select fields
-        all_fmt = " ".join(entry.input_format).lower()
-        assert "contig" in all_fmt
-        assert "select" in all_fmt
+        """Notes contain key operational topics for agent guidance."""
+        notes = " ".join(get_tool("rfd3").modes["generate"].notes)
+        assert "designability" in notes.lower() or "diversity" in notes.lower()
 
     def test_default_timeout(self) -> None:
-        entry = TOOL_REGISTRY["rfd3"]
-        assert entry.default_timeout == 3600
+        assert get_tool("rfd3").modes["generate"].default_timeout == 3600
 
     def test_supports_batch(self) -> None:
-        entry = TOOL_REGISTRY["rfd3"]
-        assert entry.supports_batch is True
+        assert get_tool("rfd3").modes["generate"].supports_batch is True
+
+
+def test_info_snapshot_rfd3() -> None:
+    import autobio.tools  # noqa: F401 - importing populates the catalog
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("rfd3"), OutputFormat.JSON))
+    assert parsed["modes"][0]["name"] == "generate"
+    props = parsed["modes"][0]["input_schema"]["properties"]
+    assert props["design_specs"]["x-autobio"]["widget"] == "textarea"
+    assert "output_schema" in parsed["modes"][0]
+    assert parsed["modes"][0]["notes"]
