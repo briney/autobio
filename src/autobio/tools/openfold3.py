@@ -300,8 +300,8 @@ _OPENFOLD3_NOTES = (
     "To disable, set the 'use_msa_server' field to false. To use a private "
     "ColabFold server, set extra['msa_server_url'] to the server URL. "
     "For high-throughput screening, provide pre-computed MSAs via the "
-    "'msa_paths' field (list of file paths, filenames should start with the "
-    "chain ID, e.g., 'A.a3m'). Requires 'use_msa_server' set to false — "
+    "'msa_paths' field (list of file paths; each filename stem must equal the "
+    "target chain ID, e.g., 'A.a3m' → chain 'A'). Requires 'use_msa_server' set to false — "
     "OpenFold3's ColabFold step overwrites precomputed MSAs when the server "
     "is enabled.",
     # Template options
