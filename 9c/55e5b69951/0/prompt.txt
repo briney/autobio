@@ -1743,3 +1743,73 @@ None. Byte-compat holds, dispatch is on `self.current_mode.name`, the collapse i
 **Reasoning:** Byte-compat config.json (keys and order) is preserved per mode for both tools with strong equality+order tests; dispatch, the `_apply_extra` hardening, the `TOOL_RUNNERS` collapse, the untouched `ScoringInput`/`StructureDesignInput`, and the `mutations` contract key are all correct, and the migration cleanly frees `StructureDesignInput` for teardown. The only findings are cosmetic/deferred minors (a dropped test annotation, stale "variant" comments, an inaccurate but pre-existing noqa reason) — none block merge.</result>
 <usage><subagent_tokens>113951</subagent_tokens><tool_uses>8</tool_uses><duration_ms>206132</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>aef7e20fe2ed19e4a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/aef7e20fe2ed19e4a.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix _run_e2e type annotation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** Complete. Type annotation added to `_run_e2e` `input_data` parameter in test file.
+
+**Commit:** `c981757 test: restore _run_e2e input_data type annotation (evoef2)`
+
+**Tests:** 40 passed (all passing).
+
+**Checks:** mypy clean, ruff clean.</result>
+<usage><subagent_tokens>31325</subagent_tokens><tool_uses>7</tool_uses><duration_ms>23703</duration_ms></usage>
+</task-notification>
+
+---
+
+PR merged and branch deleted. go ahead with the two-class consolidation
+
+---
+
+<task-notification>
+<task-id>a8b335fcff37529e2</task-id>
+<tool-use-id>toolu_01EiU4sNsMgKqP88NUEHJt5R</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a8b335fcff37529e2.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: esm_if1 two-class consolidation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Fact sheet written to `/home/briney/git/autobio/.superpowers/sdd/recon/esm_if1.md`.
+
+Summary:
+- **Different categories per mode**: design=`INVERSE_FOLDING` (Tool primary), score=`SCORING` — requires a `Mode.category` override on the score mode; genuinely cross-category, not just cosmetic.
+- **Same image_tag** for both modes (`esm-if1:1.0.0`) — no per-mode image override needed, unlike rosetta.
+- **Per-mode timeouts differ** and must stay per-mode: design=600s, score=300s.
+- **Per-mode schemas**: design uses `InverseFoldingInput`/`InverseFoldingOutput`, score uses `ScoringInput`/`ScoringOutput` — recommend reusing these shared classes directly (no new `ESMIF1DesignInput`/`ESMIF1ScoreInput` subclasses needed, since every field is already consumed as-is); note these schemas are NOT freed by this consolidation alone since `antifold.py` still uses the identical four classes.
+- **`extra` handling**: both classes currently do unfiltered `config.update(input_data.extra)` — must switch to `self._apply_extra(config, input_data)` per spec §3.4, which also requires adding a collision-rejection unit test per mode (none exists today).
+- **Key consolidation risk**: output-schema/parse_output divergence is total (different result-JSON top-level keys, different item models, different wrapper types) — the merged runner should dispatch with a simple `if/else` on `self.current_mode.name` (à la FreeSASA's two-branch shape) rather than forcing a Rosetta-style shared config table; also both classes currently have zero host-side validation (no file-existence/PDB-suffix/sequences-required checks), which is a gap worth optionally closing to match sibling tools (rosetta/freesasa) during the same change. Container side (`validate_config.sh`/`run_esm_if1.py`) already keys on `mode ∈ {design, score}` — no key-name translation needed, and `containers/` should not be touched.</result>
+<usage><subagent_tokens>109821</subagent_tokens><tool_uses>27</tool_uses><duration_ms>197668</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a43f465f484adea4d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a43f465f484adea4d.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: antifold two-class consolidation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Fact sheet written to `/home/briney/git/autobio/.superpowers/sdd/recon/antifold.md`.
+
+Summary:
+- **Categories DIFFER by mode**: design=`INVERSE_FOLDING`, score=`SCORING` — genuine cross-category Tool, first real consumer of the already-existing `Mode.category` override (rosetta/freesasa exemplars don't use it).
+- **Image tag SAME** for both modes: `antifold:1.0.0`, dispatched via internal `mode` config key; no per-mode `image_tag` override needed.
+- **Timeouts DIFFER**: design=600s, score=300s.
+- **Input/output schemas DIFFER per mode**: design uses generic `InverseFoldingInput`→`InverseFoldingOutput`, score uses generic `ScoringInput`→`ScoringOutput` — these two base schemas are shared with the still-flat `esm_if1` and must NOT be mutated (per existing plan directives); antifold is the first already-migrated-exemplar case with true output-schema variance across modes (rosetta/freesasa only vary input, not output).
+- **Antibody-input specifics**: no `SequenceSet`/FASTA involved at all — the sequence data is structure-derived; antibody identity (`heavy_chain`/`light_chain`/`antigen_chain`) and CDR/FW `regions` targeting live entirely in `extra` today, validated only by a runner-level "at least one chain" check (exact error message asserted by tests). Whether to promote these to typed fields is an open design decision, flagged with a concrete proposed shape (`AntiFoldBaseInput`/`AntiFoldDesignInput`/`AntiFoldScoreInput`) but not decided here.
+- **`extra` handling is currently unfiltered** (`config.update(input_data.extra)`, no collision checking) — must adopt `ToolRunner._apply_extra`, as explicitly mandated by the refactor-design spec.
+- **Key consolidation risk**: merging two classes/two output types into one `parse_output` requires widening its return type to `BaseOutput`, plus deciding the antibody typed-field question before finalizing the config-key/`_apply_extra` interaction — both tests (`tests/unit/test_antifold.py`, 567 lines) and integration tests (`tests/integration/test_antifold_integration.py`) hard-reference the two flat names/classes and need full restructuring.</result>
+<usage><subagent_tokens>115791</subagent_tokens><tool_uses>28</tool_uses><duration_ms>215510</duration_ms></usage>
+</task-notification>
+
+---
+
+continue
