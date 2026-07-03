@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "badb399d2d87",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4c-chai-openfold3",
+  "checkpoints_count": 7,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ba/db399d2d87/0/metadata.json",
+      "transcript": "/ba/db399d2d87/0/full.jsonl",
+      "compact_transcript": "/ba/db399d2d87/0/transcript.jsonl",
+      "content_hash": "/ba/db399d2d87/0/content_hash.txt",
+      "prompt": "/ba/db399d2d87/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12371,
+    "cache_creation_tokens": 558091,
+    "cache_read_tokens": 52355653,
+    "output_tokens": 322755,
+    "api_call_count": 170
+  }
+}
