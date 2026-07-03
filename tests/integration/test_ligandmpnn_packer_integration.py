@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -59,13 +59,11 @@ class TestLigandMPNNBuildMutant:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Build a single-point mutant of barnase and verify packed output."""
-        input_data = ScoringInput(
+        input_data = LigandMPNNPackerInput(
             structure_path=rcsb_1brs,
-            extra={
-                "mutations": ["AA11G"],
-                "num_packs": 2,
-                "num_denoising_steps": 2,
-            },
+            mutations=["AA11G"],
+            num_packs=2,
+            num_denoising_steps=2,
         )
         runner = get_runner("ligandmpnn_build_mutant", autobio_config)
         output = runner.run(input_data, output_dir=tmp_path / "ws")
@@ -89,13 +87,11 @@ class TestLigandMPNNBuildMutant:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Build a double mutant."""
-        input_data = ScoringInput(
+        input_data = LigandMPNNPackerInput(
             structure_path=rcsb_1brs,
-            extra={
-                "mutations": ["AA11G", "KA19A"],
-                "num_packs": 1,
-                "num_denoising_steps": 2,
-            },
+            mutations=["AA11G", "KA19A"],
+            num_packs=1,
+            num_denoising_steps=2,
         )
         runner = get_runner("ligandmpnn_build_mutant", autobio_config)
         output = runner.run(input_data, output_dir=tmp_path / "ws")
@@ -112,13 +108,11 @@ class TestLigandMPNNBuildMutant:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Verify per-residue scores are populated."""
-        input_data = ScoringInput(
+        input_data = LigandMPNNPackerInput(
             structure_path=rcsb_1brs,
-            extra={
-                "mutations": ["AA11G"],
-                "num_packs": 1,
-                "num_denoising_steps": 2,
-            },
+            mutations=["AA11G"],
+            num_packs=1,
+            num_denoising_steps=2,
         )
         runner = get_runner("ligandmpnn_build_mutant", autobio_config)
         output = runner.run(input_data, output_dir=tmp_path / "ws")

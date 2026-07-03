@@ -22,10 +22,11 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
-from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.scoring import LigandMPNNPackerInput, ScoredStructure, ScoringOutput
 from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
@@ -50,18 +51,6 @@ _MUTATION_FORMAT_HELP = (
     "chain ID letter, residue number, single-letter amino acid code for mutant."
 )
 
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset({"mutations"})
-
-# ---------------------------------------------------------------------------
-# Default packing parameters
-# ---------------------------------------------------------------------------
-
-_DEFAULT_NUM_PACKS = 4
-_DEFAULT_NUM_DENOISING_STEPS = 3
-_DEFAULT_NUM_SAMPLES = 16
-
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -79,7 +68,7 @@ class LigandMPNNPackerRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
+        assert isinstance(input_data, LigandMPNNPackerInput)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
@@ -90,28 +79,20 @@ class LigandMPNNPackerRunner(ToolRunner):
         shutil.copy2(src_path, workspace.inputs_dir / dest_name)
         container_structure_path = f"/workspace/inputs/{dest_name}"
 
-        # -- Extract mutations (consumed key) --------------------------------
-        mutations: list[str] = input_data.extra["mutations"]
-
         # -- Build config.json ----------------------------------------------
         config: dict[str, Any] = {
             "structure_path": container_structure_path,
-            "mutations": mutations,
+            "mutations": input_data.mutations,
             "checkpoint_sc": _CHECKPOINT_SC,
             "checkpoint_bb": _CHECKPOINT_BB,
-            "num_packs": input_data.extra.get("num_packs", _DEFAULT_NUM_PACKS),
-            "num_denoising_steps": input_data.extra.get(
-                "num_denoising_steps", _DEFAULT_NUM_DENOISING_STEPS
-            ),
-            "num_samples": input_data.extra.get("num_samples", _DEFAULT_NUM_SAMPLES),
-            "repack_everything": input_data.extra.get("repack_everything", True),
-            "pack_with_ligand_context": input_data.extra.get("pack_with_ligand_context", True),
+            "num_packs": input_data.num_packs,
+            "num_denoising_steps": input_data.num_denoising_steps,
+            "num_samples": input_data.num_samples,
+            "repack_everything": input_data.repack_everything,
+            "pack_with_ligand_context": input_data.pack_with_ligand_context,
         }
 
-        # Flat-merge remaining extra keys
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS and key not in config:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -147,7 +128,7 @@ class LigandMPNNPackerRunner(ToolRunner):
 
     # -- Private helpers ----------------------------------------------------
 
-    def _validate_inputs(self, input_data: ScoringInput) -> None:
+    def _validate_inputs(self, input_data: LigandMPNNPackerInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
@@ -159,16 +140,10 @@ class LigandMPNNPackerRunner(ToolRunner):
                 "Convert mmCIF/other formats to PDB before using this tool."
             )
 
-        mutations = input_data.extra.get("mutations")
+        mutations = input_data.mutations
         if not mutations:
             raise AutobioError(
-                f"Tool {self.tool_name!r} requires 'mutations' in the extra dict. "
-                f"{_MUTATION_FORMAT_HELP}"
-            )
-        if not isinstance(mutations, list) or not all(isinstance(m, str) for m in mutations):
-            raise AutobioError(
-                f"'mutations' must be a list of strings, got {type(mutations).__name__}. "
-                f"{_MUTATION_FORMAT_HELP}"
+                f"LigandMPNN packer requires at least one mutation. {_MUTATION_FORMAT_HELP}"
             )
         for m in mutations:
             if not _MUTATION_RE.match(m):
@@ -186,16 +161,15 @@ def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Pa
 
 
 # ---------------------------------------------------------------------------
-# Registry entry
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _NOTES = (
     "Builds mutant protein structures using LigandMPNN's neural network "
     "sidechain packing model, which predicts chi1–chi4 torsion angles as "
     "mixtures of von Mises distributions. Produces full-atom PDB structures.",
-    "Mutations are specified as a list of strings in extra['mutations']. "
-    "Format: 'EA63Q' means chain E, Ala-63 -> Gln. Multiple mutations "
-    "are applied simultaneously.",
+    "Mutations are specified as a list of strings. Format: 'EA63Q' means "
+    "chain E, Ala-63 -> Gln. Multiple mutations are applied simultaneously.",
     "Scores are chi-angle log-probabilities from the packing model "
     "(higher = more confident). These are NOT energy scores like EvoEF2.",
     "The packer is ligand-aware: if the input PDB contains bound ligands "
@@ -205,34 +179,34 @@ _NOTES = (
     "but may benefit from downstream energy minimization for accuracy.",
 )
 
-_INPUT_FORMAT = (
-    "Provide a PDB file via structure_path. Required: extra['mutations'] "
-    "as a list of strings (e.g., ['EA63Q', 'KB42A']). "
-    "Optional: extra['num_packs'] (int, default 4), "
-    "extra['num_denoising_steps'] (int, default 3), "
-    "extra['num_samples'] (int, default 16), "
-    "extra['repack_everything'] (bool, default True), "
-    "extra['pack_with_ligand_context'] (bool, default True), "
-    "extra['seed'] (int, optional).",
-)
-
-TOOL_REGISTRY["ligandmpnn_build_mutant"] = ToolEntry(
-    image_tag="ligandmpnn-packer:1.0.0",
+LIGANDMPNN_PACKER_TOOL = Tool(
+    name="ligandmpnn_build_mutant",
+    display_name="LigandMPNN Build Mutant",
     category=ToolCategory.SCORING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
     description=(
-        "Build mutant protein structures by introducing amino acid "
-        "substitutions and repacking sidechains with LigandMPNN's "
-        "neural network sidechain packing model. Predicts chi angles "
-        "as mixtures of von Mises distributions, producing full-atom "
+        "Build mutant protein structures by introducing amino acid substitutions and "
+        "repacking sidechains with LigandMPNN's neural-network sidechain packing model. "
+        "Predicts chi angles as mixtures of von Mises distributions, producing full-atom "
         "PDB structures with confidence scores."
     ),
     version="1.0.0",
-    notes=_NOTES,
-    input_format=_INPUT_FORMAT,
+    image_tag="ligandmpnn-packer:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="build_mutant",
+    modes={
+        "build_mutant": Mode(
+            name="build_mutant",
+            display_name="Build mutant",
+            description="Introduce mutations and repack sidechains into full-atom structures.",
+            input_schema=LigandMPNNPackerInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            notes=_NOTES,
+        )
+    },
+    keywords=("ligandmpnn", "mutant", "sidechain packing", "repack", "mutation"),
 )
+"""Catalog Tool for the LigandMPNN sidechain packer."""
+
+register(LIGANDMPNN_PACKER_TOOL)

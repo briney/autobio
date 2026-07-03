@@ -7,6 +7,7 @@ from pathlib import Path  # noqa: TC003 - Pydantic needs at runtime
 from pydantic import BaseModel, Field
 
 from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.hints import Tier, Widget, ui
 
 
 class InverseFoldingInput(BaseInput):
@@ -60,4 +61,37 @@ class InverseFoldingOutput(BaseOutput):
     native_sequence: dict[str, str] | None = Field(
         default=None,
         description="Native sequence extracted from the input structure, per chain.",
+    )
+
+
+class MPNNInput(BaseInput):
+    """Input for ProteinMPNN / LigandMPNN inverse folding (single ``design`` mode)."""
+
+    structure_path: Path = Field(
+        description="Path to the input backbone structure (PDB or mmCIF).",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=0),
+    )
+    num_sequences: int = Field(
+        default=1,
+        description="Number of designed sequences to generate.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.PRIMARY, order=1),
+    )
+    chains_to_design: list[str] | None = Field(
+        default=None,
+        description="Chain IDs to redesign. None designs all chains.",
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=2),
+    )
+    temperature: float = Field(
+        default=0.1,
+        description="Sampling temperature. Lower values produce more conserved designs.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, step=0.05, order=10),
+    )
+    fixed_positions: dict[str, list[int]] | None = Field(
+        default=None,
+        description=(
+            "Positions to keep fixed (not redesigned), as a mapping of chain ID to "
+            "1-based residue indices. Mutually exclusive with chains_to_design "
+            "(fixed_positions takes precedence)."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=11),
     )

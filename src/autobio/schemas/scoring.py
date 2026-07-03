@@ -158,6 +158,50 @@ class StaBddGInput(BaseInput):
     )
 
 
+class LigandMPNNPackerInput(BaseInput):
+    """Input for LigandMPNN sidechain-packing mutant building (single ``build_mutant`` mode)."""
+
+    structure_path: Path = Field(
+        description="Path to the input PDB structure.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=0),
+    )
+    mutations: list[str] = Field(
+        description=(
+            "Mutations to introduce, format [WT_AA][ChainID][Resnum][Mut_AA] "
+            "(e.g. ['EA63Q', 'KB42A']); applied simultaneously."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=1),
+    )
+    num_packs: int = Field(
+        default=4,
+        ge=1,
+        description="Number of packed structures to produce.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    num_denoising_steps: int = Field(
+        default=3,
+        ge=1,
+        description="Denoising steps during sidechain packing.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=11),
+    )
+    num_samples: int = Field(
+        default=16,
+        ge=1,
+        description="Samples drawn per pack.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=12),
+    )
+    repack_everything: bool = Field(
+        default=True,
+        description="Repack all sidechains (not only mutated residues).",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=13),
+    )
+    pack_with_ligand_context: bool = Field(
+        default=True,
+        description="Use bound ligands (HETATM) as context during packing.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=14),
+    )
+
+
 class ScoredStructure(BaseModel):
     """Scoring results for a single structure."""
 
