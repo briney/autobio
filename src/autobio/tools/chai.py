@@ -5,13 +5,12 @@ glycans.  It supports restraints (contact, pocket) and covalent bonds via a
 CSV constraint file, which is particularly useful for antibody-antigen
 complexes with known epitopes and glycosylated proteins.
 
-Simple protein predictions use the ``sequences`` dict on
-``StructurePredictionInput``.  For multi-entity predictions (DNA, RNA, ligands)
-agents specify ``extra["entity_types"]``.  For full control, provide a raw
-FASTA via ``extra["chai_fasta"]``.
+Simple protein predictions use the ``sequences`` dict on ``Chai1Input``. For
+multi-entity predictions (DNA, RNA, ligands) agents specify ``entity_types``.
+For full control, provide a raw FASTA via ``chai_fasta``.
 
 CLI-level args (``num_trunk_recycles``, ``num_diffn_timesteps``, etc.) are
-passed through the ``extra`` dict on ``StructurePredictionInput``.
+passed through the ``extra`` dict on ``Chai1Input``.
 """
 
 from __future__ import annotations
@@ -19,15 +18,16 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.structure_prediction import (
+    Chai1Input,
     ConfidenceMetrics,
     PredictedStructure,
-    StructurePredictionInput,
     StructurePredictionOutput,
 )
 from autobio.tools.base import ToolRunner
@@ -44,17 +44,6 @@ _CHAI_DOWNLOADS_DIR = "/app/chai/downloads"
 # Valid entity type strings for Chai-1 FASTA headers.
 _VALID_ENTITY_TYPES = frozenset({"protein", "dna", "rna", "ligand"})
 
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json as CLI args.
-_CONSUMED_EXTRA_KEYS = frozenset(
-    {
-        "entity_types",
-        "constraints",
-        "msa_directory",
-        "chai_fasta",
-    }
-)
-
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -64,30 +53,27 @@ class ChaiRunner(ToolRunner):
     """Runner for Chai-1 multi-modal structure prediction.
 
     ``prepare_workspace`` generates a FASTA input file from the standardised
-    ``StructurePredictionInput`` fields and writes ``config.json``.
-    ``parse_output`` reads the standardised ``result_data.json`` produced by
-    the container's ``standardize.py``.
+    ``Chai1Input`` fields and writes ``config.json``. ``parse_output`` reads
+    the standardised ``result_data.json`` produced by the container's
+    ``standardize.py``.
     """
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json, FASTA input, and constraint files to the workspace."""
-        assert isinstance(input_data, StructurePredictionInput)
+        assert isinstance(input_data, Chai1Input)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
 
         # -- Generate or pass through FASTA input ---------------------------
-        if input_data.extra.get("chai_fasta"):
-            fasta_content = input_data.extra["chai_fasta"]
-        else:
-            fasta_content = self._build_fasta(input_data)
+        fasta_content = input_data.chai_fasta or self._build_fasta(input_data)
 
         workspace.write_input_file("input.fasta", fasta_content.encode())
 
         # -- Copy constraint file into workspace ----------------------------
         constraint_path_config = None
-        if "constraints" in input_data.extra:
-            constraints = input_data.extra["constraints"]
+        constraints = input_data.constraints
+        if constraints:
             if "\n" in constraints or "," in constraints:
                 # CSV content — write directly
                 workspace.write_input_file("restraints.csv", constraints.encode())
@@ -98,7 +84,7 @@ class ChaiRunner(ToolRunner):
 
         # -- Copy MSA directory into workspace ------------------------------
         msa_dir_config = None
-        msa_directory = input_data.extra.get("msa_directory")
+        msa_directory = input_data.msa_directory
         if msa_directory:
             msa_dest = workspace.inputs_dir / "msa"
             shutil.copytree(msa_directory, msa_dest)
@@ -114,8 +100,8 @@ class ChaiRunner(ToolRunner):
             "fasta_path": "/workspace/inputs/input.fasta",
             "output_dir": "/workspace/outputs/raw",
             "downloads_dir": _CHAI_DOWNLOADS_DIR,
-            "use_msa_server": True,
-            "use_esm_embeddings": False,
+            "use_msa_server": input_data.use_msa_server,
+            "use_esm_embeddings": input_data.use_esm_embeddings,
         }
 
         # Map num_models → num_diffn_samples (always set — Chai-1 defaults to 5)
@@ -127,11 +113,8 @@ class ChaiRunner(ToolRunner):
         if msa_dir_config:
             config["msa_directory"] = msa_dir_config
 
-        # Flat-merge extra dict for inference params (excluding consumed keys).
-        # This allows extra["use_msa_server"] = False to override the default.
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        # Flat-merge extra dict for remaining CLI-level args.
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -169,12 +152,12 @@ class ChaiRunner(ToolRunner):
         )
 
     @staticmethod
-    def _build_fasta(input_data: StructurePredictionInput) -> str:
+    def _build_fasta(input_data: Chai1Input) -> str:
         """Generate a Chai-1 FASTA string from structured input fields.
 
         Each entry in ``sequences`` becomes a FASTA record with an entity-type
         header.  The default entity type is ``protein``; override per-chain via
-        ``extra["entity_types"]``.
+        ``entity_types``.
 
         Entity type values can be:
         - A string: ``"protein"``, ``"dna"``, ``"rna"``, ``"ligand"``
@@ -183,7 +166,7 @@ class ChaiRunner(ToolRunner):
         For ligands specified as the string ``"ligand"``, the sequence value in
         the ``sequences`` dict is used as the SMILES string.
         """
-        entity_types: dict[str, object] = input_data.extra.get("entity_types", {})
+        entity_types: dict[str, Any] = input_data.entity_types
         lines: list[str] = []
 
         # Sort by chain ID so Chai-1's alphabetical chain assignment aligns
@@ -228,13 +211,13 @@ class ChaiRunner(ToolRunner):
         return workspace.root / relative
 
     @staticmethod
-    def _validate_inputs(input_data: StructurePredictionInput) -> None:
+    def _validate_inputs(input_data: Chai1Input) -> None:
         """Host-side validation — catch errors before container launch."""
-        has_chai_fasta = "chai_fasta" in input_data.extra
+        has_chai_fasta = bool(input_data.chai_fasta)
 
         if not has_chai_fasta and not input_data.sequences:
             raise AutobioError(
-                "sequences must be non-empty, or provide a raw FASTA via extra['chai_fasta']."
+                "sequences must be non-empty, or provide a raw FASTA via the chai_fasta field."
             )
 
         # Validate template files exist
@@ -244,7 +227,7 @@ class ChaiRunner(ToolRunner):
                     raise AutobioError(f"Template file does not exist: {tmpl_path}")
 
         # Validate constraint file exists (if path, not CSV content)
-        constraints = input_data.extra.get("constraints")
+        constraints = input_data.constraints
         if (
             constraints
             and "\n" not in constraints
@@ -254,12 +237,12 @@ class ChaiRunner(ToolRunner):
             raise AutobioError(f"Constraint file does not exist: {constraints}")
 
         # Validate MSA directory exists
-        msa_directory = input_data.extra.get("msa_directory")
+        msa_directory = input_data.msa_directory
         if msa_directory and not Path(msa_directory).is_dir():
             raise AutobioError(f"MSA directory does not exist: {msa_directory}")
 
         # Validate entity_types keys match sequences
-        entity_types = input_data.extra.get("entity_types", {})
+        entity_types = input_data.entity_types
         if entity_types and not has_chai_fasta:
             unknown_chains = set(entity_types) - set(input_data.sequences)
             if unknown_chains:
@@ -290,75 +273,19 @@ class ChaiRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
-
-_CHAI_INPUT_FORMAT = (
-    # FASTA format overview
-    "Chai-1 takes a multi-entity FASTA file as primary input. Each record has "
-    "a header specifying entity type and chain name, followed by the sequence. "
-    "Header format: >entity_type|name=chain_id where entity_type is one of: "
-    "protein, dna, rna, ligand. Via the autobio API, each entry in the "
-    "sequences dict becomes a FASTA entity (default type 'protein'). To "
-    "specify other entity types, use extra['entity_types'] mapping chain IDs "
-    "to types: {'B': 'dna', 'C': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}}.",
-    # Entity examples
-    "FASTA entity examples — "
-    "Protein: >protein|name=A\\nMKLLVVFLFL... "
-    "DNA: >dna|name=B\\nATCGATCG... "
-    "RNA: >rna|name=C\\nAUCGAUCG... "
-    "Ligand (SMILES): >ligand|name=D\\nCC(=O)NC1=CC=C(O)C=C1. "
-    "Via the API, ligands are specified in entity_types using either the "
-    "string 'ligand' (sequence value used as SMILES) or a dict with a "
-    "'smiles' key: {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}.",
-    # Modified residues
-    "Modified residues use parenthesised CCD codes inline in the protein "
-    "sequence: e.g., 'AAA(SEP)AAA' for phosphoserine, 'MK(TPO)LL(SEP)VV' "
-    "for multiple modifications. Chai-1 resolves these against the Chemical "
-    "Component Dictionary.",
-    # Glycans
-    "Glycans are specified as ligand entities using CCD codes. Single sugar: "
-    ">ligand|name=B\\nNAG. Multi-ring with bond notation: "
-    ">ligand|name=B\\nNAG(4-1 NAG(4-1 BMA(3-1 MAN)(6-1 MAN))). "
-    "Bond notation uses ATOM_NUMBER-ATOM_NUMBER between sugar units. Glycans "
-    "must be connected to a protein via a covalent bond in the restraints CSV.",
-    # Restraints CSV format
-    "Restraints and covalent bonds use a CSV file (provide via "
-    "extra['constraints'] as CSV content string or file path). Columns: "
-    "chainA, res_idxA, chainB, res_idxB, connection_type, confidence, "
-    "min_distance_angstrom, max_distance_angstrom, comment, restraint_id. "
-    "Three connection types: "
-    "'contact' — residue-to-residue distance restraint: "
-    "A,C387,B,Y101,contact,1.0,0.0,5.5,interface contact,r1. "
-    "'pocket' — any residue to a target residue (leave res_idxA empty): "
-    "A,,B,Y101,pocket,1.0,0.0,8.0,binding pocket,r2. "
-    "'covalent' — atom-level bond using RESIDUE@ATOM notation: "
-    "A,N437@N,B,@C1,covalent,1.0,0.0,0.0,glycan bond,r3. "
-    "For covalent bonds, protein residues use NUMBER@ATOM (e.g., N437@N), "
-    "ligands use @ATOM (e.g., @C1). Chain IDs are assigned alphabetically "
-    "by FASTA entity order.",
-    # Complete example
-    "Complete example — protein-ligand FASTA:\\n"
-    ">protein|name=A\\n"
-    "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQQIAATG\\n"
-    ">ligand|name=B\\n"
-    "CC(=O)NC1=CC=C(O)C=C1",
-    # Raw override
-    "For full control over the native FASTA format, provide the complete "
-    "FASTA content via extra['chai_fasta'] (as a string). This bypasses "
-    "automatic FASTA generation from the sequences dict.",
-)
 
 _CHAI_NOTES = (
     # MSA options
     "MSA generation via ColabFold's MMSeqs2 server is ENABLED BY DEFAULT "
     "(use_msa_server=true). This avoids needing >1TB of local sequence "
     "databases but requires network access from the container. To disable, "
-    "set 'use_msa_server': false in extra. Alternatively, provide pre-computed "
-    "MSAs via extra['msa_directory'] (path to directory with .aligned.pqt files).",
+    "set the 'use_msa_server' field to false. Alternatively, provide pre-computed "
+    "MSAs via the 'msa_directory' field (path to directory with .aligned.pqt files).",
     # ESM embeddings
     "ESM protein language model embeddings are DISABLED BY DEFAULT "
-    "(use_esm_embeddings=false). Enable via extra['use_esm_embeddings'] = True "
+    "(use_esm_embeddings=false). Enable via the 'use_esm_embeddings' field "
     "for potentially improved predictions at the cost of additional compute.",
     # Key parameters
     "Key extra parameters: 'num_trunk_recycles' (int, default 3), "
@@ -372,20 +299,32 @@ _CHAI_NOTES = (
     "Set extra['low_memory'] = True to reduce peak VRAM usage.",
 )
 
-TOOL_REGISTRY["chai1"] = ToolEntry(
-    image_tag="chai:1.0.0",
+CHAI1_TOOL = Tool(
+    name="chai1",
+    display_name="Chai-1",
     category=ToolCategory.STRUCTURE_PREDICTION,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=StructurePredictionInput,
-    output_schema=StructurePredictionOutput,
-    default_timeout=3600,
-    supports_batch=False,
     description=(
-        "Predict biomolecular structures using Chai-1. Supports proteins, "
-        "DNA, RNA, ligands, and glycans with restraints and covalent bonds."
+        "Predict biomolecular structures using Chai-1. Supports proteins, DNA, RNA, "
+        "ligands, and glycans with restraints and covalent bonds."
     ),
     version="1.0.0",
-    notes=_CHAI_NOTES,
-    input_format=_CHAI_INPUT_FORMAT,
+    image_tag="chai:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="predict",
+    modes={
+        "predict": Mode(
+            name="predict",
+            display_name="Predict structure",
+            description="Predict a biomolecular complex structure.",
+            input_schema=Chai1Input,
+            output_schema=StructurePredictionOutput,
+            default_timeout=3600,
+            notes=_CHAI_NOTES,
+        )
+    },
+    keywords=("chai", "chai1", "structure prediction", "complex", "ligand", "glycan"),
 )
+"""Catalog Tool for Chai-1."""
+
+register(CHAI1_TOOL)
