@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "8852a6f43196",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-teardown-cleanup",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "src/autobio/tools/antibody_lm.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/88/52a6f43196/0/metadata.json",
+      "transcript": "/88/52a6f43196/0/full.jsonl",
+      "compact_transcript": "/88/52a6f43196/0/transcript.jsonl",
+      "content_hash": "/88/52a6f43196/0/content_hash.txt",
+      "prompt": "/88/52a6f43196/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 43343,
+    "cache_creation_tokens": 2376072,
+    "cache_read_tokens": 213181264,
+    "output_tokens": 801890,
+    "api_call_count": 470
+  }
+}
