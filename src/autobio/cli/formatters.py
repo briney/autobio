@@ -228,6 +228,7 @@ def format_tool_info_catalog(tool: Tool, fmt: OutputFormat = OutputFormat.TABLE)
                 "category": (mode.category or tool.category).value,
                 "default_timeout": mode.default_timeout,
                 "supports_batch": mode.supports_batch,
+                "notes": list(mode.notes),
                 "input_schema": mode.input_schema.model_json_schema(),
                 "output_schema": mode.output_schema.model_json_schema(),
             }
@@ -244,6 +245,7 @@ def format_tool_info_catalog(tool: Tool, fmt: OutputFormat = OutputFormat.TABLE)
             "gpu_count": tool.gpu_count,
             "description": tool.description,
             "keywords": list(tool.keywords),
+            "notes": list(tool.notes),
             "default_mode": tool.default_mode,
             "modes": modes,
         }
@@ -262,6 +264,8 @@ def format_tool_info_catalog(tool: Tool, fmt: OutputFormat = OutputFormat.TABLE)
     table.add_row("Description", tool.description)
     if tool.keywords:
         table.add_row("Keywords", ", ".join(tool.keywords))
+    if tool.notes:
+        table.add_row("Notes", "\n".join(f"- {n}" for n in tool.notes))
     table.add_row("Default Mode", tool.default_mode)
     for mode in tool.modes.values():
         category = (mode.category or tool.category).value
@@ -270,6 +274,8 @@ def format_tool_info_catalog(tool: Tool, fmt: OutputFormat = OutputFormat.TABLE)
             f"{mode.display_name} — {mode.description} "
             f"(category={category}, timeout={mode.default_timeout}s)",
         )
+        if mode.notes:
+            table.add_row("", "\n".join(f"- {n}" for n in mode.notes))
     return _render_table(table)
 
 
