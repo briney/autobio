@@ -1,0 +1,88 @@
+PR merged and branch deleted. batching for Plan 4 is confirmed, go ahead
+
+---
+
+<task-notification>
+<task-id>ab94f458e8f2a5eb0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ab94f458e8f2a5eb0.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: baddg, stabddg" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>/home/briney/git/autobio/.superpowers/sdd/recon/scoring.md
+
+Summary of wrinkles:
+- Both tools currently share the fully generic `ScoringInput`/`ScoringOutput`; each needs a per-tool input subclass promoting its `extra` keys to typed fields. `baddg` needs 5 (`mutations: list[str]`, `chains: str`, `n_folds: int=3`, `seed: int=0`, `device: str="auto"`); `stabddg` needs 8 (`mutations`, `chains`, `mc_samples: int=20`, `noise_level: float=0.1`, `batch_size: int=10000`, `trials: int=1`, `seed: int=0`, `device: str="auto"`). Both also inherit an unused `sequences: dict[str,str]|None` field from `ScoringInput` that neither runner ever reads.
+- Both have exactly one structure-path input (`structure_path: Path`, PDB), copied to `workspace.inputs_dir` and referenced in config as `pdb_path`; no other file/sequence inputs.
+- `_validate_inputs` for `mutations` (non-empty list[str]) and `chains` (exactly one `_`) is near-identical copy-pasted code between the two runners — a shared validator/mixin would deduplicate it; these checks are also duplicated in each container's `validate_config.sh`.
+- Output schema (`ScoringOutput`/`ScoredStructure`) is fully generic and adequate as-is for both — no new output fields needed; `structure_path` is always hardcoded `None`, `ddg`==`total_score`, and `score_breakdown` content differs only cosmetically (`fold_values`/`n_folds` for baddg vs `trial_values`/`n_trials` for stabddg).
+- Gaps worth encoding as Pydantic constraints during migration: baddg's `n_folds` has a container-enforced 1–3 range not checked host-side; stabddg's `mc_samples` must be a positive int (container-enforced only); stabddg has zero host-side validation on `mc_samples`/`noise_level`/`batch_size`/`trials`/`seed`/`device`.
+- `config["chains"] = input_data.extra["chains"]` uses direct dict indexing (not `.get`) in both runners, relying on validation having already run — fragile pattern that a typed field would eliminate entirely.</result>
+<usage><subagent_tokens>104364</subagent_tokens><tool_uses>22</tool_uses><duration_ms>129870</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0ec4f72dd6e6332b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a0ec4f72dd6e6332b.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: antipasti, prodigy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The fact sheet is written to `/home/briney/git/autobio/.superpowers/sdd/recon/affinity.md`.
+
+Summary of wrinkles:
+
+- No `ToolCategory` mismatch — both `antipasti` and `prodigy` use `ToolCategory.SCORING`, which is a valid enum member.
+- `prodigy`'s `chain_selection` input field is renamed to `"selection"` in config.json — a silent field-name remap that must be preserved exactly.
+- `prodigy`'s `score_breakdown` output shape is conditional: `contact_list` only appears in the dict when the raw tool output included it (driven by the `contact_list` extra flag) — not a uniform schema.
+- `antipasti`'s `modes` extra key is `str | int` (default `"all"`, or an integer mode count) — not a plain single-type scalar.
+- `antipasti`'s `checkpoint_path` is a hardcoded container-baked constant with no corresponding input field or `extra` key today.
+- Both tools' `structure_path` fields are file/path candidates (PDB/mmCIF); `antigen_chains` is a `list[str]` (not scalar); neither schema has any `SequenceSet`-candidate fields (chain IDs, not sequences) or existing `x-autobio` UI hints.</result>
+<usage><subagent_tokens>103877</subagent_tokens><tool_uses>28</tool_uses><duration_ms>155272</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abf5fd210a24c3bf8</task-id>
+<tool-use-id>toolu_01KWfoCTNZTHrZEmrYJBjNjx</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/abf5fd210a24c3bf8.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: boltz1/boltz2, rfd3" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The fact sheet is written to `/home/briney/git/autobio/.superpowers/sdd/recon/sp-b.md`.
+
+Summary of wrinkles:
+
+- **boltz1 vs boltz2**: They are near-identical today — same runner, same image_tag (`boltz:1.0.0`), same shared `StructurePredictionInput`/`StructurePredictionOutput` (no per-tool subclass exists, unlike ESM's `ESM2Input`), same `config.json` shape and same `_CONSUMED_EXTRA_KEYS`. The *only* wired distinguishing signal is `self.tool_name` feeding a trivial identity dict (`_MODEL_CONFIG = {"boltz1": "boltz1", "boltz2": "boltz2"}`) that sets `config["model"]`. Registry-level differences are just `default_timeout` (3600 vs 7200), `description`, and `notes` (boltz2 documents 3 affinity-only `extra` keys: `sampling_steps_affinity`, `diffusion_samples_affinity`, `method`) — good candidates for a boltz2-only input subclass, mirroring how `ESM2Input` adds `checkpoint`.
+- **rfd3 is mechanically harder than ESM's single-mode pattern** for two reasons: (1) it has **no `_CONSUMED_EXTRA_KEYS`/`_apply_extra` mechanism at all** — `extra` is flat-merged unconditionally (`config.update(input_data.extra)`), so migration must introduce the shadow-rejection pattern from scratch; (2) `design_specs: dict[str, dict[str, Any]]` is a large, genuinely untyped, tool-native mini-language (contig strings, `select_*` fields that accept bool|str|dict, symmetry, ligand codes, etc.) whose real validation lives in the container's bash `validate_config.sh`, not Python — it resists simple typed-field promotion and will likely need to remain an escape-hatch dict.
+- Both `StructurePredictionInput` (boltz) and `StructureDesignInput` (rfd3) currently have **zero `ui()`/`x-autobio` hints**, unlike ESM's schemas — every field needs hints added from scratch.
+- `DesignedStructure.evaluation_metrics` has a dead/aspirational docstring referencing a `mode='generate'` concept that doesn't exist anywhere in `RFD3Runner` — flagged as a design question (single-mode vs. anticipating a future design+evaluate pipeline mode).
+- Boltz's `sequences: dict[str, str]` is a `SequenceSet` candidate but values can be DNA/RNA/SMILES/empty placeholders (not pure protein), so a naive FASTA-based `GenericSequenceSet` normalizer may not fit cleanly — flagged for design review rather than assumed.</result>
+<usage><subagent_tokens>117268</subagent_tokens><tool_uses>27</tool_uses><duration_ms>216779</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae0e1c3b3f070a2b9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/ae0e1c3b3f070a2b9.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: esmfold, chai1, openfold3" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The fact sheet has been written to `/home/briney/git/autobio/.superpowers/sdd/recon/sp-a.md`.
+
+Summary of notable wrinkles:
+
+- **Templates/MSA are host-validated + copied but never wired into config**: chai1 copies template files into `inputs/` and validates their existence, but no config key ever points to them; openfold3 has the same gap for both `templates` and `msa_paths` (chai1's `msa_directory` is at least wired via a config key; openfold3's `msa_paths` is not wired at all).
+- **Raw-override None-value footguns**: chai1's `chai_fasta` uses presence-check in validation but truthiness-check in `prepare_workspace` (empty-`sequences` + `chai_fasta=None` slips through to produce a near-empty FASTA); openfold3's `query_json` is presence-checked consistently but a `None` value gets `json.dumps`'d into the literal string `"null"`, silently discarding any valid `sequences` also provided — a real correctness gap, not just style.
+- **`parse_output` inconsistency**: esmfold requires `data["confidence"]` (KeyError if absent) while chai1/openfold3 default to `data.get("confidence", {})`.
+- **Extra-key clobber risk**: chai1's/openfold3's `num_diffn_samples`/`num_diffusion_samples` (derived from `num_models`) aren't in `_CONSUMED_EXTRA_KEYS`, so a caller could override them via `extra`.
+- **Chain ordering asymmetry**: chai1 sorts chain IDs alphabetically when building its FASTA; openfold3 preserves dict insertion order when building its query JSON.
+- **Extra-key surface area**: esmfold has no `_CONSUMED_EXTRA_KEYS` at all (0 documented extra keys, full flat-merge); chai1 has 4 consumed + 7 documented pass-through keys; openfold3 has 4 consumed + 8 documented pass-through keys — chai1/openfold3 are meaningfully harder to migrate than the plain esm single-mode pattern given the structural (non-scalar) extras (`entity_types`, `constraints`/`query_json`, `msa_directory`/`msa_paths`, `non_canonical_residues`).
+- **Shared boilerplate**: `_resolve_container_path` is copy-pasted verbatim in all three runners — a dedup candidate. Output schema itself shows no variance across the three (all share `StructurePredictionOutput`, and none populate the `affinity_*` fields on `PredictedStructure`).</result>
+<usage><subagent_tokens>152549</subagent_tokens><tool_uses>28</tool_uses><duration_ms>341791</duration_ms></usage>
+</task-notification>
