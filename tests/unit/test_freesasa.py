@@ -116,7 +116,7 @@ def test_extra_shadowing_typed_field_rejected(_pdb: Path, tmp_path: Path) -> Non
     from autobio.schemas.scoring import FreeSASASASAInput
 
     runner = _make_runner("sasa")
-    with pytest.raises(AutobioError, match="shadow typed input fields"):
+    with pytest.raises(AutobioError, match="collide with typed input fields"):
         _written_config(
             runner,
             FreeSASASASAInput(structure_path=_pdb, extra={"probe_radius": 2.0}),

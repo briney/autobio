@@ -192,7 +192,7 @@ def test_extra_shadowing_typed_field_rejected(tmp_path: Path) -> None:
     from autobio.schemas.embedding import ESMEmbedInput
 
     runner = _make_runner("esm1b")
-    with pytest.raises(AutobioError, match="shadow typed input fields"):
+    with pytest.raises(AutobioError, match="collide with typed input fields"):
         _written_config(
             runner, ESMEmbedInput(sequences={"s1": "MKT"}, extra={"layer": 5}), tmp_path
         )

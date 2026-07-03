@@ -129,8 +129,17 @@ def test_apply_extra_rejects_shadowing_typed_field() -> None:
     _register_faketool()
     runner = _make_runner("faketool")
     runner.current_mode = _typed_mode()
-    with pytest.raises(AutobioError, match="shadow typed input fields: alpha_param"):
+    with pytest.raises(AutobioError, match="collide with typed input fields.*alpha_param"):
         runner._apply_extra({}, _TypedInput(extra={"alpha_param": 5}))
+
+
+def test_apply_extra_rejects_derived_config_key_collision() -> None:
+    _register_faketool()
+    runner = _make_runner("faketool")
+    runner.current_mode = _typed_mode()
+    # "output_dir" is NOT a typed field on _TypedInput, but it is already in config.
+    with pytest.raises(AutobioError, match="collide.*output_dir"):
+        runner._apply_extra({"output_dir": "/x"}, _TypedInput(extra={"output_dir": "/y"}))
 
 
 def test_image_and_timeout_use_mode_override() -> None:
