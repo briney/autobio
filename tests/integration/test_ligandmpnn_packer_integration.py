@@ -1,4 +1,4 @@
-"""Integration tests for ligandmpnn_build_mutant (sidechain packing).
+"""Integration tests for the ligandmpnn ``build_mutant`` mode (sidechain packing).
 
 These tests require Docker and a GPU. They download a protein PDB from RCSB,
 run the ligandmpnn-packer container, and verify end-to-end output.
@@ -65,12 +65,12 @@ class TestLigandMPNNBuildMutant:
             num_packs=2,
             num_denoising_steps=2,
         )
-        runner = get_runner("ligandmpnn_build_mutant", autobio_config)
-        output = runner.run(input_data, output_dir=tmp_path / "ws")
+        runner = get_runner("ligandmpnn", autobio_config)
+        output = runner.run(input_data, output_dir=tmp_path / "ws", mode="build_mutant")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 2  # num_packs=2
-        assert output.metadata.tool_name == "ligandmpnn_build_mutant"
+        assert output.metadata.tool_name == "ligandmpnn"
         assert output.metadata.wall_time_seconds > 0
 
         for s in output.scores:
@@ -93,8 +93,8 @@ class TestLigandMPNNBuildMutant:
             num_packs=1,
             num_denoising_steps=2,
         )
-        runner = get_runner("ligandmpnn_build_mutant", autobio_config)
-        output = runner.run(input_data, output_dir=tmp_path / "ws")
+        runner = get_runner("ligandmpnn", autobio_config)
+        output = runner.run(input_data, output_dir=tmp_path / "ws", mode="build_mutant")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
@@ -114,8 +114,8 @@ class TestLigandMPNNBuildMutant:
             num_packs=1,
             num_denoising_steps=2,
         )
-        runner = get_runner("ligandmpnn_build_mutant", autobio_config)
-        output = runner.run(input_data, output_dir=tmp_path / "ws")
+        runner = get_runner("ligandmpnn", autobio_config)
+        output = runner.run(input_data, output_dir=tmp_path / "ws", mode="build_mutant")
 
         s = output.scores[0]
         assert s.per_residue_scores is not None

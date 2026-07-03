@@ -99,6 +99,7 @@ def format_tool_info_catalog(tool: Tool, fmt: OutputFormat = OutputFormat.TABLE)
                 "display_name": mode.display_name,
                 "description": mode.description,
                 "category": (mode.category or tool.category).value,
+                "image_tag": mode.image_tag or tool.image_tag,
                 "default_timeout": mode.default_timeout,
                 "supports_batch": mode.supports_batch,
                 "notes": list(mode.notes),
