@@ -7,6 +7,8 @@ from pathlib import Path  # noqa: TC003 - Pydantic needs at runtime
 from pydantic import BaseModel, Field
 
 from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.hints import Tier, Widget, ui
+from autobio.schemas.sequences import GenericSequenceSet  # noqa: TC001 - needed at runtime
 
 
 class StructurePredictionInput(BaseInput):
@@ -89,4 +91,26 @@ class StructurePredictionOutput(BaseOutput):
     )
     confidence: ConfidenceMetrics = Field(
         description="Summary confidence metrics across all predicted models."
+    )
+
+
+class ESMFoldInput(BaseInput):
+    """Input for ESMFold single-sequence structure prediction (single ``predict`` mode)."""
+
+    sequences: GenericSequenceSet = Field(
+        description=(
+            "A single protein sequence: a dict of id→sequence (one chain), "
+            "FASTA text, or a FASTA file path."
+        ),
+        json_schema_extra=ui(widget=Widget.SEQUENCE, flavor="generic", tier=Tier.PRIMARY, order=0),
+    )
+    num_models: int = Field(
+        default=1,
+        description="Number of models. ESMFold is deterministic; must be 1.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    templates: list[Path] | None = Field(
+        default=None,
+        description="Template structures. ESMFold does not use templates; must be None/empty.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
     )

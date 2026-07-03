@@ -16,13 +16,14 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.structure_prediction import (
     ConfidenceMetrics,
+    ESMFoldInput,
     PredictedStructure,
-    StructurePredictionInput,
     StructurePredictionOutput,
 )
 from autobio.tools.base import ToolRunner
@@ -46,15 +47,16 @@ _MODEL_NAME = "facebook/esmfold_v1"
 class ESMFoldRunner(ToolRunner):
     """Runner for ESMFold single-sequence structure prediction.
 
-    ESMFold uses the ``StructurePredictionInput`` schema but only supports
-    a subset of its features: single-chain sequences, no templates, and
-    ``num_models=1`` (deterministic output). Unsupported inputs are rejected
-    with clear error messages during host-side validation.
+    ESMFold uses the dedicated ``ESMFoldInput`` schema, which only supports
+    a subset of the general structure-prediction feature set: single-chain
+    sequences, no templates, and ``num_models=1`` (deterministic output).
+    Unsupported inputs are rejected with clear error messages during
+    host-side validation.
     """
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and input FASTA into the workspace."""
-        assert isinstance(input_data, StructurePredictionInput)
+        assert isinstance(input_data, ESMFoldInput)
 
         # Host-side validation
         self._validate_inputs(input_data)
@@ -70,8 +72,7 @@ class ESMFoldRunner(ToolRunner):
             "hf_cache": _HF_CACHE,
         }
 
-        # Flat-merge extra dict for tool-specific params
-        config.update(input_data.extra)
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -108,7 +109,7 @@ class ESMFoldRunner(ToolRunner):
         )
 
     @staticmethod
-    def _validate_inputs(input_data: StructurePredictionInput) -> None:
+    def _validate_inputs(input_data: ESMFoldInput) -> None:
         """Host-side validation — catch unsupported inputs before container launch."""
         if not input_data.sequences:
             raise AutobioError("sequences must be non-empty.")
@@ -153,7 +154,7 @@ class ESMFoldRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _ESMFOLD_NOTES = (
@@ -171,26 +172,32 @@ _ESMFOLD_NOTES = (
     "requires 16-24GB GPU memory for medium-length sequences.",
 )
 
-_ESMFOLD_INPUT_FORMAT = (
-    "Input is a single protein sequence. Provide exactly one chain in the "
-    "sequences dict: sequences={'A': 'MVLSPADKTNVKAAWGKVGA...'}.",
-    "Only standard amino acid characters (ACDEFGHIKLMNPQRSTVWY) are accepted.",
-)
-
-TOOL_REGISTRY["esmfold"] = ToolEntry(
-    image_tag="esmfold:1.0.0",
+ESMFOLD_TOOL = Tool(
+    name="esmfold",
+    display_name="ESMFold",
     category=ToolCategory.STRUCTURE_PREDICTION,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=StructurePredictionInput,
-    output_schema=StructurePredictionOutput,
-    default_timeout=600,
-    supports_batch=False,
     description=(
         "Predict protein structure from a single sequence using ESMFold. "
         "No MSA or templates needed — direct sequence-to-structure prediction."
     ),
     version="1.0.0",
-    notes=_ESMFOLD_NOTES,
-    input_format=_ESMFOLD_INPUT_FORMAT,
+    image_tag="esmfold:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="predict",
+    modes={
+        "predict": Mode(
+            name="predict",
+            display_name="Predict structure",
+            description="Predict a single-chain protein structure from sequence.",
+            input_schema=ESMFoldInput,
+            output_schema=StructurePredictionOutput,
+            default_timeout=600,
+            notes=_ESMFOLD_NOTES,
+        )
+    },
+    keywords=("esmfold", "structure prediction", "protein folding", "single sequence"),
 )
+"""Catalog Tool for ESMFold — exposed for tests re-registering after CATALOG-clearing fixtures."""
+
+register(ESMFOLD_TOOL)
