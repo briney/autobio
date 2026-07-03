@@ -63,13 +63,15 @@ class ESMIF1Runner(ToolRunner):
         assert self.current_mode is not None
         mode = self.current_mode.name
 
+        assert isinstance(input_data, (InverseFoldingInput, ScoringInput))
+
+        # Copy structure file into workspace inputs/
+        src_path = input_data.structure_path
+        dest_name = src_path.name
+        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+
         if mode == "design":
             assert isinstance(input_data, InverseFoldingInput)
-
-            # Copy structure file into workspace inputs/
-            src_path = input_data.structure_path
-            dest_name = src_path.name
-            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
 
             # Build config.json for the container
             config: dict[str, object] = {
@@ -84,13 +86,9 @@ class ESMIF1Runner(ToolRunner):
 
             if input_data.fixed_positions is not None:
                 config["fixed_positions"] = input_data.fixed_positions
-        else:  # "score"
+        else:
+            assert self.current_mode.name == "score", self.current_mode.name
             assert isinstance(input_data, ScoringInput)
-
-            # Copy structure file into workspace inputs/
-            src_path = input_data.structure_path
-            dest_name = src_path.name
-            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
 
             # Build config.json for the container
             config = {
@@ -128,6 +126,7 @@ class ESMIF1Runner(ToolRunner):
                 raw_output_path=workspace.raw_output_dir,
             )
 
+        assert self.current_mode.name == "score", self.current_mode.name
         scores = [
             ScoredStructure(
                 total_score=s["total_score"],

@@ -108,17 +108,10 @@ class ComplexaRunner(ToolRunner):
 
         # -- Rewrite "input" paths in design_specs to container paths --------
         specs = copy.deepcopy(input_data.design_specs)
-        for spec_name, spec in specs.items():
+        self._check_input_references(specs, set(filename_map))
+        for spec in specs.values():
             if "input" in spec:
-                original = Path(spec["input"])
-                fname = original.name
-                if fname not in filename_map:
-                    raise AutobioError(
-                        f"Spec {spec_name!r} references input file {spec['input']!r} "
-                        f"(filename: {fname!r}), but no matching file was found in "
-                        f"input_structures. Provided files: "
-                        f"{[p.name for p in input_data.input_structures]}"
-                    )
+                fname = Path(spec["input"]).name
                 spec["input"] = filename_map[fname]
 
         # -- Build config.json -----------------------------------------------
@@ -189,7 +182,18 @@ class ComplexaRunner(ToolRunner):
 
         # Check that every "input" reference in specs maps to a provided file
         provided_names = {p.name for p in input_data.input_structures}
-        for spec_name, spec in input_data.design_specs.items():
+        ComplexaRunner._check_input_references(input_data.design_specs, provided_names)
+
+    @staticmethod
+    def _check_input_references(
+        design_specs: dict[str, dict[str, Any]], provided_names: set[str]
+    ) -> None:
+        """Raise if any ``design_specs[...]["input"]`` filename has no matching file.
+
+        Shared by ``prepare_workspace`` (rewriting paths) and ``_validate_inputs``
+        (pre-flight check) so the check and its error message exist once.
+        """
+        for spec_name, spec in design_specs.items():
             if "input" in spec:
                 fname = Path(spec["input"]).name
                 if fname not in provided_names:

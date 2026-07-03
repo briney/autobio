@@ -41,7 +41,6 @@ if TYPE_CHECKING:
 # Container-internal paths
 # ---------------------------------------------------------------------------
 
-_ROSETTA_BIN = "/app/rosetta/bin"
 _ROSETTA_DB = "/usr/local/lib/python3.8/dist-packages/pyrosetta/database"
 
 # ---------------------------------------------------------------------------
