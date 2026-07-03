@@ -10,7 +10,7 @@ import pytest
 
 from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.structure_prediction import Chai1Input, StructurePredictionOutput
@@ -670,7 +670,6 @@ class TestChaiRegistration:
         assert get_tool("chai1").default_mode == "predict"
         assert get_tool("chai1").category == ToolCategory.STRUCTURE_PREDICTION
         assert get_tool("chai1").requires_gpu is True
-        assert "chai1" not in TOOL_REGISTRY
 
     def test_chai1_tool_constant_registered(self) -> None:
         import autobio.tools  # noqa: F401 - importing populates the catalog

@@ -46,7 +46,6 @@ def _written_config(runner: FreeSASARunner, input_data, tmp_path: Path) -> dict:
 def test_freesasa_registered_as_tool_not_flat() -> None:
     import autobio.tools  # noqa: F401
     from autobio.core.catalog import CATALOG
-    from autobio.core.registry import TOOL_REGISTRY
     from autobio.tools import TOOL_RUNNERS
 
     assert "freesasa" in CATALOG
@@ -54,7 +53,6 @@ def test_freesasa_registered_as_tool_not_flat() -> None:
     assert get_tool("freesasa").default_mode == "sasa"
     assert "freesasa" in TOOL_RUNNERS
     assert "freesasa_bsa" not in TOOL_RUNNERS and "freesasa_sasa" not in TOOL_RUNNERS
-    assert "freesasa_bsa" not in TOOL_REGISTRY and "freesasa_sasa" not in TOOL_REGISTRY
 
 
 def test_get_runner_freesasa_resolves_catalog_tool() -> None:

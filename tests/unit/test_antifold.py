@@ -11,7 +11,7 @@ import pytest
 
 from autobio.core.catalog import get_tool, tool_categories
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.inverse_folding import (
@@ -692,12 +692,6 @@ class TestAntiFoldRegistration:
         assert tool.requires_gpu is True
         assert tool.gpu_count == 1
         assert tool.image_tag == "antifold:1.0.0"
-
-    @pytest.mark.parametrize("flat_name", ("antifold", *_OLD_FLAT_NAMES))
-    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
-        assert flat_name not in TOOL_REGISTRY
 
     @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
     def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:

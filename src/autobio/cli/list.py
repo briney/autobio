@@ -6,10 +6,11 @@ from typing import Annotated
 
 import typer
 
-from autobio.cli.formatters import OutputFormat, format_tool_list_merged
+from autobio.cli.formatters import OutputFormat, format_tool_list
 from autobio.core.catalog import list_tools as list_catalog_tools
-from autobio.core.registry import ToolCategory
-from autobio.core.registry import list_tools as list_registry_tools
+from autobio.core.registry import (
+    ToolCategory,  # noqa: TC001 - Typer evaluates annotations at runtime
+)
 
 
 def list_tools_cmd(
@@ -23,6 +24,5 @@ def list_tools_cmd(
     ] = OutputFormat.TABLE,
 ) -> None:
     """List available tools."""
-    flat = list_registry_tools(category=category)
     tools = list_catalog_tools(category=category)
-    typer.echo(format_tool_list_merged(flat, tools, fmt))
+    typer.echo(format_tool_list(tools, fmt))

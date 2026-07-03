@@ -2,8 +2,7 @@
 
 A ``Tool`` is one coherent model or engine (one catalog card). A ``Mode`` is a
 named use of a Tool (a task/operation) that owns its own resolved input/output
-schemas and execution metadata. This module is the additive successor to
-``core.registry``; the flat ``TOOL_REGISTRY`` is removed once all tools migrate.
+schemas and execution metadata.
 """
 
 from __future__ import annotations

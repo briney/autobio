@@ -396,12 +396,10 @@ class TestProdigyRegistration:
     def test_registered_as_catalog_tool(self) -> None:
         import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
-        from autobio.core.registry import TOOL_REGISTRY
 
         assert "prodigy" in CATALOG
         assert set(get_tool("prodigy").modes) == {"predict"}
         assert get_tool("prodigy").default_mode == "predict"
-        assert "prodigy" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
         assert "prodigy" in TOOL_RUNNERS

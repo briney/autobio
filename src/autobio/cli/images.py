@@ -11,7 +11,6 @@ from autobio.cli.formatters import OutputFormat, format_image_list, print_error
 from autobio.core import catalog
 from autobio.core.config import AutobioConfig
 from autobio.core.container import ContainerManager
-from autobio.core.registry import TOOL_REGISTRY, get_tool
 from autobio.core.result import ContainerNotFoundError
 
 _console = Console()
@@ -55,14 +54,12 @@ def pull_cmd(
     manager = ContainerManager(config)
 
     if all_tools:
-        if not TOOL_REGISTRY and not catalog.CATALOG:
+        if not catalog.CATALOG:
             typer.echo("No tools registered.")
             return
         # Map uri -> representative tool name, so shared images (e.g. esm1b
         # and esm2 both resolving to esm:1.0.0) are pulled exactly once.
         uris: dict[str, str] = {}
-        for name, entry in TOOL_REGISTRY.items():
-            uris.setdefault(f"{config.image_prefix}{entry.image_tag}", name)
         for name, cat_tool in catalog.CATALOG.items():
             for uri in _catalog_image_uris(cat_tool, config):
                 uris.setdefault(uri, name)
@@ -80,13 +77,7 @@ def pull_cmd(
             _pull_with_status(manager, tool, uri)
         return
 
-    if tool in TOOL_REGISTRY:
-        entry = get_tool(tool)
-        uri = f"{config.image_prefix}{entry.image_tag}"
-        _pull_with_status(manager, tool, uri)
-        return
-
-    available = ", ".join(sorted(set(catalog.CATALOG) | set(TOOL_REGISTRY))) or "(none)"
+    available = ", ".join(sorted(catalog.CATALOG)) or "(none)"
     print_error(f"Unknown tool {tool!r}. Available tools: {available}")
     raise typer.Exit(code=1)
 

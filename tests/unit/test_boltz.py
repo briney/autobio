@@ -11,7 +11,7 @@ import yaml
 
 from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.structure_prediction import BoltzInput, StructurePredictionOutput
@@ -700,7 +700,6 @@ class TestBoltzRegistration:
         assert set(get_tool("boltz1").modes) == {"predict"}
         assert get_tool("boltz1").default_mode == "predict"
         assert get_tool("boltz1").category == ToolCategory.STRUCTURE_PREDICTION
-        assert "boltz1" not in TOOL_REGISTRY
 
     def test_boltz2_registered_as_catalog_tool(self) -> None:
         import autobio.tools  # noqa: F401 - importing populates the catalog
@@ -709,7 +708,6 @@ class TestBoltzRegistration:
         assert set(get_tool("boltz2").modes) == {"predict"}
         assert get_tool("boltz2").default_mode == "predict"
         assert get_tool("boltz2").category == ToolCategory.STRUCTURE_PREDICTION
-        assert "boltz2" not in TOOL_REGISTRY
         assert "affinity" in get_tool("boltz2").description.lower()
 
     def test_both_share_image_tag(self) -> None:

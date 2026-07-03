@@ -10,7 +10,7 @@ import pytest
 
 from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.inverse_folding import InverseFoldingOutput, MPNNInput
@@ -430,7 +430,6 @@ class TestMPNNRegistration:
         assert set(tool.modes) == {"design"}
         assert tool.modes["design"].input_schema is MPNNInput
         assert tool.modes["design"].output_schema is InverseFoldingOutput
-        assert "proteinmpnn" not in TOOL_REGISTRY
 
     def test_ligandmpnn_registered_as_catalog_tool(self) -> None:
         import autobio.tools  # noqa: F401
@@ -441,7 +440,6 @@ class TestMPNNRegistration:
         assert tool.category == ToolCategory.INVERSE_FOLDING
         assert set(tool.modes) == {"design"}
         assert tool.description.lower().count("ligand") >= 1
-        assert "ligandmpnn" not in TOOL_REGISTRY
 
     def test_both_share_image_tag(self) -> None:
         assert get_tool("proteinmpnn").image_tag == get_tool("ligandmpnn").image_tag

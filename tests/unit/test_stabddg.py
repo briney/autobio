@@ -426,12 +426,10 @@ class TestStaBddGRegistration:
     def test_registered_as_catalog_tool(self) -> None:
         import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
-        from autobio.core.registry import TOOL_REGISTRY
 
         assert "stabddg" in CATALOG
         assert set(get_tool("stabddg").modes) == {"predict"}
         assert get_tool("stabddg").default_mode == "predict"
-        assert "stabddg" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
         assert "stabddg" in TOOL_RUNNERS
