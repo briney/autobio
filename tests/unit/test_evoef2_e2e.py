@@ -25,6 +25,7 @@ from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.scoring import (
+    EvoEF2BaseInput,
     EvoEF2BindingInput,
     EvoEF2BuildMutantInput,
     EvoEF2RepairInput,
@@ -147,7 +148,7 @@ def _import_standardize():
 def _run_e2e(
     mode_name: str,
     config: AutobioConfig,
-    input_data,
+    input_data: EvoEF2BaseInput,
     raw_files: dict[str, str],
     tmp_path: Path,
     log_files: dict[str, str] | None = None,
