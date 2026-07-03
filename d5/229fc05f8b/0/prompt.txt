@@ -1318,3 +1318,79 @@ None.
 **Reasoning:** The migration is correct, byte-compat is preserved and rigorously pinned by full-dict tests, `_apply_extra` is adopted correctly with production wiring confirmed, and all plan invariants hold — the only blocker is a trivial 3-line dead-constant deletion (a plan-instruction artifact); the test-discrimination point is a defer-able minor.</result>
 <usage><subagent_tokens>93019</subagent_tokens><tool_uses>9</tool_uses><duration_ms>201865</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a5b0362eec62272cc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a5b0362eec62272cc.output</output-file>
+<status>completed</status>
+<summary>Agent "Remove dead _DEFAULT_ constants" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** Complete. Dead constants removed from `src/autobio/tools/ligandmpnn_packer.py`.
+
+**Commit:** `93b8f9b` — ligandmpnn_build_mutant: remove dead _DEFAULT_* constants (values live on the schema)
+
+**Grep confirm:** Zero matches after deletion (re-grep: 0 results).
+
+**Tests:** 1399 passed, mypy clean, ruff OK.
+
+**Concerns:** None — values now live exclusively on `LigandMPNNPackerInput` schema defaults; no drift hazard.</result>
+<usage><subagent_tokens>22935</subagent_tokens><tool_uses>15</tool_uses><duration_ms>57869</duration_ms></usage>
+</task-notification>
+
+---
+
+PR merged and branch deleted. Switch back to main and go ahead with the multi-mode engines
+
+---
+
+<task-notification>
+<task-id>aa2513af8791da93a</task-id>
+<tool-use-id>toolu_012vtKkSi2bswpotKB2o7zpJ</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/aa2513af8791da93a.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: evoef2 multi-mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Fact sheet written to `/home/briney/git/autobio/.superpowers/sdd/recon/evoef2.md`.
+
+Summary: `evoef2` becomes one catalog Tool with modes `repair`, `binding`, `build_mutant`, all sharing image `evoef2:1.0.0` and `default_timeout=600` (no per-mode timeout differences exist today). Modes have genuinely disjoint typed-field needs, so recommend per-mode input subclasses (freesasa style) over one shared schema: `repair` needs only `structure_path`; `binding` needs `structure_path` + optional `repair: bool` + optional `split_chains: str` (comma-format validated); `build_mutant` needs `structure_path` + required `mutations: list[str]` (regex-validated, same pattern already used by the migrated `baddg`/`ligandmpnn_packer` tools). Key wrinkles: the `mutations` config.json key is consumed by the container's `standardize.py` (not just the host runner) so its name/shape must stay byte-compatible; `out_dir` config key looks dead/unread by container scripts; two mutation-related `AutobioError`s become redundant once `mutations` is a required typed field (Pydantic takes over); `split_chains` validation currently dispatches on a literal tool-name string rather than `_VARIANT_CONFIG`, an inconsistency to unify under mode-name dispatch. Tests (`test_evoef2_e2e.py`, `test_evoef2_integration.py`) use per-flat-name test classes, not parametrization, and will need `current_mode`-setting updates plus a new `test_evoef2_migration.py` mirroring `test_freesasa.py`'s coverage.</result>
+<usage><subagent_tokens>90564</subagent_tokens><tool_uses>21</tool_uses><duration_ms>172255</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7aefbdf6a64f5214</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a7aefbdf6a64f5214.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: rosetta multi-mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Fact sheet written to `/home/briney/git/autobio/.superpowers/sdd/recon/rosetta.md`.
+
+Key decisions surfaced:
+
+- **Per-mode `image_tag` confirmed and load-bearing**: each mode is a genuinely separate Docker image (`rosetta-score/relax/minimize/flexddg:1.0.0`, all thin layers on shared `autobio-rosetta-base:3.15`), with an existing test (`test_each_tool_has_unique_image_tag`) explicitly asserting 4 distinct tags — must map to `Mode.image_tag` overrides.
+- **Per-mode input subclasses recommended, but scoped tighter than freesasa**: score/relax/minimize are structurally near-identical (only `nstruct` default differs) and can share one base input; only `flexddg` needs a distinct subclass with typed `mutations`, `chains_to_move`, `resfile`, and (recommended) `backrub_trials`/`max_minimization_iter`.
+- **Only `flexddg` needs `mutations`/`chains_to_move`** — currently host-required via `extra`; the `rosetta_ddg_monomer` variant that would also need mutations exists as an orphaned container (unwired, out of scope).
+- **`RunMetadata.mode` is genuinely needed here** — today `tool_name` (e.g. `"rosetta_flexddg"`) is the only mode signal; collapsing to one `"rosetta"` tool name loses that unless a `mode` field is added to `RunMetadata`, which matters more for Rosetta than freesasa given wildly different per-mode timeouts/costs (600s–14400s).
+- Also flagged: dead `sequences` field, unfiltered `_CONSUMED_EXTRA_KEYS` merge (should switch to `_apply_extra`), a vestigial tool-name-specific validation branch, and the `out_dir` vs. `output_dir` naming inconsistency to preserve as-is.</result>
+<usage><subagent_tokens>108715</subagent_tokens><tool_uses>20</tool_uses><duration_ms>199229</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a0d3a7c7b330bc09e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a0d3a7c7b330bc09e.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon: complexa multi-mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The fact sheet is written to `/home/briney/git/autobio/.superpowers/sdd/recon/complexa.md`.
+
+Summary: complexa migrates to one catalog Tool `complexa` with 3 Modes (recommend naming them `protein_binder`/`ligand_binder`/`ame` to match `_VARIANT_CONFIG["variant"]` values, dispatched via `self.current_mode.name`). `_VARIANT_CONFIG`'s `pipeline_config`/`ckpt_name`/`ae_ckpt_name` still need a small per-mode lookup table (no exemplar with &gt;2 modes needing this yet), but `variant` itself collapses into the mode name. Recommend **one shared `ComplexaInput`** (not per-mode subclasses) mirroring `RFD3Input` — all 3 variants share identical top-level fields (`design_specs`, `input_structures`, `n_batches`); differences live only inside the untyped `design_specs` per-spec dict values, so a `design_specs` escape hatch is the right fit (keep it, add `ui()` hints). This is a new `ComplexaInput`, not a reuse of `StructureDesignInput` — and since `StructureDesignInput` has no other production consumers (rfd3 already uses its own `RFD3Input`), it becomes removable in teardown (but `DesignedStructure`/`StructureDesignOutput` stay shared/live). All 3 variants currently share `default_timeout=43200` uniformly with no per-mode differentiation evident anywhere in code/tests/notes.</result>
+<usage><subagent_tokens>116230</subagent_tokens><tool_uses>19</tool_uses><duration_ms>202844</duration_ms></usage>
+</task-notification>
