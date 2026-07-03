@@ -159,8 +159,8 @@ class TestAntiBERTa2PLL:
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
-        runner = get_runner("antiberta2_pll", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("antiberta2", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="pll")
 
         assert isinstance(output, AntibodyPLLOutput)
         assert len(output.scores) == 1
@@ -173,10 +173,10 @@ class TestAntiBERTa2PLL:
     def test_pll_per_position(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
-            extra={"per_position": True},
+            per_position=True,
         )
-        runner = get_runner("antiberta2_pll", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("antiberta2", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="pll")
 
         score = output.scores[0]
         assert score.per_position_pll is not None

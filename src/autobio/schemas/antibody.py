@@ -60,6 +60,11 @@ class AntibodyInput(BaseInput):
             enum_labels={"mean": "Mean pool", "cls": "CLS token", "per_residue": "Per-residue"},
         ),
     )
+    per_position: bool = Field(
+        default=False,
+        description="Return per-position PLL scores (pll mode only). Slower.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=11),
+    )
 
 
 class SequencePLL(BaseModel):
@@ -73,9 +78,7 @@ class SequencePLL(BaseModel):
     )
     per_position_pll: list[float] | None = Field(
         default=None,
-        description=(
-            "Per-residue log-probabilities. Only populated when extra['per_position'] is True."
-        ),
+        description=("Per-residue log-probabilities. Only populated when per_position is True."),
     )
     sequence_length: int = Field(
         description="Total number of non-special tokens scored.",

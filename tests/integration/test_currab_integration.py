@@ -154,8 +154,8 @@ class TestCurrAbPLL:
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
-        runner = get_runner("currab_pll", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("currab", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="pll")
 
         assert isinstance(output, AntibodyPLLOutput)
         assert len(output.scores) == 1
@@ -168,10 +168,10 @@ class TestCurrAbPLL:
     def test_pll_per_position(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
-            extra={"per_position": True},
+            per_position=True,
         )
-        runner = get_runner("currab_pll", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("currab", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="pll")
 
         score = output.scores[0]
         assert score.per_position_pll is not None
@@ -228,8 +228,8 @@ class TestFtEsmPLL:
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
-        runner = get_runner("ft_esm_pll", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("ft_esm", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="pll")
 
         assert isinstance(output, AntibodyPLLOutput)
         score = output.scores[0]
@@ -279,8 +279,8 @@ class TestBalmPairedPLL:
                 )
             ],
         )
-        runner = get_runner("balm_paired_pll", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("balm_paired", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="pll")
 
         assert isinstance(output, AntibodyPLLOutput)
         score = output.scores[0]
@@ -328,8 +328,8 @@ class TestBalmUnpairedPLL:
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
-        runner = get_runner("balm_unpaired_pll", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("balm_unpaired", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="pll")
 
         assert isinstance(output, AntibodyPLLOutput)
         score = output.scores[0]
