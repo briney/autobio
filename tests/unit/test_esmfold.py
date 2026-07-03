@@ -10,7 +10,7 @@ import pytest
 
 from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.structure_prediction import ESMFoldInput, StructurePredictionOutput
@@ -298,7 +298,6 @@ class TestESMFoldRegistration:
         assert set(get_tool("esmfold").modes) == {"predict"}
         assert get_tool("esmfold").default_mode == "predict"
         assert get_tool("esmfold").category == ToolCategory.STRUCTURE_PREDICTION
-        assert "esmfold" not in TOOL_REGISTRY
 
     def test_supports_batch_false(self) -> None:
         assert get_tool("esmfold").modes["predict"].supports_batch is False

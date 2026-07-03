@@ -38,11 +38,9 @@ def _written_config(runner: ESMRunner, input_data, tmp_path: Path) -> dict:
 def test_esm_registered_as_single_mode_tools() -> None:
     import autobio.tools  # noqa: F401
     from autobio.core.catalog import CATALOG
-    from autobio.core.registry import TOOL_REGISTRY
 
     assert "esm1b" in CATALOG and "esm2" in CATALOG
     assert set(get_tool("esm1b").modes) == {"embed"}
-    assert "esm1b" not in TOOL_REGISTRY and "esm2" not in TOOL_REGISTRY
 
 
 def test_esm1b_config_model_name(tmp_path: Path) -> None:

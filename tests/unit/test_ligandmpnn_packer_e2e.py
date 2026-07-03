@@ -20,7 +20,6 @@ import pytest
 
 from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
@@ -577,7 +576,6 @@ class TestRegistration:
         assert tool.gpu_count == 1
         assert set(tool.modes) == {"build_mutant"}
         assert tool.default_mode == "build_mutant"
-        assert "ligandmpnn_build_mutant" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
         assert "ligandmpnn_build_mutant" in TOOL_RUNNERS

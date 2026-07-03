@@ -437,12 +437,10 @@ class TestAntipastiRegistration:
     def test_registered_as_catalog_tool(self) -> None:
         import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
-        from autobio.core.registry import TOOL_REGISTRY
 
         assert "antipasti" in CATALOG
         assert set(get_tool("antipasti").modes) == {"predict"}
         assert get_tool("antipasti").default_mode == "predict"
-        assert "antipasti" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
         assert "antipasti" in TOOL_RUNNERS

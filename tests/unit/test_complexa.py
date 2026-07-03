@@ -10,7 +10,7 @@ import pytest
 
 from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.structure_design import ComplexaInput, StructureDesignOutput
@@ -20,10 +20,8 @@ from autobio.tools.complexa import ComplexaRunner
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Pre-migration flat TOOL_REGISTRY names (all 3 must be gone).
-_OLD_FLAT_NAMES = ("complexa", "complexa_ligand", "complexa_ame")
 # TOOL_RUNNERS keys retired by the collapse ("complexa" itself is reused,
-# now dispatching via Modes instead of a flat ToolEntry).
+# now dispatching via Modes instead of a flat per-name entry).
 _RETIRED_RUNNER_KEYS = ("complexa_ligand", "complexa_ame")
 
 _MODE_NAMES = ("protein_binder", "ligand_binder", "ame")
@@ -667,12 +665,6 @@ class TestComplexaRegistration:
         assert tool.category == ToolCategory.STRUCTURE_DESIGN
         assert tool.requires_gpu is True
         assert tool.gpu_count == 1
-
-    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
-    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
-        assert flat_name not in TOOL_REGISTRY
 
     @pytest.mark.parametrize("flat_name", _RETIRED_RUNNER_KEYS)
     def test_retired_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:

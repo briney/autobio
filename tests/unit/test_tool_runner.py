@@ -65,7 +65,7 @@ _MOCK_MODE_NAME = "default"
 
 
 def _make_mock_tool(*, requires_gpu: bool = True, gpu_count: int = 1) -> Tool:
-    """Build a mock catalog Tool with a single mode, mirroring the old ToolEntry fixture."""
+    """Build a mock catalog Tool with a single mode for testing."""
     return Tool(
         name=_MOCK_TOOL_NAME,
         display_name="Mock Tool",

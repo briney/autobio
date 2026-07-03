@@ -11,7 +11,7 @@ import pytest
 
 from autobio.core.catalog import get_tool, list_tools, tool_categories
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.antibody import AntibodyInput, AntibodyPLLOutput, AntibodySequence
@@ -35,7 +35,7 @@ _IMAGE_TAGS = {
 
 # The 6 legacy "*_pll" flat tool names — fully removed by the migration. The 6
 # base model names (currab, ft_esm, ...) persist as catalog Tool names, so they
-# are checked separately (absent from TOOL_REGISTRY, present in CATALOG/TOOL_RUNNERS).
+# are checked separately (present in CATALOG/TOOL_RUNNERS).
 _OLD_PLL_FLAT_NAMES = (
     "currab_pll",
     "ft_esm_pll",
@@ -800,23 +800,11 @@ class TestAntibodyLMRegistration:
         assert mode.image_tag is None
 
     @pytest.mark.parametrize("model_name", _MODEL_NAMES)
-    def test_old_base_names_absent_from_tool_registry(self, model_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
-        assert model_name not in TOOL_REGISTRY
-
-    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
     def test_base_names_in_tool_runners(self, model_name: str) -> None:
         import autobio.tools  # noqa: F401
 
         assert model_name in TOOL_RUNNERS
         assert TOOL_RUNNERS[model_name] is AntibodyLMRunner
-
-    @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
-    def test_old_pll_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
-        assert flat_name not in TOOL_REGISTRY
 
     @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
     def test_old_pll_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:

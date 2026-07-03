@@ -5,7 +5,7 @@ from __future__ import annotations
 from autobio.core.config import AutobioConfig
 from autobio.core.container import ContainerManager, ImageInfo
 from autobio.core.gpu import GPUManager
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry, get_tool, list_tools
+from autobio.core.registry import ToolCategory
 from autobio.core.result import (
     AutobioError,
     ContainerNotFoundError,
@@ -27,12 +27,8 @@ __all__ = [
     "GPUNotAvailableError",
     "ImageInfo",
     "RunResult",
-    "TOOL_REGISTRY",
     "ToolCategory",
-    "ToolEntry",
     "ToolExecutionError",
     "ToolTimeoutError",
     "Workspace",
-    "get_tool",
-    "list_tools",
 ]

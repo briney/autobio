@@ -21,7 +21,7 @@ import pytest
 
 from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.scoring import (
@@ -646,12 +646,6 @@ class TestEvoEF2Registration:
         assert tool.category == ToolCategory.SCORING
         assert tool.requires_gpu is False
         assert tool.gpu_count == 0
-
-    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
-    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
-        assert flat_name not in TOOL_REGISTRY
 
     @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
     def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
