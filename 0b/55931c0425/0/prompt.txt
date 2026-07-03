@@ -1980,3 +1980,7 @@ No Critical or Important issues found. (Known-deferred items — README flat-nam
 **Reasoning:** The branch meets every binding constraint — byte-for-byte config compat per mode (verified against pre-branch source + key-order tests), correct cross-category wiring, faithful two-class consolidation, `_apply_extra` adoption with reachable rejection, and full class/flat-name removal — with ruff, mypy, and the non-docker suite all green; only cosmetic minors remain.</result>
 <usage><subagent_tokens>108559</subagent_tokens><tool_uses>13</tool_uses><duration_ms>161620</duration_ms></usage>
 </task-notification>
+
+---
+
+PR merged and branch deleted. go ahead with the output-variance migrations
