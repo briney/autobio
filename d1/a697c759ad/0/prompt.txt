@@ -2400,3 +2400,48 @@ None found — Critical, Important, and Minor all empty.
 **Reasoning:** Every named risk in the brief was independently re-verified against the actual repo state (not just the diff/report), including live Python import checks, the full non-docker/gpu test suite, ruff, and mypy — all green. The diff file matches the actual committed changeset exactly (verified via `git show --stat`). Scope was respected precisely: only the files named in the brief were touched, plus two clearly-justified, logic-free stale-comment fixes that were transparently disclosed. No vestigial test coverage was removed as a side effect, and no real assertions were lost.</result>
 <usage><subagent_tokens>78142</subagent_tokens><tool_uses>24</tool_uses><duration_ms>110948</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a0ace955cf71bd63a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a0ace955cf71bd63a.output</output-file>
+<status>completed</status>
+<summary>Agent "Whole-branch final review teardown-core" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All verification complete. Let me summarize my findings.
+
+## Review: Tools→Modes Teardown, Core Legacy-Registry Removal (a0af01a..a25f6ae)
+
+### Verification results (all independently re-run)
+- `grep -rn "TOOL_REGISTRY\|ToolEntry" src/ tests/ --include=*.py` → **zero hits** (exit 1)
+- `python -m pytest -m "not docker and not gpu" -q` → **exit 0** (all dots, no failures)
+- Targeted suite (`test_registry`, `test_tool_runner`, `test_tool_runner_modes`, `test_cli`, `test_formatters`) → **exit 0**
+- `ruff check src/ tests/` → **All checks passed**
+- `mypy src/` → **Success: no issues found in 57 source files**
+- `ToolCategory`: 6 members, importable from both `autobio.core.registry` and `autobio.core`, and `RC is CC` (same object)
+- `catalog.get_tool`/`list_tools` work; 28 tools after `import autobio.tools`
+- `registry.py` AST: only `ToolCategory` remains; imports reduced to `__future__.annotations` + `enum.StrEnum` (no dangling `TYPE_CHECKING`/`dataclass`/`BaseInput`/`BaseOutput`)
+
+### Strengths
+- **Runner behavior byte-for-byte preserved.** Every removed branch in `base.py` (`self.entry`/`if self.tool is None`) was genuinely dead for catalog tools: the retained bodies of `_image_tag`, `_default_timeout`, `_requires_gpu`, `_gpu_count`, `_tool_version`, `_resolve_mode`, and the `__init__` catalog path are identical to the `self.tool is not None` branches at a0af01a. `self.tool: Tool` is now non-optional; `_resolve_mode → Mode`; `__init__` raises `KeyError` listing CATALOG. The dropped `from None` on the `__init__` raise is inert (no active exception there) — no behavior change.
+- **Legacy fully gone, `ToolCategory` intact.** `catalog.py` docstring updated to drop the "flat TOOL_REGISTRY is removed once all tools migrate" note; `core/__init__.py` trimmed cleanly.
+- **CLI is catalog-only with no fallback.** `format_tool_list_merged`→`format_tool_list(catalog_tools, fmt)`; `list.py` call site updated; `run.py`'s unconditional `get_catalog_tool(tool)` is safe because `get_runner` instantiates the runner, whose `__init__` raises `KeyError` (caught → exit 1) for any non-CATALOG tool before that line is reached. Deleted formatters (`format_tool_list`/`format_tool_info` ToolEntry versions) have **zero remaining callers** (grep confirmed); `format_tool_info_catalog` untouched.
+- **No lost coverage.** All runner/CLI/formatter lifecycle tests were *converted* to mock catalog `Tool`/`Mode` objects (with proper CATALOG snapshot/clear/restore), not dropped — e.g. `test_default_timeout_from_entry`→`test_default_timeout_from_mode` (now also asserts `current_mode.default_timeout == 600`), `test_init_sets_attributes` retargeted to `runner.tool is get_tool(...)`, `test_auto_with_no_gpu_tool` uses `dataclasses.replace`, the `pull --all` cross-Tool dedup test reworked to two catalog Tools. The ~59-test drop is fully attributable to vestigial items: `TestToolEntry`/`TestGetTool`/`TestListTools` (15), `TestFormatToolInfo` for the deleted function (15), `test_registry_disjoint.py` (1), two `test_run_rejects_mode_for_legacy_tool` (2), the parametrized `test_old_*_absent_from_tool_registry` guards, and inline `assert "&lt;name&gt;" not in TOOL_REGISTRY` lines. Spot-checked guard removals (chai/esm/prodigy/freesasa/antipasti) — every containing test retains meaningful CATALOG/modes/runner assertions; **nothing hollowed out**. The parallel `_from_tool_runners`/`_from_catalog` "old-name-absent" tests are retained, so that coverage survives.
+- **Boundary respected.** Only 9 src files changed (`cli/{formatters,images,info,list,run}`, `core/{__init__,catalog,registry}`, `tools/base`); no `containers/`, `README`, `schemas/`, or other tool-runner files touched. Deferred `.md` spec references (PR #21) correctly left alone.
+
+### Issues
+None found (Critical / Important / Minor: all empty).
+
+### Assessment
+Task 1 and Task 2 compose into a clean, catalog-only architecture: the dual-path is gone, the legacy symbols are deleted, `ToolCategory` is preserved, and the test infra was migrated rather than gutted. This is a textbook pure dead-code removal — no half-removed references, no new dead code, every stated constraint satisfied.
+
+**Ready to merge? Yes**
+**Reasoning:** Every plan requirement and cross-cutting check verifies clean (grep zero, full suite/ruff/mypy green, behavior byte-for-byte preserved, coverage converted not lost, boundary intact); no issues at any severity.</result>
+<usage><subagent_tokens>93008</subagent_tokens><tool_uses>28</tool_uses><duration_ms>240775</duration_ms></usage>
+</task-notification>
+
+---
+
+PR merged and branch deleted. go ahead with PR #21. we'll fix the templates/msa bug as soon as PR #21 is finished
