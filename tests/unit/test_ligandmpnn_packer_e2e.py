@@ -18,13 +18,14 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
 from autobio.tools import TOOL_RUNNERS
-from autobio.tools.ligandmpnn_packer import LigandMPNNPackerRunner
+from autobio.tools.ligandmpnn_packer import LIGANDMPNN_PACKER_TOOL, LigandMPNNPackerRunner
 
 # ---------------------------------------------------------------------------
 # Realistic simulated output data
@@ -129,12 +130,14 @@ def complex_pdb(tmp_path: Path) -> Path:
 
 
 def _make_runner(config: AutobioConfig) -> LigandMPNNPackerRunner:
-    """Create a runner with mocked container/GPU."""
+    """Create a runner with mocked container/GPU and current_mode set."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return LigandMPNNPackerRunner("ligandmpnn_build_mutant", config)
+        runner = LigandMPNNPackerRunner("ligandmpnn_build_mutant", config)
+    runner.current_mode = get_tool("ligandmpnn_build_mutant").modes["build_mutant"]
+    return runner
 
 
 def _import_standardize():
@@ -155,9 +158,20 @@ def _import_standardize():
     return mod
 
 
+def _written_config(
+    runner: LigandMPNNPackerRunner, input_data: LigandMPNNPackerInput, tmp_path: Path
+) -> dict:
+    workspace = Workspace.create(tmp_path / "ws")
+    try:
+        runner.prepare_workspace(input_data, workspace)
+        return json.loads(workspace.config_path.read_text())
+    finally:
+        workspace.cleanup()
+
+
 def _run_e2e(
     config: AutobioConfig,
-    input_data: ScoringInput,
+    input_data: LigandMPNNPackerInput,
     raw_files: dict[str, str],
     tmp_path: Path,
 ) -> ScoringOutput:
@@ -206,10 +220,7 @@ class TestPrepareWorkspace:
         """Config.json has all required fields."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q"])
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -224,10 +235,7 @@ class TestPrepareWorkspace:
         """Config.json uses correct defaults for optional parameters."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q"])
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -240,19 +248,17 @@ class TestPrepareWorkspace:
     def test_config_custom_parameters(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
-        """Custom packing parameters are written to config."""
+        """Custom packing parameters are written to config; seed flat-merges from extra."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = LigandMPNNPackerInput(
             structure_path=complex_pdb,
-            extra={
-                "mutations": ["EE63Q"],
-                "num_packs": 8,
-                "num_denoising_steps": 5,
-                "num_samples": 32,
-                "repack_everything": False,
-                "seed": 42,
-            },
+            mutations=["EE63Q"],
+            num_packs=8,
+            num_denoising_steps=5,
+            num_samples=32,
+            repack_everything=False,
+            extra={"seed": 42},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -269,10 +275,7 @@ class TestPrepareWorkspace:
         """Input PDB is copied to workspace inputs dir."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q"])
         runner.prepare_workspace(input_data, workspace)
 
         copied = workspace.inputs_dir / complex_pdb.name
@@ -285,14 +288,89 @@ class TestPrepareWorkspace:
         """Multiple mutations are stored in config."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q", "KK42A"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q", "KK42A"])
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["mutations"] == ["EE63Q", "KK42A"]
+
+    def test_pack_with_ligand_context_passthrough(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """pack_with_ligand_context is written to config."""
+        runner = _make_runner(config)
+        cfg = _written_config(
+            runner,
+            LigandMPNNPackerInput(
+                structure_path=complex_pdb,
+                mutations=["EE63Q"],
+                pack_with_ligand_context=False,
+            ),
+            tmp_path,
+        )
+        assert cfg["pack_with_ligand_context"] is False
+
+
+# ---------------------------------------------------------------------------
+# TestFullConfigEquality — byte-compat full-dict config.json contract
+# ---------------------------------------------------------------------------
+
+
+class TestFullConfigEquality:
+    """Full-dict equality test pinning the exact config.json contract."""
+
+    def test_full_config_byte_compat(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        runner = _make_runner(config)
+        cfg = _written_config(
+            runner,
+            LigandMPNNPackerInput(
+                structure_path=complex_pdb,
+                mutations=["EE63Q", "KK42A"],
+                num_packs=8,
+                num_denoising_steps=5,
+                num_samples=32,
+                repack_everything=False,
+                pack_with_ligand_context=False,
+                extra={"seed": 42},
+            ),
+            tmp_path,
+        )
+        assert cfg == {
+            "structure_path": "/workspace/inputs/complex.pdb",
+            "mutations": ["EE63Q", "KK42A"],
+            "checkpoint_sc": "/app/LigandMPNN/model_params/ligandmpnn_sc_v_32_002_16.pt",
+            "checkpoint_bb": "/app/LigandMPNN/model_params/ligandmpnn_v_32_010_25.pt",
+            "num_packs": 8,
+            "num_denoising_steps": 5,
+            "num_samples": 32,
+            "repack_everything": False,
+            "pack_with_ligand_context": False,
+            "seed": 42,
+        }
+
+    def test_minimal_full_config_byte_compat(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """Minimal input (defaults only, no extra) produces the exact default config."""
+        runner = _make_runner(config)
+        cfg = _written_config(
+            runner,
+            LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q"]),
+            tmp_path,
+        )
+        assert cfg == {
+            "structure_path": "/workspace/inputs/complex.pdb",
+            "mutations": ["EE63Q"],
+            "checkpoint_sc": "/app/LigandMPNN/model_params/ligandmpnn_sc_v_32_002_16.pt",
+            "checkpoint_bb": "/app/LigandMPNN/model_params/ligandmpnn_v_32_010_25.pt",
+            "num_packs": 4,
+            "num_denoising_steps": 3,
+            "num_samples": 16,
+            "repack_everything": True,
+            "pack_with_ligand_context": True,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -307,10 +385,7 @@ class TestParseOutput:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Single packed structure produces correct ScoringOutput."""
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q"])
         output = _run_e2e(
             config,
             input_data,
@@ -334,10 +409,7 @@ class TestParseOutput:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multiple packed structures produce one ScoredStructure each."""
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q"])
         output = _run_e2e(
             config,
             input_data,
@@ -365,10 +437,7 @@ class TestParseOutput:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Per-residue scores are passed through."""
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q"])
         output = _run_e2e(
             config,
             input_data,
@@ -389,10 +458,7 @@ class TestParseOutput:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multiple mutations are echoed in output."""
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EE63Q", "KK42A"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["EE63Q", "KK42A"])
         output = _run_e2e(
             config,
             input_data,
@@ -418,9 +484,8 @@ class TestValidation:
         """Nonexistent input structure raises validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=tmp_path / "nonexistent.pdb",
-            extra={"mutations": ["EA63Q"]},
+        input_data = LigandMPNNPackerInput(
+            structure_path=tmp_path / "nonexistent.pdb", mutations=["EA63Q"]
         )
         with pytest.raises(AutobioError, match="does not exist"):
             runner.prepare_workspace(input_data, workspace)
@@ -431,41 +496,18 @@ class TestValidation:
         cif_path.write_text("data_test\n")
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=cif_path, extra={"mutations": ["EA63Q"]})
+        input_data = LigandMPNNPackerInput(structure_path=cif_path, mutations=["EA63Q"])
         with pytest.raises(AutobioError, match="PDB format"):
-            runner.prepare_workspace(input_data, workspace)
-
-    def test_missing_mutations_fails(
-        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
-    ) -> None:
-        """Missing mutations raises validation error."""
-        runner = _make_runner(config)
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=complex_pdb, extra={})
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_empty_mutations_fails(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
-        """Empty mutations list raises validation error."""
+        """Empty mutations list raises validation error with the accurate message."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=complex_pdb, extra={"mutations": []})
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
-            runner.prepare_workspace(input_data, workspace)
-
-    def test_invalid_mutation_type_fails(
-        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
-    ) -> None:
-        """Non-list mutations raises validation error."""
-        runner = _make_runner(config)
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": "EA63Q"},
-        )
-        with pytest.raises(AutobioError, match="list of strings"):
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=[])
+        with pytest.raises(AutobioError, match="requires at least one mutation"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_mutation_format_fails(
@@ -474,11 +516,45 @@ class TestValidation:
         """Invalid mutation format raises validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["invalid"]},
-        )
+        input_data = LigandMPNNPackerInput(structure_path=complex_pdb, mutations=["invalid"])
         with pytest.raises(AutobioError, match="Invalid mutation format"):
+            runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestExtraShadowRejection
+# ---------------------------------------------------------------------------
+
+
+class TestExtraShadowRejection:
+    """`extra` keys that collide with typed fields or derived config keys raise."""
+
+    @pytest.mark.parametrize("extra_key", ["mutations", "num_packs"])
+    def test_typed_field_collision_rejected(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path, extra_key: str
+    ) -> None:
+        runner = _make_runner(config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = LigandMPNNPackerInput(
+            structure_path=complex_pdb,
+            mutations=["EE63Q"],
+            extra={extra_key: "bogus"},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_derived_config_key_collision_rejected(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """``checkpoint_sc`` is a runner-derived config key, not a typed field."""
+        runner = _make_runner(config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = LigandMPNNPackerInput(
+            structure_path=complex_pdb,
+            mutations=["EE63Q"],
+            extra={"checkpoint_sc": "/other/path.pt"},
+        )
+        with pytest.raises(AutobioError, match="runner-derived config keys"):
             runner.prepare_workspace(input_data, workspace)
 
 
@@ -488,38 +564,68 @@ class TestValidation:
 
 
 class TestRegistration:
-    """Tests for tool registration."""
+    """Tests for catalog Tool and runner registration."""
 
-    def test_in_tool_registry(self) -> None:
-        """Tool is registered in TOOL_REGISTRY."""
-        assert "ligandmpnn_build_mutant" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["ligandmpnn_build_mutant"]
-        assert entry.image_tag == "ligandmpnn-packer:1.0.0"
-        assert entry.category.value == "scoring"
-        assert entry.requires_gpu is True
-        assert entry.gpu_count == 1
+    def test_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.core.catalog import CATALOG
+
+        assert "ligandmpnn_build_mutant" in CATALOG
+        tool = get_tool("ligandmpnn_build_mutant")
+        assert tool.category.value == "scoring"
+        assert tool.requires_gpu is True
+        assert tool.gpu_count == 1
+        assert set(tool.modes) == {"build_mutant"}
+        assert tool.default_mode == "build_mutant"
+        assert "ligandmpnn_build_mutant" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
-        """Tool is registered in TOOL_RUNNERS."""
         assert "ligandmpnn_build_mutant" in TOOL_RUNNERS
         assert TOOL_RUNNERS["ligandmpnn_build_mutant"] is LigandMPNNPackerRunner
 
-    def test_schemas(self) -> None:
-        """Tool uses ScoringInput/ScoringOutput schemas."""
-        from autobio.schemas.scoring import ScoringInput, ScoringOutput
+    def test_schema_types(self) -> None:
+        from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
 
-        entry = TOOL_REGISTRY["ligandmpnn_build_mutant"]
-        assert entry.input_schema is ScoringInput
-        assert entry.output_schema is ScoringOutput
+        mode = get_tool("ligandmpnn_build_mutant").modes["build_mutant"]
+        assert mode.input_schema is LigandMPNNPackerInput
+        assert mode.output_schema is ScoringOutput
+
+    def test_image_tag(self) -> None:
+        assert get_tool("ligandmpnn_build_mutant").image_tag == "ligandmpnn-packer:1.0.0"
+
+    def test_timeout(self) -> None:
+        assert get_tool("ligandmpnn_build_mutant").modes["build_mutant"].default_timeout == 600
 
     def test_has_notes(self) -> None:
-        """Tool has descriptive notes."""
-        entry = TOOL_REGISTRY["ligandmpnn_build_mutant"]
-        assert len(entry.notes) > 0
-        assert any("chi" in note.lower() or "sidechain" in note.lower() for note in entry.notes)
+        notes = get_tool("ligandmpnn_build_mutant").modes["build_mutant"].notes
+        assert len(notes) > 0
+        assert any("chi" in note.lower() or "sidechain" in note.lower() for note in notes)
 
-    def test_has_input_format(self) -> None:
-        """Tool has input format documentation."""
-        entry = TOOL_REGISTRY["ligandmpnn_build_mutant"]
-        assert len(entry.input_format) > 0
-        assert any("mutations" in fmt for fmt in entry.input_format)
+    def test_tool_constant_registered(self) -> None:
+        assert LIGANDMPNN_PACKER_TOOL.name == "ligandmpnn_build_mutant"
+        assert get_tool("ligandmpnn_build_mutant") is LIGANDMPNN_PACKER_TOOL
+
+
+# ---------------------------------------------------------------------------
+# TestInfoSnapshot
+# ---------------------------------------------------------------------------
+
+
+class TestInfoSnapshot:
+    """Snapshot the `autobio info` catalog rendering for the packer Tool."""
+
+    def test_info_snapshot(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+        parsed = json.loads(
+            format_tool_info_catalog(get_tool("ligandmpnn_build_mutant"), OutputFormat.JSON)
+        )
+        assert [m["name"] for m in parsed["modes"]] == ["build_mutant"]
+        mode = parsed["modes"][0]
+        props = mode["input_schema"]["properties"]
+        assert props["structure_path"]["x-autobio"]["widget"] == "file"
+        assert props["structure_path"]["x-autobio"]["tier"] == "primary"
+        assert props["num_packs"]["x-autobio"]["tier"] == "advanced"
+        assert "output_schema" in mode
+        assert mode["notes"]
