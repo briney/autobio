@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from autobio.schemas.antibody import (
-    AntibodyInput,
+    AntibodyBaseInput,
+    AntibodyEmbeddingInput,
+    AntibodyPLLInput,
     AntibodyPLLOutput,
     AntibodySequence,
     SequencePLL,
@@ -48,7 +50,9 @@ __all__ = [
     "BindingAffinityOutput",
     "BindingAffinityPrediction",
     # antibody
-    "AntibodyInput",
+    "AntibodyBaseInput",
+    "AntibodyEmbeddingInput",
+    "AntibodyPLLInput",
     "AntibodyPLLOutput",
     "AntibodySequence",
     "SequencePLL",

@@ -17,7 +17,8 @@ np = pytest.importorskip("numpy")
 
 from autobio.core.config import AutobioConfig  # noqa: E402
 from autobio.schemas.antibody import (  # noqa: E402
-    AntibodyInput,
+    AntibodyEmbeddingInput,
+    AntibodyPLLInput,
     AntibodyPLLOutput,
     AntibodySequence,
 )
@@ -61,7 +62,7 @@ class TestCurrAbPairedEmbedding:
     """CurrAb embedding extraction on paired antibody sequences."""
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[
                 AntibodySequence(
                     id="trastuzumab",
@@ -90,7 +91,7 @@ class TestCurrAbPairedEmbedding:
 
 class TestCurrAbHeavyOnly:
     def test_heavy_chain_only(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vh_only", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("currab", autobio_config)
@@ -103,7 +104,7 @@ class TestCurrAbHeavyOnly:
 
 class TestCurrAbLightOnly:
     def test_light_chain_only(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vl_only", light_chain=_TRASTUZUMAB_VL)],
         )
         runner = get_runner("currab", autobio_config)
@@ -115,7 +116,7 @@ class TestCurrAbLightOnly:
 
 class TestCurrAbBatch:
     def test_batch_embedding(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[
                 AntibodySequence(
                     id="paired",
@@ -135,7 +136,7 @@ class TestCurrAbBatch:
 
 class TestCurrAbPerResidue:
     def test_per_residue_shape(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
             pooling="per_residue",
         )
@@ -151,7 +152,7 @@ class TestCurrAbPerResidue:
 
 class TestCurrAbPLL:
     def test_pll_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("currab", autobio_config)
@@ -166,7 +167,7 @@ class TestCurrAbPLL:
         assert score.per_position_pll is None
 
     def test_pll_per_position(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
             per_position=True,
         )
@@ -189,7 +190,7 @@ class TestFtEsmPairedEmbedding:
     """ft-ESM embedding on paired sequences (double <cls> separator)."""
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[
                 AntibodySequence(
                     id="trastuzumab",
@@ -213,7 +214,7 @@ class TestFtEsmPairedEmbedding:
 
 class TestFtEsmUnpaired:
     def test_heavy_only(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("ft_esm", autobio_config)
@@ -225,7 +226,7 @@ class TestFtEsmUnpaired:
 
 class TestFtEsmPLL:
     def test_pll_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("ft_esm", autobio_config)
@@ -246,7 +247,7 @@ class TestBalmPairedEmbedding:
     """BALM-paired embedding (requires both chains)."""
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[
                 AntibodySequence(
                     id="trastuzumab",
@@ -270,7 +271,7 @@ class TestBalmPairedEmbedding:
 
 class TestBalmPairedPLL:
     def test_pll_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[
                 AntibodySequence(
                     id="trastuzumab",
@@ -297,7 +298,7 @@ class TestBalmUnpairedEmbedding:
     """BALM-unpaired embedding (single chain only)."""
 
     def test_heavy_chain(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("balm_unpaired", autobio_config)
@@ -313,7 +314,7 @@ class TestBalmUnpairedEmbedding:
         assert emb.shape == (1024,)
 
     def test_light_chain(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vl", light_chain=_TRASTUZUMAB_VL)],
         )
         runner = get_runner("balm_unpaired", autobio_config)
@@ -325,7 +326,7 @@ class TestBalmUnpairedEmbedding:
 
 class TestBalmUnpairedPLL:
     def test_pll_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("balm_unpaired", autobio_config)

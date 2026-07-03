@@ -22,7 +22,13 @@ from autobio.schemas.inverse_folding import (
     InverseFoldingOutput,
     MPNNInput,
 )
+from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
 from autobio.tools.base import ToolRunner
+from autobio.tools.ligandmpnn_packer import (
+    BUILD_MUTANT_NOTES,
+    parse_build_mutant_output,
+    prepare_build_mutant,
+)
 
 if TYPE_CHECKING:
     from autobio.core.workspace import Workspace
@@ -61,6 +67,11 @@ class MPNNRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy the input structure into the workspace."""
+        assert self.current_mode is not None
+        if self.current_mode.name == "build_mutant":
+            prepare_build_mutant(self, input_data, workspace)
+            return
+
         assert isinstance(input_data, MPNNInput)
         model_cfg = _MODEL_CONFIG[self.tool_name]
 
@@ -101,8 +112,12 @@ class MPNNRunner(ToolRunner):
 
         workspace.write_config(config)
 
-    def parse_output(self, workspace: Workspace) -> InverseFoldingOutput:
-        """Read standardised outputs and return an ``InverseFoldingOutput``."""
+    def parse_output(self, workspace: Workspace) -> InverseFoldingOutput | ScoringOutput:
+        """Read standardised outputs and return the mode-appropriate output model."""
+        assert self.current_mode is not None
+        if self.current_mode.name == "build_mutant":
+            return parse_build_mutant_output(self, workspace)
+
         result_data_path = workspace.std_output_dir / "result_data.json"
         data = json.loads(result_data_path.read_text())
 
@@ -196,9 +211,30 @@ LIGANDMPNN_TOOL = Tool(
             output_schema=InverseFoldingOutput,
             default_timeout=600,
             notes=_MPNN_NOTES + (_LIGANDMPNN_LIGAND_NOTE,),
-        )
+        ),
+        "build_mutant": Mode(
+            name="build_mutant",
+            display_name="Build mutant",
+            description="Introduce mutations and repack sidechains into full-atom structures.",
+            input_schema=LigandMPNNPackerInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            image_tag="ligandmpnn-packer:1.0.0",
+            category=ToolCategory.SCORING,
+            notes=BUILD_MUTANT_NOTES,
+        ),
     },
-    keywords=("ligandmpnn", "inverse folding", "sequence design", "ligand", "mpnn"),
+    keywords=(
+        "ligandmpnn",
+        "inverse folding",
+        "sequence design",
+        "ligand",
+        "mpnn",
+        "mutant",
+        "sidechain packing",
+        "repack",
+        "mutation",
+    ),
 )
 """Catalog Tool for LigandMPNN."""
 

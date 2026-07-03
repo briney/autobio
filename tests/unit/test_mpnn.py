@@ -436,7 +436,7 @@ class TestMPNNRegistration:
         assert "ligandmpnn" in CATALOG
         tool = get_tool("ligandmpnn")
         assert tool.category == ToolCategory.INVERSE_FOLDING
-        assert set(tool.modes) == {"design"}
+        assert set(tool.modes) == {"design", "build_mutant"}
         assert tool.description.lower().count("ligand") >= 1
 
     def test_both_share_image_tag(self) -> None:
@@ -462,6 +462,27 @@ class TestMPNNRegistration:
         assert LIGANDMPNN_TOOL.name == "ligandmpnn"
         assert get_tool("proteinmpnn") is PROTEINMPNN_TOOL
         assert get_tool("ligandmpnn") is LIGANDMPNN_TOOL
+
+    def test_ligandmpnn_build_mutant_mode(self) -> None:
+        from autobio.core.catalog import tool_categories
+        from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
+
+        tool = get_tool("ligandmpnn")
+        bm = tool.modes["build_mutant"]
+        assert bm.input_schema is LigandMPNNPackerInput
+        assert bm.output_schema is ScoringOutput
+        assert bm.image_tag == "ligandmpnn-packer:1.0.0"
+        assert bm.category == ToolCategory.SCORING
+        assert tool_categories(tool) == (
+            ToolCategory.INVERSE_FOLDING,
+            ToolCategory.SCORING,
+        )
+
+    def test_ligandmpnn_build_mutant_not_a_tool_name(self) -> None:
+        from autobio.core.catalog import CATALOG
+
+        assert "ligandmpnn_build_mutant" not in CATALOG
+        assert "ligandmpnn_build_mutant" not in TOOL_RUNNERS
 
 
 # ---------------------------------------------------------------------------

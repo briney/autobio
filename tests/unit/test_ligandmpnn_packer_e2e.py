@@ -1,4 +1,4 @@
-"""End-to-end tests for ligandmpnn_build_mutant.
+"""End-to-end tests for the ligandmpnn ``build_mutant`` mode.
 
 Each test exercises the full pipeline:
     input construction -> validation -> prepare_workspace ->
@@ -24,7 +24,7 @@ from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
 from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
 from autobio.tools import TOOL_RUNNERS
-from autobio.tools.ligandmpnn_packer import LIGANDMPNN_PACKER_TOOL, LigandMPNNPackerRunner
+from autobio.tools.mpnn import MPNNRunner
 
 # ---------------------------------------------------------------------------
 # Realistic simulated output data
@@ -128,14 +128,14 @@ def complex_pdb(tmp_path: Path) -> Path:
     return pdb_path
 
 
-def _make_runner(config: AutobioConfig) -> LigandMPNNPackerRunner:
-    """Create a runner with mocked container/GPU and current_mode set."""
+def _make_runner(config: AutobioConfig) -> MPNNRunner:
+    """Create an MPNNRunner (ligandmpnn tool) with mocked deps, mode=build_mutant."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        runner = LigandMPNNPackerRunner("ligandmpnn_build_mutant", config)
-    runner.current_mode = get_tool("ligandmpnn_build_mutant").modes["build_mutant"]
+        runner = MPNNRunner("ligandmpnn", config)
+    runner.current_mode = get_tool("ligandmpnn").modes["build_mutant"]
     return runner
 
 
@@ -157,9 +157,7 @@ def _import_standardize():
     return mod
 
 
-def _written_config(
-    runner: LigandMPNNPackerRunner, input_data: LigandMPNNPackerInput, tmp_path: Path
-) -> dict:
+def _written_config(runner: MPNNRunner, input_data: LigandMPNNPackerInput, tmp_path: Path) -> dict:
     workspace = Workspace.create(tmp_path / "ws")
     try:
         runner.prepare_workspace(input_data, workspace)
@@ -563,44 +561,27 @@ class TestExtraShadowRejection:
 
 
 class TestRegistration:
-    """Tests for catalog Tool and runner registration."""
+    """LigandMPNN is one Tool with design + build_mutant modes."""
 
-    def test_registered_as_catalog_tool(self) -> None:
-        from autobio.core.catalog import CATALOG
-
-        assert "ligandmpnn_build_mutant" in CATALOG
-        tool = get_tool("ligandmpnn_build_mutant")
-        assert tool.category.value == "scoring"
-        assert tool.requires_gpu is True
-        assert tool.gpu_count == 1
-        assert set(tool.modes) == {"build_mutant"}
-        assert tool.default_mode == "build_mutant"
-
-    def test_in_tool_runners(self) -> None:
-        assert "ligandmpnn_build_mutant" in TOOL_RUNNERS
-        assert TOOL_RUNNERS["ligandmpnn_build_mutant"] is LigandMPNNPackerRunner
-
-    def test_schema_types(self) -> None:
-        from autobio.schemas.scoring import LigandMPNNPackerInput, ScoringOutput
-
-        mode = get_tool("ligandmpnn_build_mutant").modes["build_mutant"]
+    def test_build_mutant_is_a_mode_of_ligandmpnn(self) -> None:
+        tool = get_tool("ligandmpnn")
+        assert "build_mutant" in tool.modes
+        mode = tool.modes["build_mutant"]
         assert mode.input_schema is LigandMPNNPackerInput
         assert mode.output_schema is ScoringOutput
+        assert mode.image_tag == "ligandmpnn-packer:1.0.0"
+        assert mode.default_timeout == 600
 
-    def test_image_tag(self) -> None:
-        assert get_tool("ligandmpnn_build_mutant").image_tag == "ligandmpnn-packer:1.0.0"
+    def test_old_tool_name_removed(self) -> None:
+        from autobio.core.catalog import CATALOG
 
-    def test_timeout(self) -> None:
-        assert get_tool("ligandmpnn_build_mutant").modes["build_mutant"].default_timeout == 600
+        assert "ligandmpnn_build_mutant" not in CATALOG
+        assert "ligandmpnn_build_mutant" not in TOOL_RUNNERS
 
     def test_has_notes(self) -> None:
-        notes = get_tool("ligandmpnn_build_mutant").modes["build_mutant"].notes
+        notes = get_tool("ligandmpnn").modes["build_mutant"].notes
         assert len(notes) > 0
         assert any("chi" in note.lower() or "sidechain" in note.lower() for note in notes)
-
-    def test_tool_constant_registered(self) -> None:
-        assert LIGANDMPNN_PACKER_TOOL.name == "ligandmpnn_build_mutant"
-        assert get_tool("ligandmpnn_build_mutant") is LIGANDMPNN_PACKER_TOOL
 
 
 # ---------------------------------------------------------------------------
@@ -614,14 +595,12 @@ class TestInfoSnapshot:
     def test_info_snapshot(self) -> None:
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
-        parsed = json.loads(
-            format_tool_info_catalog(get_tool("ligandmpnn_build_mutant"), OutputFormat.JSON)
-        )
-        assert [m["name"] for m in parsed["modes"]] == ["build_mutant"]
-        mode = parsed["modes"][0]
+        parsed = json.loads(format_tool_info_catalog(get_tool("ligandmpnn"), OutputFormat.JSON))
+        mode = next(m for m in parsed["modes"] if m["name"] == "build_mutant")
         props = mode["input_schema"]["properties"]
         assert props["structure_path"]["x-autobio"]["widget"] == "file"
         assert props["structure_path"]["x-autobio"]["tier"] == "primary"
         assert props["num_packs"]["x-autobio"]["tier"] == "advanced"
+        assert mode["image_tag"] == "ligandmpnn-packer:1.0.0"
         assert "output_schema" in mode
         assert mode["notes"]

@@ -17,7 +17,8 @@ np = pytest.importorskip("numpy")
 
 from autobio.core.config import AutobioConfig  # noqa: E402
 from autobio.schemas.antibody import (  # noqa: E402
-    AntibodyInput,
+    AntibodyEmbeddingInput,
+    AntibodyPLLInput,
     AntibodyPLLOutput,
     AntibodySequence,
 )
@@ -61,7 +62,7 @@ class TestAbLang2PairedEmbedding:
     """AbLang2 embedding extraction on paired antibody sequences."""
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[
                 AntibodySequence(
                     id="trastuzumab",
@@ -90,7 +91,7 @@ class TestAbLang2PairedEmbedding:
 
 class TestAbLang2HeavyOnly:
     def test_heavy_chain_only(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vh_only", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("ablang2", autobio_config)
@@ -103,7 +104,7 @@ class TestAbLang2HeavyOnly:
 
 class TestAbLang2LightOnly:
     def test_light_chain_only(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vl_only", light_chain=_TRASTUZUMAB_VL)],
         )
         runner = get_runner("ablang2", autobio_config)
@@ -115,7 +116,7 @@ class TestAbLang2LightOnly:
 
 class TestAbLang2Batch:
     def test_batch_embedding(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[
                 AntibodySequence(
                     id="paired",
@@ -135,7 +136,7 @@ class TestAbLang2Batch:
 
 class TestAbLang2PerResidue:
     def test_per_residue_shape(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
             pooling="per_residue",
         )
@@ -156,7 +157,7 @@ class TestAbLang2PerResidue:
 
 class TestAbLang2PLL:
     def test_pll_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
         )
         runner = get_runner("ablang2", autobio_config)
@@ -171,7 +172,7 @@ class TestAbLang2PLL:
         assert score.per_position_pll is None
 
     def test_pll_per_position(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="vh", heavy_chain=_TRASTUZUMAB_VH)],
             per_position=True,
         )

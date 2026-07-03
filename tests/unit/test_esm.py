@@ -1,4 +1,4 @@
-"""Unit tests for the migrated esm1b / esm2 Tools (mode: embed)."""
+"""Unit tests for the migrated esm1b / esm2 Tools (mode: embedding)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 def _make_runner(tool_name: str) -> ESMRunner:
     with patch("autobio.tools.base.ContainerManager"), patch("autobio.tools.base.GPUManager"):
         runner = ESMRunner(tool_name, AutobioConfig.resolve())
-    runner.current_mode = get_tool(tool_name).modes["embed"]
+    runner.current_mode = get_tool(tool_name).modes["embedding"]
     return runner
 
 
@@ -39,7 +39,7 @@ def test_esm_registered_as_single_mode_tools() -> None:
     from autobio.core.catalog import CATALOG
 
     assert "esm1b" in CATALOG and "esm2" in CATALOG
-    assert set(get_tool("esm1b").modes) == {"embed"}
+    assert set(get_tool("esm1b").modes) == {"embedding"}
 
 
 def test_esm1b_config_model_name(tmp_path: Path) -> None:
@@ -199,7 +199,7 @@ def test_info_snapshot_esm2() -> None:
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("esm2"), OutputFormat.JSON))
-    assert parsed["modes"][0]["name"] == "embed"
+    assert parsed["modes"][0]["name"] == "embedding"
     props = parsed["modes"][0]["input_schema"]["properties"]
     assert props["sequences"]["x-autobio"]["widget"] == "sequence"
     assert props["sequences"]["x-autobio"]["flavor"] == "generic"

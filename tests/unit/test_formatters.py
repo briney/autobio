@@ -110,7 +110,8 @@ class TestFormatToolList:
         assert len(parsed) == 1
         assert parsed[0]["name"] == "mock-tool"
         assert parsed[0]["category"] == "structure-prediction"
-        assert parsed[0]["gpu"] is True
+        assert parsed[0]["requires_gpu"] is True
+        assert parsed[0]["gpu_count"] == 1
         assert parsed[0]["version"] == "1.0"
         assert parsed[0]["description"] == "A mock tool for testing."
         assert parsed[0]["modes"] == ["default"]
@@ -261,6 +262,38 @@ def test_format_tool_info_catalog_json_shape() -> None:
     assert mode_a["category"] == "scoring"  # falls back to Tool category
     assert "input_schema" in mode_a and "output_schema" in mode_a
     assert parsed["modes"][1]["category"] == "simulation"  # mode override
+    assert mode_a["image_tag"] == "demo:1.0.0"  # falls back to Tool default
+    assert parsed["modes"][1]["image_tag"] == "demo:1.0.0"
+
+
+def test_format_tool_info_catalog_json_per_mode_image_override() -> None:
+    tool = Tool(
+        name="multi-image",
+        display_name="Multi Image",
+        category=ToolCategory.SCORING,
+        description="tool with a per-mode image override",
+        version="1.0.0",
+        image_tag="base:1.0.0",
+        requires_gpu=False,
+        gpu_count=0,
+        default_mode="a",
+        modes={
+            "a": Mode("a", "A", "a mode", _InInfo, _OutInfo, default_timeout=300),
+            "b": Mode(
+                "b",
+                "B",
+                "b mode",
+                _InInfo,
+                _OutInfo,
+                default_timeout=300,
+                image_tag="override:2.0.0",
+            ),
+        },
+    )
+    parsed = json.loads(format_tool_info_catalog(tool, OutputFormat.JSON))
+    by_name = {m["name"]: m for m in parsed["modes"]}
+    assert by_name["a"]["image_tag"] == "base:1.0.0"  # tool default
+    assert by_name["b"]["image_tag"] == "override:2.0.0"  # mode override
 
 
 def test_format_tool_info_catalog_table_runs() -> None:
