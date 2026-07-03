@@ -11,6 +11,7 @@ from autobio.core.catalog import CATALOG, Mode, Tool, register
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
 from autobio.core.result import AutobioError
+from autobio.core.workspace import Workspace
 from autobio.schemas.base import BaseInput, BaseOutput
 from autobio.tools.base import ToolRunner
 
@@ -185,6 +186,21 @@ def test_run_sets_current_mode_and_mode_metadata(tmp_path, monkeypatch) -> None:
     assert runner.captured_mode == "beta"
     assert out.metadata.tool_version == "9.9.9"
     assert out.metadata.image_uri.endswith("fake-beta:1.0.0")
+    assert out.metadata.mode == "beta"
+
+
+def test_build_metadata_mode_reflects_current_mode(tmp_path) -> None:
+    _register_faketool()
+    runner = _make_runner("faketool")
+    ws = Workspace.create(tmp_path)
+    try:
+        runner.current_mode = None
+        assert runner._build_metadata(ws, 0.0, [], "").mode is None
+
+        runner.current_mode = runner._resolve_mode("beta")
+        assert runner._build_metadata(ws, 0.0, [], "").mode == "beta"
+    finally:
+        ws.cleanup()
 
 
 def test_run_rejects_mode_for_legacy_tool() -> None:

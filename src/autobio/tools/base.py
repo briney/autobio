@@ -309,6 +309,7 @@ class ToolRunner(ABC):
         """Construct a ``RunMetadata`` instance for the completed run."""
         return RunMetadata(
             tool_name=self.tool_name,
+            mode=self.current_mode.name if self.current_mode is not None else None,
             tool_version=self._tool_version(),
             image_uri=image_uri,
             wall_time_seconds=wall_time,
