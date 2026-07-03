@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from autobio.tools.antibody_lm import AntibodyLMRunner
-from autobio.tools.antifold import AntiFoldRunner, AntiFoldScoreRunner
+from autobio.tools.antifold import AntiFoldRunner
 from autobio.tools.antipasti import AntipastiRunner
 from autobio.tools.baddg import BAddGRunner
 from autobio.tools.boltz import BoltzRunner
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
 TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "antifold": AntiFoldRunner,
-    "antifold_score": AntiFoldScoreRunner,
     "antipasti": AntipastiRunner,
     "currab": AntibodyLMRunner,
     "currab_pll": AntibodyLMRunner,

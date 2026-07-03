@@ -1,14 +1,15 @@
-"""Tests for AntiFoldRunner, AntiFoldScoreRunner — prepare_workspace,
-parse_output, and registration."""
+"""Tests for the migrated antifold Tool (modes: design, score)."""
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool, tool_categories
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
@@ -19,14 +20,17 @@ from autobio.schemas.inverse_folding import (
 )
 from autobio.schemas.scoring import ScoringInput, ScoringOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
-from autobio.tools.antifold import AntiFoldRunner, AntiFoldScoreRunner
+from autobio.tools.antifold import AntiFoldRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
+_OLD_FLAT_NAMES = ("antifold_score",)
+
+
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
@@ -35,24 +39,26 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
+def _make_runner(mode_name: str, config: AutobioConfig) -> AntiFoldRunner:
+    """Create an AntiFoldRunner with mocked deps, current_mode pinned to *mode_name*."""
+    with (
+        patch("autobio.tools.base.ContainerManager"),
+        patch("autobio.tools.base.GPUManager"),
+    ):
+        runner = AntiFoldRunner("antifold", config)
+    runner.current_mode = get_tool("antifold").modes[mode_name]
+    return runner
+
+
 @pytest.fixture()
 def runner(config: AutobioConfig) -> AntiFoldRunner:
-    """Create an AntiFoldRunner with mocked ContainerManager and GPUManager."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return AntiFoldRunner("antifold", config)
+    """Design-mode runner (the common case)."""
+    return _make_runner("design", config)
 
 
 @pytest.fixture()
-def score_runner(config: AutobioConfig) -> AntiFoldScoreRunner:
-    """Create an AntiFoldScoreRunner with mocked ContainerManager and GPUManager."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return AntiFoldScoreRunner("antifold_score", config)
+def score_runner(config: AutobioConfig) -> AntiFoldRunner:
+    return _make_runner("score", config)
 
 
 @pytest.fixture()
@@ -80,12 +86,12 @@ def _make_score_input(
 
 
 # ---------------------------------------------------------------------------
-# TestAntiFoldPrepareWorkspace
+# TestAntiFoldPrepareWorkspace (design mode)
 # ---------------------------------------------------------------------------
 
 
 class TestAntiFoldPrepareWorkspace:
-    """Tests for AntiFoldRunner.prepare_workspace."""
+    """Tests for AntiFoldRunner.prepare_workspace in design mode."""
 
     def test_structure_file_copied(
         self, runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
@@ -263,9 +269,27 @@ class TestAntiFoldPrepareWorkspace:
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["light_chain"] == "L"
 
+    def test_extra_shadowing_typed_field_rejected(
+        self, runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """extra containing a typed field name (temperature) raises."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = _make_design_input(sample_pdb, temperature=0.5)
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_extra_shadowing_config_key_rejected(
+        self, runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """extra containing a runner-derived config key (mode) raises."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = _make_design_input(sample_pdb, mode="score")
+        with pytest.raises(AutobioError, match="collide"):
+            runner.prepare_workspace(input_data, workspace)
+
 
 # ---------------------------------------------------------------------------
-# TestAntiFoldParseOutput
+# TestAntiFoldParseOutput (design mode)
 # ---------------------------------------------------------------------------
 
 _SINGLE_SEQ_RESULT = {
@@ -306,13 +330,14 @@ _MULTI_SEQ_RESULT = {
 
 
 class TestAntiFoldParseOutput:
-    """Tests for AntiFoldRunner.parse_output."""
+    """Tests for AntiFoldRunner.parse_output in design mode."""
 
     def test_parse_single_sequence(self, runner: AntiFoldRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_SEQ_RESULT))
 
         output = runner.parse_output(workspace)
+        assert isinstance(output, InverseFoldingOutput)
         assert len(output.designed_sequences) == 1
         seq = output.designed_sequences[0]
         assert seq.rank == 1
@@ -324,6 +349,7 @@ class TestAntiFoldParseOutput:
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_MULTI_SEQ_RESULT))
 
         output = runner.parse_output(workspace)
+        assert isinstance(output, InverseFoldingOutput)
         assert len(output.designed_sequences) == 3
         assert output.designed_sequences[0].rank == 1
         assert output.designed_sequences[2].rank == 3
@@ -333,6 +359,7 @@ class TestAntiFoldParseOutput:
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_MULTI_SEQ_RESULT))
 
         output = runner.parse_output(workspace)
+        assert isinstance(output, InverseFoldingOutput)
         seq = output.designed_sequences[0]
         assert "H" in seq.sequence
         assert "L" in seq.sequence
@@ -343,6 +370,7 @@ class TestAntiFoldParseOutput:
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_SEQ_RESULT))
 
         output = runner.parse_output(workspace)
+        assert isinstance(output, InverseFoldingOutput)
         seq = output.designed_sequences[0]
         assert seq.score is not None
         assert seq.score == pytest.approx(-1.234)
@@ -352,6 +380,7 @@ class TestAntiFoldParseOutput:
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SINGLE_SEQ_RESULT))
 
         output = runner.parse_output(workspace)
+        assert isinstance(output, InverseFoldingOutput)
         assert output.native_sequence is not None
         assert "H" in output.native_sequence
 
@@ -371,15 +400,15 @@ class TestAntiFoldParseOutput:
 
 
 # ---------------------------------------------------------------------------
-# TestAntiFoldScorePrepareWorkspace
+# TestAntiFoldScorePrepareWorkspace (score mode)
 # ---------------------------------------------------------------------------
 
 
 class TestAntiFoldScorePrepareWorkspace:
-    """Tests for AntiFoldScoreRunner.prepare_workspace."""
+    """Tests for AntiFoldRunner.prepare_workspace in score mode."""
 
     def test_mode_is_score(
-        self, score_runner: AntiFoldScoreRunner, tmp_path: Path, sample_pdb: Path
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         input_data = _make_score_input(sample_pdb, sequences={"H": "EVQLVES"})
@@ -389,7 +418,7 @@ class TestAntiFoldScorePrepareWorkspace:
         assert cfg["mode"] == "score"
 
     def test_structure_file_copied(
-        self, score_runner: AntiFoldScoreRunner, tmp_path: Path, sample_pdb: Path
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         input_data = _make_score_input(sample_pdb, sequences={"H": "EVQLVES"})
@@ -402,7 +431,7 @@ class TestAntiFoldScorePrepareWorkspace:
         assert cfg["structure_path"] == "/workspace/inputs/test.pdb"
 
     def test_sequences_none_passthrough(
-        self, score_runner: AntiFoldScoreRunner, tmp_path: Path, sample_pdb: Path
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         """sequences=None is passed through (score native)."""
         workspace = Workspace.create(tmp_path / "ws")
@@ -413,7 +442,7 @@ class TestAntiFoldScorePrepareWorkspace:
         assert cfg["sequences"] is None
 
     def test_sequences_dict_passthrough(
-        self, score_runner: AntiFoldScoreRunner, tmp_path: Path, sample_pdb: Path
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         sequences = {"H": "EVQLVES", "L": "DIQMTQS"}
@@ -424,7 +453,7 @@ class TestAntiFoldScorePrepareWorkspace:
         assert cfg["sequences"] == sequences
 
     def test_extra_dict_merged(
-        self, score_runner: AntiFoldScoreRunner, tmp_path: Path, sample_pdb: Path
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         input_data = _make_score_input(sample_pdb, sequences={"H": "EVQLVES"}, regions=["CDRH3"])
@@ -434,16 +463,42 @@ class TestAntiFoldScorePrepareWorkspace:
         assert cfg["regions"] == ["CDRH3"]
 
     def test_validation_requires_chain_id(
-        self, score_runner: AntiFoldScoreRunner, tmp_path: Path, sample_pdb: Path
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         input_data = ScoringInput(structure_path=sample_pdb, sequences={"H": "EVQLVES"}, extra={})
         with pytest.raises(AutobioError, match="heavy_chain.*light_chain"):
             score_runner.prepare_workspace(input_data, workspace)
 
+    def test_extra_shadowing_typed_field_rejected(
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """extra containing a typed field name (sequences) raises."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ScoringInput(
+            structure_path=sample_pdb,
+            sequences={"H": "EVQLVES"},
+            extra={
+                "heavy_chain": "H",
+                "light_chain": "L",
+                "sequences": {"H": "GVSEKL"},
+            },
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            score_runner.prepare_workspace(input_data, workspace)
+
+    def test_extra_shadowing_config_key_rejected(
+        self, score_runner: AntiFoldRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """extra containing a runner-derived config key (mode) raises."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = _make_score_input(sample_pdb, sequences={"H": "EVQLVES"}, mode="design")
+        with pytest.raises(AutobioError, match="collide"):
+            score_runner.prepare_workspace(input_data, workspace)
+
 
 # ---------------------------------------------------------------------------
-# TestAntiFoldScoreParseOutput
+# TestAntiFoldScoreParseOutput (score mode)
 # ---------------------------------------------------------------------------
 
 _SCORE_RESULT = {
@@ -468,45 +523,155 @@ _SCORE_RESULT = {
 
 
 class TestAntiFoldScoreParseOutput:
-    """Tests for AntiFoldScoreRunner.parse_output."""
+    """Tests for AntiFoldRunner.parse_output in score mode."""
 
-    def test_parse_score(self, score_runner: AntiFoldScoreRunner, tmp_path: Path) -> None:
+    def test_parse_score(self, score_runner: AntiFoldRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SCORE_RESULT))
 
         output = score_runner.parse_output(workspace)
+        assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
         score = output.scores[0]
         assert score.total_score == pytest.approx(-0.85)
         assert score.units == "avg_nll"
 
     def test_parse_with_per_residue_scores(
-        self, score_runner: AntiFoldScoreRunner, tmp_path: Path
+        self, score_runner: AntiFoldRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SCORE_RESULT))
 
         output = score_runner.parse_output(workspace)
+        assert isinstance(output, ScoringOutput)
         score = output.scores[0]
         assert score.per_residue_scores is not None
         assert len(score.per_residue_scores) == 4
 
-    def test_parse_with_breakdown(self, score_runner: AntiFoldScoreRunner, tmp_path: Path) -> None:
-        workspace = Workspace.create(tmp_path / "ws")
-        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SCORE_RESULT))
-
-        output = score_runner.parse_output(workspace)
-        score = output.scores[0]
-        assert score.score_breakdown is not None
-        assert "perplexity" in score.score_breakdown
-        assert "H_mean_ll" in score.score_breakdown
-
-    def test_output_type(self, score_runner: AntiFoldScoreRunner, tmp_path: Path) -> None:
+    def test_parse_with_breakdown(self, score_runner: AntiFoldRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SCORE_RESULT))
 
         output = score_runner.parse_output(workspace)
         assert isinstance(output, ScoringOutput)
+        score = output.scores[0]
+        assert score.score_breakdown is not None
+        assert "perplexity" in score.score_breakdown
+        assert "H_mean_ll" in score.score_breakdown
+
+    def test_output_type(self, score_runner: AntiFoldRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SCORE_RESULT))
+
+        output = score_runner.parse_output(workspace)
+        assert isinstance(output, ScoringOutput)
+
+    def test_raw_output_path(self, score_runner: AntiFoldRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_SCORE_RESULT))
+
+        output = score_runner.parse_output(workspace)
+        assert output.raw_output_path == workspace.raw_output_dir
+
+
+# ---------------------------------------------------------------------------
+# TestAntiFoldByteCompatConfig — full-dict config.json equality, per mode
+# ---------------------------------------------------------------------------
+
+
+class TestAntiFoldByteCompatConfig:
+    """Full-dict ``config.json`` equality tests, pinning key order per mode."""
+
+    def test_design_full_config_minimal(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Minimal design input: only the fixed keys, no chains_to_design/fixed_positions."""
+        r = _make_runner("design", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(_make_design_input(sample_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "mode": "design",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "num_sequences": 1,
+            "temperature": 0.1,
+            "heavy_chain": "H",
+            "light_chain": "L",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_design_full_config_with_antibody_extra(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Design input with antibody params + tool-specific extra — full key order.
+
+        Antibody params (heavy_chain/light_chain/antigen_chain/regions) and any other
+        extra keys must land AFTER the fixed keys (mode/structure_path/num_sequences/
+        temperature) since they flow through ``_apply_extra`` at the end. No
+        chains_to_design/fixed_positions keys should ever appear.
+        """
+        r = _make_runner("design", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            InverseFoldingInput(
+                structure_path=sample_pdb,
+                num_sequences=3,
+                temperature=0.5,
+                extra={
+                    "heavy_chain": "H",
+                    "light_chain": "L",
+                    "antigen_chain": "C",
+                    "regions": ["CDRH3"],
+                    "seed": 42,
+                },
+            ),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "mode": "design",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "num_sequences": 3,
+            "temperature": 0.5,
+            "heavy_chain": "H",
+            "light_chain": "L",
+            "antigen_chain": "C",
+            "regions": ["CDRH3"],
+            "seed": 42,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+        assert "chains_to_design" not in cfg
+        assert "fixed_positions" not in cfg
+
+    def test_score_full_config(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        r = _make_runner("score", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            ScoringInput(
+                structure_path=sample_pdb,
+                sequences={"H": "EVQLVES"},
+                extra={"heavy_chain": "H", "light_chain": "L", "regions": ["CDRH3"]},
+            ),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "mode": "score",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "sequences": {"H": "EVQLVES"},
+            "heavy_chain": "H",
+            "light_chain": "L",
+            "regions": ["CDRH3"],
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -515,37 +680,62 @@ class TestAntiFoldScoreParseOutput:
 
 
 class TestAntiFoldRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for the catalog Tool + runner registration."""
 
-    def test_antifold_in_registry(self) -> None:
-        assert "antifold" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["antifold"]
-        assert entry.category == ToolCategory.INVERSE_FOLDING
-        assert entry.input_schema is InverseFoldingInput
-        assert entry.output_schema is InverseFoldingOutput
-        assert entry.requires_gpu is True
-        assert entry.gpu_count == 1
+    def test_antifold_registered_as_single_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - populate registries
 
-    def test_antifold_score_in_registry(self) -> None:
-        assert "antifold_score" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["antifold_score"]
-        assert entry.category == ToolCategory.SCORING
-        assert entry.input_schema is ScoringInput
-        assert entry.output_schema is ScoringOutput
-        assert entry.requires_gpu is True
+        tool = get_tool("antifold")
+        assert set(tool.modes) == {"design", "score"}
+        assert tool.default_mode == "design"
+        assert tool.category == ToolCategory.INVERSE_FOLDING
+        assert tool.requires_gpu is True
+        assert tool.gpu_count == 1
+        assert tool.image_tag == "antifold:1.0.0"
+
+    @pytest.mark.parametrize("flat_name", ("antifold", *_OLD_FLAT_NAMES))
+    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_REGISTRY
+
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_RUNNERS
+
+    def test_antifold_in_tool_runners(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert "antifold" in TOOL_RUNNERS
+        assert TOOL_RUNNERS["antifold"] is AntiFoldRunner
+
+    def test_antifold_score_runner_class_removed(self) -> None:
+        import autobio.tools.antifold as antifold_module
+
+        assert not hasattr(antifold_module, "AntiFoldScoreRunner")
 
     def test_both_share_image_tag(self) -> None:
-        assert (
-            TOOL_REGISTRY["antifold"].image_tag
-            == TOOL_REGISTRY["antifold_score"].image_tag
-            == "antifold:1.0.0"
-        )
+        """Neither mode overrides image_tag — both fall back to the Tool's."""
+        tool = get_tool("antifold")
+        assert tool.image_tag == "antifold:1.0.0"
+        assert tool.modes["design"].image_tag is None
+        assert tool.modes["score"].image_tag is None
 
-    def test_tool_runners_registered(self) -> None:
-        assert "antifold" in TOOL_RUNNERS
-        assert "antifold_score" in TOOL_RUNNERS
-        assert TOOL_RUNNERS["antifold"] is AntiFoldRunner
-        assert TOOL_RUNNERS["antifold_score"] is AntiFoldScoreRunner
+    @pytest.mark.parametrize(
+        ("mode_name", "timeout"),
+        [("design", 600), ("score", 300)],
+    )
+    def test_modes_have_per_mode_timeout(self, mode_name: str, timeout: int) -> None:
+        assert get_tool("antifold").modes[mode_name].default_timeout == timeout
+
+    def test_mode_schemas(self) -> None:
+        tool = get_tool("antifold")
+        assert tool.modes["design"].input_schema is InverseFoldingInput
+        assert tool.modes["design"].output_schema is InverseFoldingOutput
+        assert tool.modes["score"].input_schema is ScoringInput
+        assert tool.modes["score"].output_schema is ScoringOutput
 
     def test_get_runner_returns_correct_class(self, config: AutobioConfig) -> None:
         with (
@@ -556,11 +746,130 @@ class TestAntiFoldRegistration:
         assert isinstance(r, AntiFoldRunner)
         assert r.tool_name == "antifold"
 
-    def test_get_score_runner_returns_correct_class(self, config: AutobioConfig) -> None:
+    def test_get_runner_removed_flat_name_raises(self, config: AutobioConfig) -> None:
+        with pytest.raises(KeyError, match="antifold_score"):
+            get_runner("antifold_score", config)
+
+
+# ---------------------------------------------------------------------------
+# TestAntiFoldCrossCategory — cross-category catalog Tool
+# ---------------------------------------------------------------------------
+
+
+class TestAntiFoldCrossCategory:
+    """antifold's modes span two categories (design=INVERSE_FOLDING, score=SCORING)."""
+
+    def test_tool_categories_union(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        tool = get_tool("antifold")
+        assert tool_categories(tool) == (ToolCategory.INVERSE_FOLDING, ToolCategory.SCORING)
+
+    def test_listed_under_inverse_folding(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.core.catalog import list_tools
+
+        assert "antifold" in list_tools(category=ToolCategory.INVERSE_FOLDING)
+
+    def test_listed_under_scoring(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.core.catalog import list_tools
+
+        assert "antifold" in list_tools(category=ToolCategory.SCORING)
+
+
+# ---------------------------------------------------------------------------
+# TestAntiFoldInfoSnapshot
+# ---------------------------------------------------------------------------
+
+
+class TestAntiFoldInfoSnapshot:
+    """``autobio info antifold`` output — per-mode notes, output_schema, category."""
+
+    def test_info_snapshot(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+        parsed = json.loads(format_tool_info_catalog(get_tool("antifold"), OutputFormat.JSON))
+        assert [m["name"] for m in parsed["modes"]] == ["design", "score"]
+
+        design_mode = parsed["modes"][0]
+        assert len(design_mode["notes"]) > 0
+        assert "output_schema" in design_mode
+
+        score_mode = parsed["modes"][1]
+        assert len(score_mode["notes"]) > 0
+        assert "output_schema" in score_mode
+        assert score_mode["category"] == "scoring"
+
+
+# ---------------------------------------------------------------------------
+# TestAntiFoldRunMetadataMode — full run() lifecycle threads mode into metadata
+# ---------------------------------------------------------------------------
+
+_MIN_DESIGN_RESULT = {
+    "designed_sequences": [
+        {"rank": 1, "sequence": {"H": "EVQLVES"}, "score": -1.0, "recovery": 0.5}
+    ],
+    "native_sequence": {"H": "EVQLVES"},
+}
+
+_MIN_SCORE_RESULT = {
+    "scores": [
+        {
+            "total_score": -1.0,
+            "per_residue_scores": None,
+            "score_breakdown": None,
+            "units": "avg_nll",
+            "structure_path": None,
+            "ddg": None,
+            "mutations": None,
+        }
+    ]
+}
+
+
+class TestAntiFoldRunMetadataMode:
+    """``run(...).metadata.mode`` reflects the selected mode for each mode."""
+
+    @pytest.mark.parametrize(
+        ("mode_name", "result_data"),
+        [("design", _MIN_DESIGN_RESULT), ("score", _MIN_SCORE_RESULT)],
+    )
+    def test_run_metadata_mode(
+        self,
+        mode_name: str,
+        result_data: dict,
+        config: AutobioConfig,
+        tmp_path: Path,
+        sample_pdb: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import autobio.tools  # noqa: F401
+
+        output_dir = tmp_path / "ws"
+        std_dir = output_dir / "outputs" / "standardized"
+        std_dir.mkdir(parents=True)
+        (std_dir / "result_data.json").write_text(json.dumps(result_data))
+
+        monkeypatch.setattr(
+            "autobio.core.workspace.Workspace.read_result",
+            lambda self: SimpleNamespace(
+                status="success", phase="run", exit_code=0, error_message=None
+            ),
+        )
+
         with (
             patch("autobio.tools.base.ContainerManager"),
             patch("autobio.tools.base.GPUManager"),
         ):
-            r = get_runner("antifold_score", config)
-        assert isinstance(r, AntiFoldScoreRunner)
-        assert r.tool_name == "antifold_score"
+            r = AntiFoldRunner("antifold", config)
+
+        if mode_name == "design":
+            input_data: InverseFoldingInput | ScoringInput = _make_design_input(sample_pdb)
+        else:
+            input_data = _make_score_input(sample_pdb, sequences={"H": "EVQLVES"})
+
+        out = r.run(input_data, gpu="none", output_dir=output_dir, mode=mode_name)
+        assert out.metadata.mode == mode_name
+        assert out.metadata.tool_name == "antifold"

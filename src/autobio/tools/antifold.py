@@ -1,12 +1,13 @@
-"""AntiFold antibody inverse folding and sequence scoring tool runners.
+"""AntiFold antibody inverse folding and sequence scoring tool runner.
 
 AntiFold is an antibody-specific inverse folding model fine-tuned from
 ESM-IF1, trained on solved and predicted antibody structures from SAbDab
-and OAS. Two tools share a single Docker image:
+and OAS. A single catalog Tool, ``antifold``, exposes two Modes sharing the
+``AntiFoldRunner`` runner class:
 
-- ``antifold`` — antibody sequence design (inverse folding) via
-  ``InverseFoldingInput``
-- ``antifold_score`` — sequence scoring via ``ScoringInput``
+- ``design`` (default) — antibody sequence design (inverse folding) via
+  ``InverseFoldingInput``.
+- ``score`` — sequence scoring via ``ScoringInput``.
 
 The ``mode`` field in config.json (``"design"`` or ``"score"``) tells the
 container which path to execute.
@@ -30,7 +31,8 @@ import json
 import shutil
 from typing import TYPE_CHECKING
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.inverse_folding import (
@@ -58,115 +60,94 @@ def _validate_chain_ids(input_data: BaseInput) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Design runner
+# Runner
 # ---------------------------------------------------------------------------
 
 
 class AntiFoldRunner(ToolRunner):
-    """Runner for AntiFold antibody inverse folding (sequence design).
+    """Runner for AntiFold antibody inverse folding (design mode) and scoring (score mode).
 
-    Maps ``InverseFoldingInput`` fields to the container's config.json with
-    ``mode="design"`` and parses the standardised ``result_data.json`` back
-    into an ``InverseFoldingOutput``.
+    ``prepare_workspace`` validates antibody chain IDs (both modes), copies
+    the input structure into the workspace, and writes ``config.json`` —
+    design mode maps ``InverseFoldingInput`` fields with ``mode="design"``;
+    score mode maps ``ScoringInput`` fields with ``mode="score"``.
 
     AntiFold uses antibody-specific parameters (``heavy_chain``,
-    ``light_chain``, ``antigen_chain``, ``regions``) passed via the
-    ``extra`` dict rather than ``chains_to_design`` or ``fixed_positions``.
+    ``light_chain``, ``antigen_chain``, ``regions``) passed via the ``extra``
+    dict rather than ``chains_to_design`` or ``fixed_positions``.
+
+    ``parse_output`` reads the standardised ``result_data.json`` and returns
+    an ``InverseFoldingOutput`` (design mode) or a ``ScoringOutput`` (score
+    mode).
     """
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy the input structure into the workspace."""
-        assert isinstance(input_data, InverseFoldingInput)
+        assert self.current_mode is not None
+        mode = self.current_mode.name
+
         _validate_chain_ids(input_data)
 
-        # Copy structure file into workspace inputs/
-        src_path = input_data.structure_path
-        dest_name = src_path.name
-        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+        if mode == "design":
+            assert isinstance(input_data, InverseFoldingInput)
 
-        # Build config.json for the container
-        # Note: chains_to_design and fixed_positions are intentionally NOT
-        # mapped — AntiFold uses heavy_chain/light_chain and regions instead.
-        config: dict[str, object] = {
-            "mode": "design",
-            "structure_path": f"/workspace/inputs/{dest_name}",
-            "num_sequences": input_data.num_sequences,
-            "temperature": input_data.temperature,
-        }
+            # Copy structure file into workspace inputs/
+            src_path = input_data.structure_path
+            dest_name = src_path.name
+            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
 
-        # Flat-merge extra dict (heavy_chain, light_chain, antigen_chain,
-        # regions, and any other tool-specific params)
-        config.update(input_data.extra)
+            # Build config.json for the container
+            # Note: chains_to_design and fixed_positions are intentionally NOT
+            # mapped — AntiFold uses heavy_chain/light_chain and regions instead.
+            config: dict[str, object] = {
+                "mode": "design",
+                "structure_path": f"/workspace/inputs/{dest_name}",
+                "num_sequences": input_data.num_sequences,
+                "temperature": input_data.temperature,
+            }
+        else:  # "score"
+            assert isinstance(input_data, ScoringInput)
+
+            # Copy structure file into workspace inputs/
+            src_path = input_data.structure_path
+            dest_name = src_path.name
+            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+
+            # Build config.json for the container
+            config = {
+                "mode": "score",
+                "structure_path": f"/workspace/inputs/{dest_name}",
+                "sequences": input_data.sequences,
+            }
+
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
-    def parse_output(self, workspace: Workspace) -> InverseFoldingOutput:
-        """Read standardised outputs and return an ``InverseFoldingOutput``."""
+    def parse_output(self, workspace: Workspace) -> InverseFoldingOutput | ScoringOutput:
+        """Read standardised outputs and return the mode-appropriate output model."""
+        assert self.current_mode is not None
         result_data_path = workspace.std_output_dir / "result_data.json"
         data = json.loads(result_data_path.read_text())
 
-        designed_sequences = [
-            DesignedSequence(
-                rank=s["rank"],
-                sequence=s["sequence"],
-                score=s.get("score"),
-                recovery=s.get("recovery"),
+        if self.current_mode.name == "design":
+            designed_sequences = [
+                DesignedSequence(
+                    rank=s["rank"],
+                    sequence=s["sequence"],
+                    score=s.get("score"),
+                    recovery=s.get("recovery"),
+                )
+                for s in data["designed_sequences"]
+            ]
+
+            # Placeholder metadata — overwritten by base class run()
+            return InverseFoldingOutput(
+                designed_sequences=designed_sequences,
+                native_sequence=data.get("native_sequence"),
+                metadata=self._build_metadata(workspace, 0.0, [], ""),
+                raw_output_path=workspace.raw_output_dir,
             )
-            for s in data["designed_sequences"]
-        ]
-
-        # Placeholder metadata — overwritten by base class run()
-        return InverseFoldingOutput(
-            designed_sequences=designed_sequences,
-            native_sequence=data.get("native_sequence"),
-            metadata=self._build_metadata(workspace, 0.0, [], ""),
-            raw_output_path=workspace.raw_output_dir,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Scoring runner
-# ---------------------------------------------------------------------------
-
-
-class AntiFoldScoreRunner(ToolRunner):
-    """Runner for AntiFold sequence scoring (conditional log-likelihood).
-
-    Maps ``ScoringInput`` fields to the container's config.json with
-    ``mode="score"`` and parses the standardised ``result_data.json`` back
-    into a ``ScoringOutput``.
-
-    When ``sequences`` is ``None``, the container scores the native sequence
-    from the PDB. When provided, it computes sequence-specific scores from
-    the full logit matrix.
-    """
-
-    def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
-        """Write config.json and copy the input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
-        _validate_chain_ids(input_data)
-
-        # Copy structure file into workspace inputs/
-        src_path = input_data.structure_path
-        dest_name = src_path.name
-        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
-
-        # Build config.json for the container
-        config: dict[str, object] = {
-            "mode": "score",
-            "structure_path": f"/workspace/inputs/{dest_name}",
-            "sequences": input_data.sequences,
-        }
-
-        # Flat-merge extra dict
-        config.update(input_data.extra)
-
-        workspace.write_config(config)
-
-    def parse_output(self, workspace: Workspace) -> ScoringOutput:
-        """Read standardised outputs and return a ``ScoringOutput``."""
-        result_data_path = workspace.std_output_dir / "result_data.json"
-        data = json.loads(result_data_path.read_text())
 
         scores = [
             ScoredStructure(
@@ -190,7 +171,7 @@ class AntiFoldScoreRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entries — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _ANTIFOLD_NOTES = (
@@ -209,24 +190,6 @@ _ANTIFOLD_NOTES = (
     "(unlike ESM-IF1 where it is null). Lower scores indicate better fit.",
 )
 
-TOOL_REGISTRY["antifold"] = ToolEntry(
-    image_tag="antifold:1.0.0",
-    category=ToolCategory.INVERSE_FOLDING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=InverseFoldingInput,
-    output_schema=InverseFoldingOutput,
-    default_timeout=600,
-    supports_batch=False,
-    description=(
-        "Design antibody sequences for given backbone structures using "
-        "AntiFold, an antibody-specific inverse folding model fine-tuned "
-        "from ESM-IF1."
-    ),
-    version="1.0.0",
-    notes=_ANTIFOLD_NOTES,
-)
-
 _ANTIFOLD_SCORE_NOTES = (
     "When sequences is None, scores the native sequence from the PDB. When "
     "provided, computes sequence-specific scores from the full logit matrix.",
@@ -237,19 +200,43 @@ _ANTIFOLD_SCORE_NOTES = (
     "AntiFold accepts PDB input only (not mmCIF). Convert mmCIF files to PDB format before use.",
 )
 
-TOOL_REGISTRY["antifold_score"] = ToolEntry(
-    image_tag="antifold:1.0.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=300,
-    supports_batch=False,
+ANTIFOLD_TOOL = Tool(
+    name="antifold",
+    display_name="AntiFold",
+    category=ToolCategory.INVERSE_FOLDING,
     description=(
-        "Score antibody sequences against backbone structures using AntiFold "
-        "conditional log-likelihoods and perplexity."
+        "AntiFold antibody-specific inverse folding (fine-tuned from ESM-IF1): design "
+        "antibody sequences for a backbone (design mode) or score sequences by "
+        "conditional log-likelihood (score mode). Requires heavy/light chain IDs via extra."
     ),
     version="1.0.0",
-    notes=_ANTIFOLD_SCORE_NOTES,
+    image_tag="antifold:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="design",
+    modes={
+        "design": Mode(
+            name="design",
+            display_name="Design sequences",
+            description="Design antibody sequences for a backbone (targeting CDR/FW regions).",
+            input_schema=InverseFoldingInput,
+            output_schema=InverseFoldingOutput,
+            default_timeout=600,
+            notes=_ANTIFOLD_NOTES,
+        ),
+        "score": Mode(
+            name="score",
+            display_name="Score sequences",
+            description="Score antibody sequences against a backbone (log-likelihood/perplexity).",
+            input_schema=ScoringInput,
+            output_schema=ScoringOutput,
+            default_timeout=300,
+            category=ToolCategory.SCORING,
+            notes=_ANTIFOLD_SCORE_NOTES,
+        ),
+    },
+    keywords=("antifold", "antibody", "inverse folding", "sequence design", "scoring"),
 )
+"""Catalog Tool for AntiFold (design + score modes)."""
+
+register(ANTIFOLD_TOOL)

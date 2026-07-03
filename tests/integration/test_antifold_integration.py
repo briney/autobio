@@ -1,4 +1,4 @@
-"""Integration tests for AntiFold antibody inverse folding and scoring runners.
+"""Integration tests for AntiFold antibody inverse folding and scoring.
 
 These tests require Docker and a GPU. They download a real antibody-antigen
 complex PDB from RCSB and run the full AntiFold pipeline end-to-end,
@@ -80,11 +80,12 @@ class TestAntiFoldDesign:
             },
         )
         runner = get_runner("antifold", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert isinstance(output, InverseFoldingOutput)
         assert len(output.designed_sequences) == 2
         assert output.metadata.tool_name == "antifold"
+        assert output.metadata.mode == "design"
         assert output.metadata.wall_time_seconds > 0
 
         for seq in output.designed_sequences:
@@ -113,7 +114,7 @@ class TestAntiFoldDesign:
             },
         )
         runner = get_runner("antifold", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert len(output.designed_sequences) == 1
         assert output.native_sequence is not None
@@ -137,7 +138,7 @@ class TestAntiFoldDesign:
             },
         )
         runner = get_runner("antifold", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert len(output.designed_sequences) == 5
         ranks = [s.rank for s in output.designed_sequences]
@@ -155,7 +156,7 @@ class TestAntiFoldDesign:
             },
         )
         runner = get_runner("antifold", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(input_data, gpu="auto", mode="design", output_dir=tmp_path / "ws")
 
         assert output.native_sequence is not None
         assert "H" in output.native_sequence
@@ -184,8 +185,8 @@ class TestAntiFoldScore:
                 "light_chain": "L",
             },
         )
-        runner = get_runner("antifold_score", autobio_config)
-        output = runner.run(score_input, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("antifold", autobio_config)
+        output = runner.run(score_input, gpu="auto", mode="score", output_dir=tmp_path / "ws")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
@@ -195,7 +196,8 @@ class TestAntiFoldScore:
         assert score.score_breakdown is not None
         assert "perplexity" in score.score_breakdown
         assert score.score_breakdown["perplexity"] > 0
-        assert output.metadata.tool_name == "antifold_score"
+        assert output.metadata.tool_name == "antifold"
+        assert output.metadata.mode == "score"
 
     def test_score_custom_sequences(
         self, rcsb_ab_ag_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
@@ -208,7 +210,7 @@ class TestAntiFoldScore:
         )
         design_runner = get_runner("antifold", autobio_config)
         design_output = design_runner.run(
-            design_input, gpu="auto", output_dir=tmp_path / "design_ws"
+            design_input, gpu="auto", mode="design", output_dir=tmp_path / "design_ws"
         )
         assert design_output.native_sequence is not None
 
@@ -218,8 +220,10 @@ class TestAntiFoldScore:
             sequences=design_output.native_sequence,
             extra={"heavy_chain": "H", "light_chain": "L"},
         )
-        score_runner = get_runner("antifold_score", autobio_config)
-        output = score_runner.run(score_input, gpu="auto", output_dir=tmp_path / "score_ws")
+        score_runner = get_runner("antifold", autobio_config)
+        output = score_runner.run(
+            score_input, gpu="auto", mode="score", output_dir=tmp_path / "score_ws"
+        )
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) == 1
@@ -235,8 +239,8 @@ class TestAntiFoldScore:
             sequences=None,
             extra={"heavy_chain": "H", "light_chain": "L"},
         )
-        runner = get_runner("antifold_score", autobio_config)
-        output = runner.run(score_input, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("antifold", autobio_config)
+        output = runner.run(score_input, gpu="auto", mode="score", output_dir=tmp_path / "ws")
 
         score = output.scores[0]
         assert score.per_residue_scores is not None
