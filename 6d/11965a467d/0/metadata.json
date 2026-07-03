@@ -1,0 +1,126 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_id": "6d11965a467d",
+  "session_id": "db7a0814-ea06-4430-99ae-bf8ac6cdbae4",
+  "strategy": "manual-commit",
+  "created_at": "2026-07-03T22:28:40.793383079Z",
+  "branch": "feature/tools-modes-conformance-cleanup",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/superpowers/plans/2026-07-03-autobio-tool-modes-conformance-cleanup.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "2ac2966a26e9",
+  "token_usage": {
+    "input_tokens": 18185,
+    "cache_creation_tokens": 229923,
+    "cache_read_tokens": 3332003,
+    "output_tokens": 63073,
+    "api_call_count": 26
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01SwMsyP3jPc6D56VJ2pSNPn",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:writing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2ac2966a26e9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 36,
+        "end": 37,
+        "entry_ids": [
+          "bb0986f3-e136-4df1-bb2f-26ddbdbf4ffe"
+        ],
+        "tool_use_id": "toolu_01SwMsyP3jPc6D56VJ2pSNPn"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01SwMsyP3jPc6D56VJ2pSNPn"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:writing-plans",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_016kzc2KcAP8poehgshV3QgP",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:subagent-driven-development"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2ac2966a26e9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 188,
+        "end": 189,
+        "entry_ids": [
+          "2f4c2903-6eaa-436c-bdae-5460a0164ea2"
+        ],
+        "tool_use_id": "toolu_016kzc2KcAP8poehgshV3QgP"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_016kzc2KcAP8poehgshV3QgP"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:subagent-driven-development",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-07-03T22:28:40.749270806Z",
+    "agent_lines": 1072,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1072,
+    "total_lines_changed": 1072,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 397,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43,
+        "docs/CLEANUP.md": 354
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 43,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1426,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 43
+      }
+    }
+  ]
+}

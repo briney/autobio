@@ -1,0 +1,5 @@
+PR merged and branch deleted. switch back to main
+
+---
+
+new set of cleanups after the recent major refactor. design spec is in docs/CLEANUP.md, build this out into an implementation plan

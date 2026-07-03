@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "6d11965a467d",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-conformance-cleanup",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/superpowers/plans/2026-07-03-autobio-tool-modes-conformance-cleanup.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6d/11965a467d/0/metadata.json",
+      "transcript": "/6d/11965a467d/0/full.jsonl",
+      "compact_transcript": "/6d/11965a467d/0/transcript.jsonl",
+      "content_hash": "/6d/11965a467d/0/content_hash.txt",
+      "prompt": "/6d/11965a467d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18185,
+    "cache_creation_tokens": 229923,
+    "cache_read_tokens": 3332003,
+    "output_tokens": 63073,
+    "api_call_count": 26
+  }
+}
