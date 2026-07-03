@@ -663,8 +663,6 @@ class TestChaiRegistration:
     """Tests for catalog Tool and runner registration."""
 
     def test_chai1_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert "chai1" in CATALOG
         assert set(get_tool("chai1").modes) == {"predict"}
         assert get_tool("chai1").default_mode == "predict"
@@ -672,8 +670,6 @@ class TestChaiRegistration:
         assert get_tool("chai1").requires_gpu is True
 
     def test_chai1_tool_constant_registered(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert CHAI1_TOOL.name == "chai1"
         assert get_tool("chai1") is CHAI1_TOOL
 
@@ -697,7 +693,6 @@ class TestChaiRegistration:
 
 
 def test_info_snapshot_chai1() -> None:
-    import autobio.tools  # noqa: F401 - importing populates the catalog
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("chai1"), OutputFormat.JSON))

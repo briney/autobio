@@ -638,8 +638,6 @@ class TestEvoEF2Registration:
     """Tests for the catalog Tool + runner registration."""
 
     def test_evoef2_registered_as_single_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - populate registries
-
         tool = get_tool("evoef2")
         assert set(tool.modes) == {"repair", "binding", "build_mutant"}
         assert tool.default_mode == "repair"
@@ -649,13 +647,9 @@ class TestEvoEF2Registration:
 
     @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
     def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert flat_name not in TOOL_RUNNERS
 
     def test_evoef2_in_tool_runners(self) -> None:
-        import autobio.tools  # noqa: F401
-
         assert "evoef2" in TOOL_RUNNERS
         assert TOOL_RUNNERS["evoef2"] is EvoEF2Runner
 
@@ -681,13 +675,9 @@ class TestEvoEF2Registration:
         [("repair", 600), ("binding", 600), ("build_mutant", 600)],
     )
     def test_modes_have_uniform_timeout(self, mode_name: str, timeout: int) -> None:
-        import autobio.tools  # noqa: F401
-
         assert get_tool("evoef2").modes[mode_name].default_timeout == timeout
 
     def test_modes_share_single_image(self) -> None:
-        import autobio.tools  # noqa: F401
-
         tool = get_tool("evoef2")
         assert tool.image_tag == "evoef2:1.0.0"
         for mode in tool.modes.values():
@@ -703,7 +693,6 @@ class TestEvoEF2InfoSnapshot:
     """``autobio info evoef2`` output — per-mode notes, hints, output_schema."""
 
     def test_info_snapshot(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("evoef2"), OutputFormat.JSON))

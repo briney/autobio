@@ -435,7 +435,6 @@ class TestAntipastiRegistration:
     """Tests for tool and runner registration in the catalog."""
 
     def test_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
 
         assert "antipasti" in CATALOG
@@ -475,7 +474,6 @@ class TestAntipastiRegistration:
         assert r.tool_name == "antipasti"
 
     def test_tool_constant_registered(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.tools.antipasti import ANTIPASTI_TOOL
 
         assert ANTIPASTI_TOOL.name == "antipasti"
@@ -483,7 +481,6 @@ class TestAntipastiRegistration:
 
 
 def test_info_snapshot_antipasti() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("antipasti"), OutputFormat.JSON))

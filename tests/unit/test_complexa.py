@@ -657,8 +657,6 @@ class TestComplexaRegistration:
     """Tests for the catalog Tool + runner registration."""
 
     def test_complexa_registered_as_single_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - populate registries
-
         tool = get_tool("complexa")
         assert set(tool.modes) == {"protein_binder", "ligand_binder", "ame"}
         assert tool.default_mode == "protein_binder"
@@ -668,13 +666,9 @@ class TestComplexaRegistration:
 
     @pytest.mark.parametrize("flat_name", _RETIRED_RUNNER_KEYS)
     def test_retired_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert flat_name not in TOOL_RUNNERS
 
     def test_complexa_in_tool_runners(self) -> None:
-        import autobio.tools  # noqa: F401
-
         assert "complexa" in TOOL_RUNNERS
         assert TOOL_RUNNERS["complexa"] is ComplexaRunner
 
@@ -700,13 +694,9 @@ class TestComplexaRegistration:
         [("protein_binder", 43200), ("ligand_binder", 43200), ("ame", 43200)],
     )
     def test_modes_have_uniform_timeout(self, mode_name: str, timeout: int) -> None:
-        import autobio.tools  # noqa: F401
-
         assert get_tool("complexa").modes[mode_name].default_timeout == timeout
 
     def test_modes_share_single_image(self) -> None:
-        import autobio.tools  # noqa: F401
-
         tool = get_tool("complexa")
         assert tool.image_tag == "complexa:2.0.0"
         for mode in tool.modes.values():
@@ -714,14 +704,10 @@ class TestComplexaRegistration:
 
     @pytest.mark.parametrize("mode_name", _MODE_NAMES)
     def test_supports_batch(self, mode_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert get_tool("complexa").modes[mode_name].supports_batch is True
 
     @pytest.mark.parametrize("mode_name", _MODE_NAMES)
     def test_notes_populated(self, mode_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         notes = get_tool("complexa").modes[mode_name].notes
         assert len(notes) > 0
         all_notes = " ".join(notes).lower()
@@ -745,7 +731,6 @@ class TestComplexaInfoSnapshot:
     """``autobio info complexa`` output — per-mode notes, hints, output_schema."""
 
     def test_info_snapshot(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("complexa"), OutputFormat.JSON))

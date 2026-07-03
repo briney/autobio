@@ -616,8 +616,6 @@ class TestOpenMMRegistration:
     """Tests for the catalog Tool + runner registration."""
 
     def test_openmm_registered_as_single_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - populate registries
-
         tool = get_tool("openmm")
         assert sorted(tool.modes) == ["amber_minimize", "amber_relax", "md_simulate"]
         assert tool.default_mode == "amber_minimize"
@@ -628,13 +626,9 @@ class TestOpenMMRegistration:
 
     @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
     def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert flat_name not in TOOL_RUNNERS
 
     def test_openmm_in_tool_runners(self) -> None:
-        import autobio.tools  # noqa: F401
-
         assert "openmm" in TOOL_RUNNERS
         assert TOOL_RUNNERS["openmm"] is OpenMMRunner
 
@@ -1288,19 +1282,13 @@ class TestOpenMMCrossCategory:
     """openmm's modes span SCORING (minimize, relax) and SIMULATION (md_simulate)."""
 
     def test_tool_categories_union(self) -> None:
-        import autobio.tools  # noqa: F401
-
         tool = get_tool("openmm")
         assert tool_categories(tool) == (ToolCategory.SCORING, ToolCategory.SIMULATION)
 
     def test_listed_under_scoring(self) -> None:
-        import autobio.tools  # noqa: F401
-
         assert "openmm" in list_tools(category=ToolCategory.SCORING)
 
     def test_listed_under_simulation(self) -> None:
-        import autobio.tools  # noqa: F401
-
         assert "openmm" in list_tools(category=ToolCategory.SIMULATION)
 
 
@@ -1313,7 +1301,6 @@ class TestOpenMMInfoSnapshot:
     """``autobio info openmm`` output — per-mode notes, output_schema, category."""
 
     def test_info_snapshot(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("openmm"), OutputFormat.JSON))
@@ -1353,8 +1340,6 @@ class TestOpenMMRunMetadataMode:
         sample_pdb: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import autobio.tools  # noqa: F401
-
         output_dir = tmp_path / "ws"
         std_dir = output_dir / "outputs" / "standardized"
         std_dir.mkdir(parents=True)
@@ -1386,8 +1371,6 @@ class TestOpenMMRunMetadataMode:
         sample_pdb: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import autobio.tools  # noqa: F401
-
         output_dir = tmp_path / "ws"
         std_dir = output_dir / "outputs" / "standardized"
         std_dir.mkdir(parents=True)

@@ -831,8 +831,6 @@ class TestOpenFold3Registration:
     """Tests for catalog Tool and runner registration."""
 
     def test_openfold3_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert "openfold3" in CATALOG
         assert set(get_tool("openfold3").modes) == {"predict"}
         assert get_tool("openfold3").default_mode == "predict"
@@ -840,8 +838,6 @@ class TestOpenFold3Registration:
         assert get_tool("openfold3").requires_gpu is True
 
     def test_openfold3_tool_constant_registered(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert OPENFOLD3_TOOL.name == "openfold3"
         assert get_tool("openfold3") is OPENFOLD3_TOOL
 
@@ -867,7 +863,6 @@ class TestOpenFold3Registration:
 
 
 def test_info_snapshot_openfold3() -> None:
-    import autobio.tools  # noqa: F401 - importing populates the catalog
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("openfold3"), OutputFormat.JSON))

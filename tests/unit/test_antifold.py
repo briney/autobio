@@ -683,8 +683,6 @@ class TestAntiFoldRegistration:
     """Tests for the catalog Tool + runner registration."""
 
     def test_antifold_registered_as_single_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - populate registries
-
         tool = get_tool("antifold")
         assert set(tool.modes) == {"design", "score"}
         assert tool.default_mode == "design"
@@ -695,13 +693,9 @@ class TestAntiFoldRegistration:
 
     @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
     def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert flat_name not in TOOL_RUNNERS
 
     def test_antifold_in_tool_runners(self) -> None:
-        import autobio.tools  # noqa: F401
-
         assert "antifold" in TOOL_RUNNERS
         assert TOOL_RUNNERS["antifold"] is AntiFoldRunner
 
@@ -754,19 +748,15 @@ class TestAntiFoldCrossCategory:
     """antifold's modes span two categories (design=INVERSE_FOLDING, score=SCORING)."""
 
     def test_tool_categories_union(self) -> None:
-        import autobio.tools  # noqa: F401
-
         tool = get_tool("antifold")
         assert tool_categories(tool) == (ToolCategory.INVERSE_FOLDING, ToolCategory.SCORING)
 
     def test_listed_under_inverse_folding(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import list_tools
 
         assert "antifold" in list_tools(category=ToolCategory.INVERSE_FOLDING)
 
     def test_listed_under_scoring(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import list_tools
 
         assert "antifold" in list_tools(category=ToolCategory.SCORING)
@@ -781,7 +771,6 @@ class TestAntiFoldInfoSnapshot:
     """``autobio info antifold`` output — per-mode notes, output_schema, category."""
 
     def test_info_snapshot(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("antifold"), OutputFormat.JSON))
@@ -839,8 +828,6 @@ class TestAntiFoldRunMetadataMode:
         sample_pdb: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import autobio.tools  # noqa: F401
-
         output_dir = tmp_path / "ws"
         std_dir = output_dir / "outputs" / "standardized"
         std_dir.mkdir(parents=True)

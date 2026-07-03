@@ -292,8 +292,6 @@ class TestESMFoldRegistration:
     """Tests for catalog Tool and runner registration."""
 
     def test_esmfold_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert "esmfold" in CATALOG
         assert set(get_tool("esmfold").modes) == {"predict"}
         assert get_tool("esmfold").default_mode == "predict"
@@ -323,14 +321,11 @@ class TestESMFoldRegistration:
         assert "templates" in notes.lower()
 
     def test_esmfold_tool_constant_registered(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert ESMFOLD_TOOL.name == "esmfold"
         assert get_tool("esmfold") is ESMFOLD_TOOL
 
 
 def test_info_snapshot_esmfold() -> None:
-    import autobio.tools  # noqa: F401 - importing populates the catalog
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("esmfold"), OutputFormat.JSON))

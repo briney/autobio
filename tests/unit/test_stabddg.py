@@ -424,7 +424,6 @@ class TestStaBddGRegistration:
     """Tests for tool and runner registration in the catalog."""
 
     def test_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
 
         assert "stabddg" in CATALOG
@@ -464,7 +463,6 @@ class TestStaBddGRegistration:
         assert r.tool_name == "stabddg"
 
     def test_tool_constant_registered(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.tools.stabddg import STABDDG_TOOL
 
         assert STABDDG_TOOL.name == "stabddg"
@@ -472,7 +470,6 @@ class TestStaBddGRegistration:
 
 
 def test_info_snapshot_stabddg() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("stabddg"), OutputFormat.JSON))
