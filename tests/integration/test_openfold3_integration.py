@@ -14,10 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import OpenFold3Input, StructurePredictionOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -54,7 +51,7 @@ class TestOpenFold3SingleProtein:
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Run OpenFold3 end-to-end and verify output structure."""
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
         )
@@ -72,7 +69,7 @@ class TestOpenFold3SingleProtein:
 
     def test_confidence_scores(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Verify confidence metrics are populated (PAE enabled by default)."""
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
         )
@@ -90,7 +87,7 @@ class TestOpenFold3SingleProtein:
 
     def test_multiple_models(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Request 3 diffusion samples and verify count and ranking."""
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=3,
         )
@@ -117,7 +114,7 @@ class TestOpenFold3MultiChain:
 
     def test_two_chain_complex(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Predict a 2-chain insulin complex."""
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": _INSULIN_A, "B": _INSULIN_B},
             num_models=1,
         )
@@ -143,12 +140,10 @@ class TestOpenFold3ProteinLigand:
     def test_protein_ligand_complex(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Predict a protein-ligand complex using SMILES notation."""
         ibuprofen = "CC(C)Cc1ccc(cc1)C(C)C(O)=O"
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": _CRAMBIN_SEQ, "L": ibuprofen},
             num_models=1,
-            extra={
-                "entity_types": {"L": "ligand"},
-            },
+            entity_types={"L": "ligand"},
         )
         runner = get_runner("openfold3", autobio_config)
         output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
@@ -181,9 +176,9 @@ class TestOpenFold3RawQueryJSON:
                 }
             }
         }
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={},
-            extra={"query_json": query},
+            query_json=query,
         )
         runner = get_runner("openfold3", autobio_config)
         output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")

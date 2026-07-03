@@ -262,3 +262,72 @@ class Chai1Input(BaseInput):
         description="Enable ESM protein language model embeddings (extra compute).",
         json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=17),
     )
+
+
+class OpenFold3Input(BaseInput):
+    """Input for OpenFold3 biomolecular structure prediction (single ``predict`` mode)."""
+
+    sequences: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of chain ID to sequence (protein/DNA/RNA). For ligand chains "
+            "(entity_types = 'ligand'/{'smiles': ...}/{'ccd': ...}) the value is a "
+            "SMILES string. May be empty only when query_json is provided."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.PRIMARY, order=0),
+    )
+    num_models: int = Field(
+        default=1,
+        ge=1,
+        description="Number of structures to generate (maps to num_diffusion_samples).",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    templates: list[Path] | None = Field(
+        default=None,
+        description="Template structures (PDB/mmCIF) copied into the workspace.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=11),
+    )
+    entity_types: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Per-chain molecule type: 'protein'/'dna'/'rna'/'ligand', or a dict "
+            "{'smiles': 'CC...'} / {'ccd': 'ATP'} for ligands. Default 'protein'."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=12),
+    )
+    non_canonical_residues: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Per-chain non-canonical residues as {chain_id: {position: CCD_code}}, "
+            "e.g. {'A': {'3': 'MHO', '5': 'SEP'}}."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=13),
+    )
+    msa_paths: list[str] | None = Field(
+        default=None,
+        description="Pre-computed MSA file paths (copied into the workspace).",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.ADVANCED, order=14),
+    )
+    query_json: dict[str, Any] | str | None = Field(
+        default=None,
+        description=(
+            "Raw OpenFold3 query JSON (dict or string) — bypasses automatic query "
+            "generation. See https://openfold-3.readthedocs.io/en/latest/input_format_reference.html."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=15),
+    )
+    use_msa_server: bool = Field(
+        default=True,
+        description="Use ColabFold MMseqs2 MSA server (needs network). Set False to disable.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=16),
+    )
+    use_templates: bool = Field(
+        default=True,
+        description="Enable template-based prediction.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=17),
+    )
+    pae_enabled: bool = Field(
+        default=True,
+        description="Enable the PAE head (produces pTM/ipTM; higher memory).",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=18),
+    )

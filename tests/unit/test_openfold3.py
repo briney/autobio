@@ -8,16 +8,14 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import OpenFold3Input, StructurePredictionOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
-from autobio.tools.openfold3 import OpenFold3Runner
+from autobio.tools.openfold3 import OPENFOLD3_TOOL, OpenFold3Runner
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,14 +31,26 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> OpenFold3Runner:
-    """Create an OpenFold3Runner with mocked ContainerManager and GPUManager."""
+def _make_runner(config: AutobioConfig) -> OpenFold3Runner:
+    """Create an OpenFold3Runner with mocked ContainerManager/GPUManager and current_mode set.
+
+    ``current_mode`` is set directly (rather than via ``run()``) so that
+    ``prepare_workspace`` — which calls ``_apply_extra`` — can be exercised
+    in isolation.
+    """
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return OpenFold3Runner("openfold3", config)
+        runner = OpenFold3Runner("openfold3", config)
+    runner.current_mode = get_tool("openfold3").modes["predict"]
+    return runner
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> OpenFold3Runner:
+    """Create an OpenFold3Runner with mocked ContainerManager and GPUManager."""
+    return _make_runner(config)
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +66,7 @@ class TestOpenFold3PrepareWorkspace:
     ) -> None:
         """Sequences dict is translated into an OpenFold3 query JSON file."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MKWVTFIS", "B": "GVSEKL"})
+        input_data = OpenFold3Input(sequences={"A": "MKWVTFIS", "B": "GVSEKL"})
         runner.prepare_workspace(input_data, workspace)
 
         query_path = workspace.inputs_dir / "query.json"
@@ -83,7 +93,7 @@ class TestOpenFold3PrepareWorkspace:
         self, runner: OpenFold3Runner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"}, num_models=5)
+        input_data = OpenFold3Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"}, num_models=5)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -92,7 +102,7 @@ class TestOpenFold3PrepareWorkspace:
     def test_num_models_default_sets_one(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         """When num_models=1 (default), num_diffusion_samples=1."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = OpenFold3Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -101,7 +111,7 @@ class TestOpenFold3PrepareWorkspace:
     def test_defaults_applied(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         """Minimal input produces sensible defaults."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = OpenFold3Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -114,36 +124,58 @@ class TestOpenFold3PrepareWorkspace:
 
     def test_use_msa_server_default_true(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = OpenFold3Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["use_msa_server"] is True
 
     def test_use_msa_server_can_be_disabled(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        """The top-level use_msa_server field overrides the default."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"use_msa_server": False},
+            use_msa_server=False,
         )
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["use_msa_server"] is False
 
+    def test_use_templates_default_true(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["use_templates"] is True
+
+    def test_use_templates_can_be_disabled(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        """The top-level use_templates field overrides the default."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            use_templates=False,
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["use_templates"] is False
+
     def test_pae_enabled_default_true(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = OpenFold3Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["pae_enabled"] is True
 
     def test_pae_can_be_disabled(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        """The top-level pae_enabled field overrides the default."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"pae_enabled": False},
+            pae_enabled=False,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -152,9 +184,9 @@ class TestOpenFold3PrepareWorkspace:
 
     def test_entity_types_dna(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "ATCGATCG"},
-            extra={"entity_types": {"B": "dna"}},
+            entity_types={"B": "dna"},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -166,9 +198,9 @@ class TestOpenFold3PrepareWorkspace:
 
     def test_entity_types_rna(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "R": "ACGUACGU"},
-            extra={"entity_types": {"R": "rna"}},
+            entity_types={"R": "rna"},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -181,9 +213,9 @@ class TestOpenFold3PrepareWorkspace:
         """Ligand via SMILES dict generates correct chain entry."""
         smiles = "CC(=O)NC1=CC=C(O)C=C1"
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
-            extra={"entity_types": {"L": {"smiles": smiles}}},
+            entity_types={"L": {"smiles": smiles}},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -197,9 +229,9 @@ class TestOpenFold3PrepareWorkspace:
     def test_ligand_ccd_dict(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         """Ligand via CCD code generates correct chain entry."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
-            extra={"entity_types": {"L": {"ccd": "ATP"}}},
+            entity_types={"L": {"ccd": "ATP"}},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -215,9 +247,9 @@ class TestOpenFold3PrepareWorkspace:
         """entity_types: {"L": "ligand"} uses sequence value as SMILES."""
         smiles = "CC(C)Cc1ccc(cc1)C(C)C(O)=O"
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": smiles},
-            extra={"entity_types": {"L": "ligand"}},
+            entity_types={"L": "ligand"},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -230,9 +262,9 @@ class TestOpenFold3PrepareWorkspace:
     def test_non_canonical_residues(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         """Non-canonical residues are added to the chain entry."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"non_canonical_residues": {"A": {"3": "MHO", "5": "SEP"}}},
+            non_canonical_residues={"A": {"3": "MHO", "5": "SEP"}},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -245,7 +277,7 @@ class TestOpenFold3PrepareWorkspace:
         tmpl.write_text("data_test\n_entry.id test\n")
 
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             templates=[tmpl],
         )
@@ -253,22 +285,26 @@ class TestOpenFold3PrepareWorkspace:
 
         assert (workspace.inputs_dir / "template.cif").exists()
 
+        cfg = json.loads(workspace.config_path.read_text())
+        assert "templates" not in cfg
+        assert "template_path" not in cfg
+
     def test_msa_files_copied(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        """MSA files from extra['msa_paths'] are copied into workspace."""
+        """MSA files from the msa_paths field are copied into workspace."""
         msa_file = tmp_path / "A.a3m"
         msa_file.write_text(">query\nMVLSPADK\n")
 
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"msa_paths": [str(msa_file)]},
+            msa_paths=[str(msa_file)],
         )
         runner.prepare_workspace(input_data, workspace)
 
         assert (workspace.inputs_dir / "A.a3m").exists()
 
     def test_raw_query_json_passthrough_dict(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        """extra['query_json'] dict bypasses automatic generation."""
+        """query_json dict bypasses automatic generation."""
         custom_query = {
             "queries": {
                 "my_query": {
@@ -279,9 +315,9 @@ class TestOpenFold3PrepareWorkspace:
             }
         }
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={},
-            extra={"query_json": custom_query},
+            query_json=custom_query,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -291,28 +327,51 @@ class TestOpenFold3PrepareWorkspace:
     def test_raw_query_json_passthrough_string(
         self, runner: OpenFold3Runner, tmp_path: Path
     ) -> None:
-        """extra['query_json'] string is written directly."""
+        """query_json string is written directly."""
         custom_json = '{"queries": {"q1": {"chains": []}}}'
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={},
-            extra={"query_json": custom_json},
+            query_json=custom_json,
         )
         runner.prepare_workspace(input_data, workspace)
 
         content = (workspace.inputs_dir / "query.json").read_text()
         assert content == custom_json
 
-    def test_extra_dict_merged(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        """Pass-through extra keys appear in config.json, consumed keys do not."""
+    def test_query_json_none_builds_from_sequences(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """Footgun resolution: query_json=None builds query.json FROM sequences.
+
+        Pre-migration, ``extra["query_json"] = None`` with presence-based checks
+        would ``json.dumps(None)`` the literal 4-char string "null", silently
+        discarding any valid ``sequences``. The typed field's ``is not None``
+        check treats ``query_json=None`` as "not provided" consistently.
+        """
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(sequences={"A": "MKT"}, query_json=None)
+        runner.prepare_workspace(input_data, workspace)
+
+        content = (workspace.inputs_dir / "query.json").read_text()
+        assert content != "null"
+
+        query = json.loads(content)
+        chains = query["queries"]["query_1"]["chains"]
+        assert len(chains) == 1
+        assert chains[0]["chain_ids"] == "A"
+        assert chains[0]["sequence"] == "MKT"
+
+    def test_extra_dict_merged(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        """CLI-level extra keys appear in config.json; typed fields do not."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            entity_types={"A": "protein"},
             extra={
                 "num_model_seeds": 3,
                 "seed": 42,
                 "msa_server_url": "https://my-server.com",
-                "entity_types": {"A": "protein"},  # consumed — should NOT appear
             },
         )
         runner.prepare_workspace(input_data, workspace)
@@ -321,44 +380,23 @@ class TestOpenFold3PrepareWorkspace:
         assert cfg["num_model_seeds"] == 3
         assert cfg["seed"] == 42
         assert cfg["msa_server_url"] == "https://my-server.com"
+        # entity_types is a typed field, not a config.json key at all
         assert "entity_types" not in cfg
-
-    def test_consumed_keys_excluded(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        """All consumed keys are excluded from config.json."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={
-                "entity_types": {"A": "protein"},
-                "query_json": None,
-                "msa_paths": None,
-                "non_canonical_residues": {"A": {"1": "MHO"}},
-            },
-        )
-        runner.prepare_workspace(input_data, workspace)
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert "entity_types" not in cfg
-        assert "query_json" not in cfg
-        assert "msa_paths" not in cfg
-        assert "non_canonical_residues" not in cfg
 
     def test_multi_entity_complex(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         """Complex with protein, DNA, RNA, and ligand generates correct query."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={
                 "A": "MVLSPADKTNVKAAWGKVGA",
                 "B": "ATCGATCG",
                 "C": "ACGUACGU",
                 "D": "CC(=O)O",
             },
-            extra={
-                "entity_types": {
-                    "B": "dna",
-                    "C": "rna",
-                    "D": "ligand",
-                },
+            entity_types={
+                "B": "dna",
+                "C": "rna",
+                "D": "ligand",
             },
         )
         runner.prepare_workspace(input_data, workspace)
@@ -369,6 +407,88 @@ class TestOpenFold3PrepareWorkspace:
 
         types = {c["chain_ids"]: c["molecule_type"] for c in chains}
         assert types == {"A": "protein", "B": "dna", "C": "rna", "D": "ligand"}
+
+    def test_config_full_dict_equality_minimal(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """Full config.json dict is byte-compat with the pre-migration output (minimal input)."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "query_json_path": "/workspace/inputs/query.json",
+            "output_dir": "/workspace/outputs/raw",
+            "checkpoint_path": "/app/openfold3/weights/of3-p2-155k.pt",
+            "use_msa_server": True,
+            "use_templates": True,
+            "pae_enabled": True,
+            "num_diffusion_samples": 1,
+        }
+
+    def test_config_full_dict_equality_with_overrides(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """Full config.json dict with typed overrides and extra CLI knobs."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            num_models=3,
+            use_msa_server=False,
+            use_templates=False,
+            pae_enabled=False,
+            extra={"num_model_seeds": 3, "seed": 42, "output_format": "pdb"},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "query_json_path": "/workspace/inputs/query.json",
+            "output_dir": "/workspace/outputs/raw",
+            "checkpoint_path": "/app/openfold3/weights/of3-p2-155k.pt",
+            "use_msa_server": False,
+            "use_templates": False,
+            "pae_enabled": False,
+            "num_diffusion_samples": 3,
+            "num_model_seeds": 3,
+            "seed": 42,
+            "output_format": "pdb",
+        }
+
+    def test_generated_query_json_equality_protein_ligand_noncanonical(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """The generated query.json is unchanged for a representative protein+ligand input."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": "CC(=O)NC1=CC=C(O)C=C1"},
+            entity_types={"L": "ligand"},
+            non_canonical_residues={"A": {"3": "MHO"}},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        query = json.loads((workspace.inputs_dir / "query.json").read_text())
+        expected = {
+            "queries": {
+                "query_1": {
+                    "chains": [
+                        {
+                            "molecule_type": "protein",
+                            "chain_ids": "A",
+                            "sequence": "MVLSPADKTNVKAAWGKVGA",
+                            "non_canonical_residues": {"3": "MHO"},
+                        },
+                        {
+                            "molecule_type": "ligand",
+                            "chain_ids": "L",
+                            "smiles": "CC(=O)NC1=CC=C(O)C=C1",
+                        },
+                    ]
+                }
+            }
+        }
+        assert query == expected
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +501,16 @@ class TestOpenFold3HostValidation:
 
     def test_empty_sequences_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={})
+        input_data = OpenFold3Input(sequences={})
+        with pytest.raises(AutobioError, match="sequences must be non-empty"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_empty_sequences_with_query_json_none_raises(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        """Footgun resolution: query_json=None with empty sequences fails fast."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(sequences={}, query_json=None)
         with pytest.raises(AutobioError, match="sequences must be non-empty"):
             runner.prepare_workspace(input_data, workspace)
 
@@ -390,16 +519,16 @@ class TestOpenFold3HostValidation:
     ) -> None:
         """Empty sequences is allowed when query_json is provided."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={},
-            extra={"query_json": {"queries": {"q1": {"chains": []}}}},
+            query_json={"queries": {"q1": {"chains": []}}},
         )
         # Should not raise
         runner.prepare_workspace(input_data, workspace)
 
     def test_missing_template_file_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             templates=[tmp_path / "nonexistent.cif"],
         )
@@ -408,9 +537,9 @@ class TestOpenFold3HostValidation:
 
     def test_missing_msa_file_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"msa_paths": [str(tmp_path / "nonexistent.a3m")]},
+            msa_paths=[str(tmp_path / "nonexistent.a3m")],
         )
         with pytest.raises(AutobioError, match="MSA file does not exist"):
             runner.prepare_workspace(input_data, workspace)
@@ -419,9 +548,9 @@ class TestOpenFold3HostValidation:
         self, runner: OpenFold3Runner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"Z": "dna"}},
+            entity_types={"Z": "dna"},
         )
         with pytest.raises(AutobioError, match="unknown chain IDs"):
             runner.prepare_workspace(input_data, workspace)
@@ -430,18 +559,18 @@ class TestOpenFold3HostValidation:
         self, runner: OpenFold3Runner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"A": "peptide"}},
+            entity_types={"A": "peptide"},
         )
         with pytest.raises(AutobioError, match="Invalid entity type"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_entity_type_dict_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"A": {"invalid_key": "value"}}},
+            entity_types={"A": {"invalid_key": "value"}},
         )
         with pytest.raises(AutobioError, match="must contain 'smiles' or 'ccd' key"):
             runner.prepare_workspace(input_data, workspace)
@@ -450,11 +579,89 @@ class TestOpenFold3HostValidation:
         self, runner: OpenFold3Runner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = OpenFold3Input(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"non_canonical_residues": {"Z": {"1": "MHO"}}},
+            non_canonical_residues={"Z": {"1": "MHO"}},
         )
         with pytest.raises(AutobioError, match="non_canonical_residues references unknown"):
+            runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestOpenFold3ExtraShadowRejection
+# ---------------------------------------------------------------------------
+
+
+class TestOpenFold3ExtraShadowRejection:
+    """Promoted keys must no longer be accepted via extra — _apply_extra rejects them."""
+
+    def test_entity_types_via_extra_rejected(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"entity_types": {"A": "protein"}},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_non_canonical_residues_via_extra_rejected(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"non_canonical_residues": {"A": {"1": "MHO"}}},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_msa_paths_via_extra_rejected(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"msa_paths": ["a3m.a3m"]},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_query_json_via_extra_rejected(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"query_json": {"queries": {}}},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_use_msa_server_via_extra_rejected(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"use_msa_server": False},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_use_templates_via_extra_rejected(
+        self, runner: OpenFold3Runner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"use_templates": False},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_pae_enabled_via_extra_rejected(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = OpenFold3Input(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"pae_enabled": False},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
             runner.prepare_workspace(input_data, workspace)
 
 
@@ -621,15 +828,23 @@ class TestOpenFold3ParseOutput:
 
 
 class TestOpenFold3Registration:
-    """Tests for tool and runner registration."""
+    """Tests for catalog Tool and runner registration."""
 
-    def test_openfold3_in_registry(self) -> None:
-        assert "openfold3" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["openfold3"]
-        assert entry.category == ToolCategory.STRUCTURE_PREDICTION
-        assert entry.input_schema is StructurePredictionInput
-        assert entry.output_schema is StructurePredictionOutput
-        assert entry.requires_gpu is True
+    def test_openfold3_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert "openfold3" in CATALOG
+        assert set(get_tool("openfold3").modes) == {"predict"}
+        assert get_tool("openfold3").default_mode == "predict"
+        assert get_tool("openfold3").category == ToolCategory.STRUCTURE_PREDICTION
+        assert get_tool("openfold3").requires_gpu is True
+        assert "openfold3" not in TOOL_REGISTRY
+
+    def test_openfold3_tool_constant_registered(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert OPENFOLD3_TOOL.name == "openfold3"
+        assert get_tool("openfold3") is OPENFOLD3_TOOL
 
     def test_tool_runners_registered(self) -> None:
         assert "openfold3" in TOOL_RUNNERS
@@ -646,16 +861,20 @@ class TestOpenFold3Registration:
 
     def test_notes_populated(self) -> None:
         """Notes contain key operational topics for agent guidance."""
-        notes = " ".join(TOOL_REGISTRY["openfold3"].notes)
+        notes = " ".join(get_tool("openfold3").modes["predict"].notes)
         assert "msa" in notes.lower()
         assert "pae" in notes.lower()
         assert "msa_server_url" in notes
 
-    def test_input_format_populated(self) -> None:
-        """Input format contains entity construction and native format info."""
-        fmt = " ".join(TOOL_REGISTRY["openfold3"].input_format)
-        assert "entity_types" in fmt
-        assert "ligand" in fmt.lower()
-        assert "query_json" in fmt
-        assert "non_canonical" in fmt.lower()
-        assert "json" in fmt.lower()
+
+def test_info_snapshot_openfold3() -> None:
+    import autobio.tools  # noqa: F401 - importing populates the catalog
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("openfold3"), OutputFormat.JSON))
+    assert parsed["modes"][0]["name"] == "predict"
+    props = parsed["modes"][0]["input_schema"]["properties"]
+    assert props["use_msa_server"]["x-autobio"]["widget"] == "toggle"
+    assert props["entity_types"]["x-autobio"]["tier"] == "advanced"
+    assert "output_schema" in parsed["modes"][0]
+    assert parsed["modes"][0]["notes"]

@@ -4,13 +4,13 @@ OpenFold3 is a fully open-source, trainable PyTorch reproduction of AlphaFold3.
 It predicts biomolecular structures for proteins, DNA, RNA, ligands, and
 non-canonical residues.
 
-Simple protein predictions use the ``sequences`` dict on
-``StructurePredictionInput``.  For multi-entity predictions (DNA, RNA, ligands)
-agents specify ``extra["entity_types"]``.  For full control, provide a raw
-OpenFold3 query JSON via ``extra["query_json"]``.
+Simple protein predictions use the ``sequences`` dict on ``OpenFold3Input``.
+For multi-entity predictions (DNA, RNA, ligands) agents specify
+``entity_types``. For full control, provide a raw OpenFold3 query JSON via
+``query_json``.
 
-Parameters not directly exposed on ``StructurePredictionInput`` (MSA server URL,
-PAE toggle, low memory mode, etc.) are passed through the ``extra`` dict.
+CLI-level args (``num_model_seeds``, ``seed``, ``output_format``, etc.) are
+passed through the ``extra`` dict on ``OpenFold3Input``.
 """
 
 from __future__ import annotations
@@ -20,13 +20,14 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.structure_prediction import (
     ConfidenceMetrics,
+    OpenFold3Input,
     PredictedStructure,
-    StructurePredictionInput,
     StructurePredictionOutput,
 )
 from autobio.tools.base import ToolRunner
@@ -43,17 +44,6 @@ _CHECKPOINT_PATH = "/app/openfold3/weights/of3-p2-155k.pt"
 # Valid molecule type strings for OpenFold3 query JSON.
 _VALID_MOLECULE_TYPES = frozenset({"protein", "dna", "rna", "ligand"})
 
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset(
-    {
-        "entity_types",
-        "query_json",
-        "msa_paths",
-        "non_canonical_residues",
-    }
-)
-
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -63,21 +53,21 @@ class OpenFold3Runner(ToolRunner):
     """Runner for OpenFold3 structure prediction.
 
     ``prepare_workspace`` generates an OpenFold3 query JSON from the
-    standardised ``StructurePredictionInput`` fields and writes
-    ``config.json``.  ``parse_output`` reads the standardised
-    ``result_data.json`` produced by the container's ``standardize.py``.
+    standardised ``OpenFold3Input`` fields and writes ``config.json``.
+    ``parse_output`` reads the standardised ``result_data.json`` produced by
+    the container's ``standardize.py``.
     """
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and query JSON to the workspace."""
-        assert isinstance(input_data, StructurePredictionInput)
+        assert isinstance(input_data, OpenFold3Input)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
 
         # -- Generate or pass through query JSON -----------------------------
-        if "query_json" in input_data.extra:
-            query_json = input_data.extra["query_json"]
+        if input_data.query_json is not None:
+            query_json = input_data.query_json
             if isinstance(query_json, str):
                 query_content = query_json
             else:
@@ -94,7 +84,7 @@ class OpenFold3Runner(ToolRunner):
                 shutil.copy2(tmpl_path, workspace.inputs_dir / tmpl_path.name)
 
         # -- Copy MSA files into workspace ----------------------------------
-        msa_paths = input_data.extra.get("msa_paths")
+        msa_paths = input_data.msa_paths
         if msa_paths:
             for msa_path_str in msa_paths:
                 msa_path = Path(msa_path_str)
@@ -105,20 +95,16 @@ class OpenFold3Runner(ToolRunner):
             "query_json_path": "/workspace/inputs/query.json",
             "output_dir": "/workspace/outputs/raw",
             "checkpoint_path": _CHECKPOINT_PATH,
-            "use_msa_server": True,
-            "use_templates": True,
-            "pae_enabled": True,
+            "use_msa_server": input_data.use_msa_server,
+            "use_templates": input_data.use_templates,
+            "pae_enabled": input_data.pae_enabled,
         }
 
         # Map num_models → num_diffusion_samples
         config["num_diffusion_samples"] = input_data.num_models
 
-        # Flat-merge extra dict for pass-through parameters (excluding
-        # consumed keys).  This allows extra["use_msa_server"] = False
-        # to override the default.
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        # Flat-merge extra dict for remaining CLI-level args.
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -156,23 +142,22 @@ class OpenFold3Runner(ToolRunner):
         )
 
     @staticmethod
-    def _build_query_json(input_data: StructurePredictionInput) -> dict[str, object]:
+    def _build_query_json(input_data: OpenFold3Input) -> dict[str, object]:
         """Generate an OpenFold3 query JSON dict from structured input fields.
 
         Each entry in ``sequences`` becomes a chain in the query.  The default
-        molecule type is ``protein``; override per-chain via
-        ``extra["entity_types"]``.
+        molecule type is ``protein``; override per-chain via ``entity_types``.
 
         Entity type values can be:
         - A string: ``"protein"``, ``"dna"``, ``"rna"``
         - A dict for ligands: ``{"smiles": "CC(=O)..."}`` or ``{"ccd": "ATP"}``
 
-        Non-canonical residues are specified via ``extra["non_canonical_residues"]``
-        as a dict mapping chain IDs to dicts of 1-based position → CCD code:
+        Non-canonical residues are specified via ``non_canonical_residues`` as a
+        dict mapping chain IDs to dicts of 1-based position → CCD code:
         ``{"A": {"3": "MHO", "5": "SEP"}}``.
         """
-        entity_types: dict[str, object] = input_data.extra.get("entity_types", {})
-        non_canonical: dict[str, object] = input_data.extra.get("non_canonical_residues", {})
+        entity_types: dict[str, object] = input_data.entity_types
+        non_canonical: dict[str, object] = input_data.non_canonical_residues
         chains: list[dict[str, object]] = []
 
         for chain_id, sequence in input_data.sequences.items():
@@ -242,13 +227,13 @@ class OpenFold3Runner(ToolRunner):
         return workspace.root / relative
 
     @staticmethod
-    def _validate_inputs(input_data: StructurePredictionInput) -> None:
+    def _validate_inputs(input_data: OpenFold3Input) -> None:
         """Host-side validation — catch errors before container launch."""
-        has_query_json = "query_json" in input_data.extra
+        has_query_json = input_data.query_json is not None
 
         if not has_query_json and not input_data.sequences:
             raise AutobioError(
-                "sequences must be non-empty, or provide a raw query JSON via extra['query_json']."
+                "sequences must be non-empty, or provide a raw query JSON via the query_json field."
             )
 
         # Validate template files exist
@@ -258,7 +243,7 @@ class OpenFold3Runner(ToolRunner):
                     raise AutobioError(f"Template file does not exist: {tmpl_path}")
 
         # Validate MSA files exist
-        msa_paths = input_data.extra.get("msa_paths")
+        msa_paths = input_data.msa_paths
         if msa_paths:
             for msa_path_str in msa_paths:
                 msa_path = Path(msa_path_str)
@@ -266,7 +251,7 @@ class OpenFold3Runner(ToolRunner):
                     raise AutobioError(f"MSA file does not exist: {msa_path}")
 
         # Validate entity_types keys match sequences
-        entity_types = input_data.extra.get("entity_types", {})
+        entity_types = input_data.entity_types
         if entity_types and not has_query_json:
             unknown_chains = set(entity_types) - set(input_data.sequences)
             if unknown_chains:
@@ -296,7 +281,7 @@ class OpenFold3Runner(ToolRunner):
                     )
 
         # Validate non_canonical_residues keys match sequences
-        non_canonical = input_data.extra.get("non_canonical_residues", {})
+        non_canonical = input_data.non_canonical_residues
         if non_canonical and not has_query_json:
             unknown_chains = set(non_canonical) - set(input_data.sequences)
             if unknown_chains:
@@ -308,88 +293,29 @@ class OpenFold3Runner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
-
-_OPENFOLD3_INPUT_FORMAT = (
-    # JSON format overview
-    "OpenFold3 takes a JSON query file with top-level key 'queries' containing "
-    "a dict of named queries. Each query has a 'chains' list defining the "
-    "molecular entities. Via the autobio API, each entry in the sequences dict "
-    "becomes a chain (default molecule_type 'protein'). To specify other entity "
-    "types, use extra['entity_types'] mapping chain IDs to types: "
-    "{'B': 'dna', 'C': {'smiles': 'CC(=O)NC1=CC=C(O)C=C1'}, 'D': {'ccd': 'ATP'}}.",
-    # Chain specification
-    "JSON chain fields — Each chain requires 'molecule_type' and 'chain_ids'. "
-    "Protein: {molecule_type: protein, chain_ids: A, sequence: MKLL...}. "
-    "DNA: {molecule_type: dna, chain_ids: B, sequence: ATCGATCG}. "
-    "RNA: {molecule_type: rna, chain_ids: C, sequence: AUCGAUCG}. "
-    "Ligand (SMILES): {molecule_type: ligand, chain_ids: D, smiles: 'CC...'}. "
-    "Ligand (CCD): {molecule_type: ligand, chain_ids: D, ccd_codes: ATP}. "
-    "Via the API, ligands are specified in entity_types using SMILES "
-    "({'smiles': 'CC...'}), CCD codes ({'ccd': 'ATP'}), or the string "
-    "'ligand' (sequence value used as SMILES). chain_ids can be a string "
-    "or list for multiple identical chains.",
-    # Non-canonical residues
-    "Non-canonical residues are specified per-chain using a dict mapping "
-    "1-based residue positions to CCD codes. In JSON: "
-    "{molecule_type: protein, chain_ids: A, sequence: MKLLVV, "
-    "non_canonical_residues: {3: MHO, 5: SEP}}. Via the API, use "
-    "extra['non_canonical_residues']: {'A': {'3': 'MHO', '5': 'SEP'}}. "
-    "MSA computation uses only the primary sequence.",
-    # Optional chain fields
-    "Optional chain fields: 'use_msas' (bool — enable/disable MSA for this "
-    "chain), 'use_main_msas'/'use_paired_msas' (bool — MSA type control), "
-    "'main_msa_file_paths'/'paired_msa_file_paths' (list — precomputed MSA "
-    "files), 'template_alignment_file_path' (str — template data). Multiple "
-    "queries in one JSON file enables batch inference.",
-    # Complete example
-    "Complete example — protein-ligand JSON:\\n"
-    "{\\n"
-    '  "queries": {\\n'
-    '    "complex_1": {\\n'
-    '      "chains": [\\n'
-    "        {\\n"
-    '          "molecule_type": "protein",\\n'
-    '          "chain_ids": "A",\\n'
-    '          "sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEK"\\n'
-    "        },\\n"
-    "        {\\n"
-    '          "molecule_type": "ligand",\\n'
-    '          "chain_ids": "B",\\n'
-    '          "smiles": "CC(=O)NC1=CC=C(O)C=C1"\\n'
-    "        }\\n"
-    "      ]\\n"
-    "    }\\n"
-    "  }\\n"
-    "}",
-    # Raw override
-    "For full control over the native JSON format, provide the complete query "
-    "JSON via extra['query_json'] (as a dict or JSON string). This bypasses "
-    "automatic query generation. See "
-    "https://openfold-3.readthedocs.io/en/latest/input_format_reference.html.",
-)
 
 _OPENFOLD3_NOTES = (
     # MSA options
     "MSA generation via ColabFold server is ENABLED BY DEFAULT "
     "(use_msa_server=true). Only protein sequences are submitted to the server. "
-    "To disable, set 'use_msa_server': false in extra. To use a private "
+    "To disable, set the 'use_msa_server' field to false. To use a private "
     "ColabFold server, set extra['msa_server_url'] to the server URL. "
     "For high-throughput screening, provide pre-computed MSAs via "
-    "extra['msa_paths'] (list of file paths).",
+    "the 'msa_paths' field (list of file paths).",
     # Template options
     "Template-based prediction is ENABLED BY DEFAULT (use_templates=true). "
     "Templates are automatically retrieved when using the ColabFold server. "
     "To provide custom template structures, use the 'templates' field on "
-    "StructurePredictionInput. To disable templates entirely, set "
-    "extra['use_templates'] = False.",
+    "OpenFold3Input. To disable templates entirely, set the 'use_templates' "
+    "field to false.",
     # PAE and confidence
     "The PAE (Predicted Aligned Error) head is ENABLED BY DEFAULT "
     "(pae_enabled=true). This produces pTM and ipTM confidence scores and "
     "enables the sample_ranking_score for ranking predictions. Disable via "
-    "extra['pae_enabled'] = False to reduce memory usage at the cost of "
-    "losing pTM/ipTM metrics.",
+    "the 'pae_enabled' field to reduce memory usage at the cost of losing "
+    "pTM/ipTM metrics.",
     # Key parameters
     "Key extra parameters: 'num_model_seeds' (int, default 1 — number of "
     "independent random seeds), 'seed' (int — specific seed value), "
@@ -405,21 +331,33 @@ _OPENFOLD3_NOTES = (
     "large complexes, consider reducing num_diffusion_samples.",
 )
 
-TOOL_REGISTRY["openfold3"] = ToolEntry(
-    image_tag="openfold3:1.0.0",
+OPENFOLD3_TOOL = Tool(
+    name="openfold3",
+    display_name="OpenFold3",
     category=ToolCategory.STRUCTURE_PREDICTION,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=StructurePredictionInput,
-    output_schema=StructurePredictionOutput,
-    default_timeout=3600,
-    supports_batch=False,
     description=(
         "Predict biomolecular structures using OpenFold3 (open-source AlphaFold3). "
         "Supports proteins, DNA, RNA, ligands, and non-canonical residues with "
         "MSA-based and template-based prediction."
     ),
     version="1.0.0",
-    notes=_OPENFOLD3_NOTES,
-    input_format=_OPENFOLD3_INPUT_FORMAT,
+    image_tag="openfold3:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="predict",
+    modes={
+        "predict": Mode(
+            name="predict",
+            display_name="Predict structure",
+            description="Predict a biomolecular complex structure.",
+            input_schema=OpenFold3Input,
+            output_schema=StructurePredictionOutput,
+            default_timeout=3600,
+            notes=_OPENFOLD3_NOTES,
+        )
+    },
+    keywords=("openfold3", "alphafold3", "structure prediction", "complex", "ligand"),
 )
+"""Catalog Tool for OpenFold3."""
+
+register(OPENFOLD3_TOOL)
