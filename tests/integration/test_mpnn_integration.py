@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.inverse_folding import InverseFoldingInput, InverseFoldingOutput
+from autobio.schemas.inverse_folding import InverseFoldingOutput, MPNNInput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -83,7 +83,7 @@ class TestProteinMPNNIntegration:
         self, rcsb_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Run ProteinMPNN end-to-end and verify output structure."""
-        input_data = InverseFoldingInput(
+        input_data = MPNNInput(
             structure_path=rcsb_pdb,
             num_sequences=2,
             temperature=0.1,
@@ -108,7 +108,7 @@ class TestProteinMPNNIntegration:
         self, rcsb_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Verify native sequence is extracted from the input structure."""
-        input_data = InverseFoldingInput(structure_path=rcsb_pdb)
+        input_data = MPNNInput(structure_path=rcsb_pdb)
         runner = get_runner("proteinmpnn", autobio_config)
         output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
 
@@ -121,7 +121,7 @@ class TestProteinMPNNIntegration:
         self, rcsb_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Request multiple designs and verify count."""
-        input_data = InverseFoldingInput(
+        input_data = MPNNInput(
             structure_path=rcsb_pdb,
             num_sequences=5,
         )
@@ -146,7 +146,7 @@ class TestLigandMPNNIntegration:
         self, rcsb_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Run LigandMPNN end-to-end (on a plain protein — no ligand needed)."""
-        input_data = InverseFoldingInput(
+        input_data = MPNNInput(
             structure_path=rcsb_pdb,
             num_sequences=2,
             temperature=0.1,
@@ -180,7 +180,7 @@ class TestMultiChainIntegration:
         self, rcsb_fab_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Run ProteinMPNN on a 2-chain Fab and verify per-chain output."""
-        input_data = InverseFoldingInput(
+        input_data = MPNNInput(
             structure_path=rcsb_fab_pdb,
             num_sequences=2,
             temperature=0.1,
@@ -207,7 +207,7 @@ class TestMultiChainIntegration:
         self, rcsb_fab_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Verify native sequences are extracted for both chains."""
-        input_data = InverseFoldingInput(structure_path=rcsb_fab_pdb)
+        input_data = MPNNInput(structure_path=rcsb_fab_pdb)
         runner = get_runner("proteinmpnn", autobio_config)
         output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
 
@@ -220,7 +220,7 @@ class TestMultiChainIntegration:
         self, rcsb_fab_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Design only the heavy chain H, keeping light chain L at native sequence."""
-        input_data = InverseFoldingInput(
+        input_data = MPNNInput(
             structure_path=rcsb_fab_pdb,
             chains_to_design=["H"],
             num_sequences=1,
@@ -255,7 +255,7 @@ class TestLigandMPNNWithLigand:
         self, rcsb_ligand_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Run LigandMPNN on trypsin-benzamidine and verify ligand-aware design."""
-        input_data = InverseFoldingInput(
+        input_data = MPNNInput(
             structure_path=rcsb_ligand_pdb,
             num_sequences=2,
             temperature=0.1,
@@ -282,7 +282,7 @@ class TestLigandMPNNWithLigand:
         self, rcsb_ligand_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Verify native sequence extraction works on a ligand-containing PDB."""
-        input_data = InverseFoldingInput(structure_path=rcsb_ligand_pdb)
+        input_data = MPNNInput(structure_path=rcsb_ligand_pdb)
         runner = get_runner("ligandmpnn", autobio_config)
         output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
 

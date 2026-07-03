@@ -5,7 +5,7 @@ The ``tool_name`` (``"proteinmpnn"`` or ``"ligandmpnn"``) determines which
 model type and checkpoint are used.
 
 LigandMPNN-specific parameters (``omit``, ``bias``, ``atomize_side_chains``,
-etc.) are passed through the ``extra`` dict on ``InverseFoldingInput``.
+etc.) are passed through the ``extra`` dict on ``MPNNInput``.
 """
 
 from __future__ import annotations
@@ -14,12 +14,13 @@ import json
 import shutil
 from typing import TYPE_CHECKING
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.inverse_folding import (
     DesignedSequence,
-    InverseFoldingInput,
     InverseFoldingOutput,
+    MPNNInput,
 )
 from autobio.tools.base import ToolRunner
 
@@ -52,7 +53,7 @@ class MPNNRunner(ToolRunner):
     """Shared runner for ProteinMPNN and LigandMPNN inverse folding tools.
 
     Both models use the same container image and three-phase protocol.
-    ``prepare_workspace`` maps standardised ``InverseFoldingInput`` fields
+    ``prepare_workspace`` maps standardised ``MPNNInput`` fields
     to the foundry ``mpnn`` CLI configuration.  ``parse_output`` reads the
     standardised ``result_data.json`` produced by the container's
     ``standardize.py`` script.
@@ -60,7 +61,7 @@ class MPNNRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy the input structure into the workspace."""
-        assert isinstance(input_data, InverseFoldingInput)
+        assert isinstance(input_data, MPNNInput)
         model_cfg = _MODEL_CONFIG[self.tool_name]
 
         # Copy structure file into workspace inputs/
@@ -96,7 +97,7 @@ class MPNNRunner(ToolRunner):
 
         # Flat-merge extra dict for tool-specific params
         # (omit, seed, batch_size, bias, temperature_per_residue, etc.)
-        config.update(input_data.extra)
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -125,7 +126,7 @@ class MPNNRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entries — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _MPNN_NOTES = (
@@ -142,36 +143,63 @@ _MPNN_NOTES = (
     "FASTA output directly, be aware of this ordering.",
 )
 
-TOOL_REGISTRY["proteinmpnn"] = ToolEntry(
-    image_tag="mpnn:1.0.0",
-    category=ToolCategory.INVERSE_FOLDING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=InverseFoldingInput,
-    output_schema=InverseFoldingOutput,
-    default_timeout=600,
-    supports_batch=False,
-    description="Design protein sequences for given backbone structures using ProteinMPNN.",
-    version="1.0.0",
-    notes=_MPNN_NOTES,
+_LIGANDMPNN_LIGAND_NOTE = (
+    "For protein-ligand complexes, the foundry parser separates non-polymer "
+    "residues (ligands, ions) into synthetic chain IDs. Calcium ions (atom "
+    "name 'CA') may be miscounted as protein residues by external PDB parsers, "
+    "but the foundry parser handles them correctly."
 )
 
-TOOL_REGISTRY["ligandmpnn"] = ToolEntry(
-    image_tag="mpnn:1.0.0",
+PROTEINMPNN_TOOL = Tool(
+    name="proteinmpnn",
+    display_name="ProteinMPNN",
     category=ToolCategory.INVERSE_FOLDING,
+    description="Design protein sequences for given backbone structures using ProteinMPNN.",
+    version="1.0.0",
+    image_tag="mpnn:1.0.0",
     requires_gpu=True,
     gpu_count=1,
-    input_schema=InverseFoldingInput,
-    output_schema=InverseFoldingOutput,
-    default_timeout=600,
-    supports_batch=False,
+    default_mode="design",
+    modes={
+        "design": Mode(
+            name="design",
+            display_name="Design sequences",
+            description="Design protein sequences for a backbone structure.",
+            input_schema=MPNNInput,
+            output_schema=InverseFoldingOutput,
+            default_timeout=600,
+            notes=_MPNN_NOTES,
+        )
+    },
+    keywords=("proteinmpnn", "inverse folding", "sequence design", "mpnn"),
+)
+"""Catalog Tool for ProteinMPNN."""
+
+register(PROTEINMPNN_TOOL)
+
+LIGANDMPNN_TOOL = Tool(
+    name="ligandmpnn",
+    display_name="LigandMPNN",
+    category=ToolCategory.INVERSE_FOLDING,
     description="Design protein sequences with ligand awareness using LigandMPNN.",
     version="1.0.0",
-    notes=_MPNN_NOTES
-    + (
-        "For protein-ligand complexes, the foundry parser separates non-polymer "
-        "residues (ligands, ions) into synthetic chain IDs. Calcium ions (atom "
-        "name 'CA') may be miscounted as protein residues by external PDB parsers, "
-        "but the foundry parser handles them correctly.",
-    ),
+    image_tag="mpnn:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="design",
+    modes={
+        "design": Mode(
+            name="design",
+            display_name="Design sequences",
+            description="Design protein sequences (ligand-aware) for a backbone structure.",
+            input_schema=MPNNInput,
+            output_schema=InverseFoldingOutput,
+            default_timeout=600,
+            notes=_MPNN_NOTES + (_LIGANDMPNN_LIGAND_NOTE,),
+        )
+    },
+    keywords=("ligandmpnn", "inverse folding", "sequence design", "ligand", "mpnn"),
 )
+"""Catalog Tool for LigandMPNN."""
+
+register(LIGANDMPNN_TOOL)
