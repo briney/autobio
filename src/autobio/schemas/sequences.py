@@ -12,7 +12,7 @@ from typing import Annotated
 
 from pydantic import BeforeValidator
 
-from autobio.schemas.antibody import AntibodySequence
+from autobio.schemas.antibody_types import AntibodySequence
 from autobio.utils.sequences import parse_antibody_fasta_string, parse_fasta, parse_fasta_string
 
 _FASTA_SUFFIXES = (".fasta", ".fa")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from autobio.schemas.antibody import AntibodySequence
+from autobio.schemas.antibody_types import AntibodySequence
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -332,6 +332,14 @@ class TestAntibodyInput:
         assert len(restored.sequences) == 2
         assert restored.layer == 20
 
+    def test_accepts_fasta_text(self) -> None:
+        fasta = ">ab1|heavy\nEVQLVESGG\n>ab1|light\nDIQMTQSPS\n"
+        inp = AntibodyInput(sequences=fasta)
+        assert len(inp.sequences) == 1
+        assert inp.sequences[0].id == "ab1"
+        assert inp.sequences[0].heavy_chain == "EVQLVESGG"
+        assert inp.sequences[0].light_chain == "DIQMTQSPS"
+
 
 class TestSequencePLL:
     def test_required_fields(self) -> None:

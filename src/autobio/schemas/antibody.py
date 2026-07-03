@@ -9,33 +9,19 @@ tools return ``AntibodyPLLOutput``.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
+from autobio.schemas.antibody_types import AntibodySequence  # re-export
 from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.hints import Tier, Widget, ui
+from autobio.schemas.sequences import AntibodySequenceSet  # noqa: TC001 - runtime field type
 
-
-class AntibodySequence(BaseModel):
-    """A single antibody sequence entry with optional heavy and light chains.
-
-    At least one of ``heavy_chain`` or ``light_chain`` must be provided.
-    """
-
-    id: str = Field(description="Unique identifier for this antibody sequence.")
-    heavy_chain: str | None = Field(
-        default=None,
-        description="Variable heavy (VH) amino acid sequence.",
-    )
-    light_chain: str | None = Field(
-        default=None,
-        description="Variable light (VL) amino acid sequence.",
-    )
-
-    @model_validator(mode="after")
-    def _at_least_one_chain(self) -> AntibodySequence:
-        if self.heavy_chain is None and self.light_chain is None:
-            msg = f"Sequence '{self.id}': at least one of heavy_chain or light_chain is required."
-            raise ValueError(msg)
-        return self
+__all__ = [
+    "AntibodyInput",
+    "AntibodyPLLOutput",
+    "AntibodySequence",
+    "SequencePLL",
+]
 
 
 class AntibodyInput(BaseInput):
@@ -46,8 +32,12 @@ class AntibodyInput(BaseInput):
     log-likelihood.
     """
 
-    sequences: list[AntibodySequence] = Field(
-        description="One or more antibody sequences to process.",
+    sequences: AntibodySequenceSet = Field(
+        description=(
+            "One or more antibody sequences: a list of AntibodySequence/dicts, "
+            "FASTA text, or a path to a .fasta/.fa file."
+        ),
+        json_schema_extra=ui(widget=Widget.SEQUENCE, flavor="antibody", tier=Tier.PRIMARY, order=0),
     )
     layer: int | None = Field(
         default=None,
@@ -55,12 +45,19 @@ class AntibodyInput(BaseInput):
             "Model layer from which to extract embeddings. "
             "None uses the final layer. Only used in embedding mode."
         ),
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
     )
     pooling: str | None = Field(
         default=None,
         description=(
             "Pooling strategy for per-residue embeddings "
-            "(e.g., 'mean', 'cls', 'per_residue'). Only used in embedding mode."
+            "('mean', 'cls', 'per_residue'). Only used in embedding mode."
+        ),
+        json_schema_extra=ui(
+            widget=Widget.SELECT,
+            tier=Tier.PRIMARY,
+            order=1,
+            enum_labels={"mean": "Mean pool", "cls": "CLS token", "per_residue": "Per-residue"},
         ),
     )
 
