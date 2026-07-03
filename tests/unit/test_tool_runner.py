@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from autobio.core.catalog import CATALOG, Mode, Tool, get_tool, register
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.registry import ToolCategory
 from autobio.core.result import (
     ContainerResult,
     GPUNotAvailableError,
@@ -59,26 +61,43 @@ class MockRunner(ToolRunner):
 # ---------------------------------------------------------------------------
 
 _MOCK_TOOL_NAME = "_test_mock_tool"
+_MOCK_MODE_NAME = "default"
+
+
+def _make_mock_tool(*, requires_gpu: bool = True, gpu_count: int = 1) -> Tool:
+    """Build a mock catalog Tool with a single mode, mirroring the old ToolEntry fixture."""
+    return Tool(
+        name=_MOCK_TOOL_NAME,
+        display_name="Mock Tool",
+        category=ToolCategory.SCORING,
+        description="Mock tool for testing.",
+        version="0.1.0",
+        image_tag="mock-tool:0.1.0",
+        requires_gpu=requires_gpu,
+        gpu_count=gpu_count,
+        default_mode=_MOCK_MODE_NAME,
+        modes={
+            _MOCK_MODE_NAME: Mode(
+                name=_MOCK_MODE_NAME,
+                display_name="Default",
+                description="Mock mode for testing.",
+                input_schema=BaseInput,
+                output_schema=BaseOutput,
+                default_timeout=600,
+            ),
+        },
+    )
 
 
 @pytest.fixture(autouse=True)
 def _register_mock_tool():
-    """Register and unregister a mock tool entry for every test."""
-    entry = ToolEntry(
-        image_tag="mock-tool:0.1.0",
-        category=ToolCategory.SCORING,
-        requires_gpu=True,
-        gpu_count=1,
-        input_schema=BaseInput,
-        output_schema=BaseOutput,
-        default_timeout=600,
-        supports_batch=False,
-        description="Mock tool for testing.",
-        version="0.1.0",
-    )
-    TOOL_REGISTRY[_MOCK_TOOL_NAME] = entry
+    """Register and unregister a mock catalog Tool for every test."""
+    catalog_snapshot = dict(CATALOG)
+    CATALOG.clear()
+    register(_make_mock_tool())
     yield
-    TOOL_REGISTRY.pop(_MOCK_TOOL_NAME, None)
+    CATALOG.clear()
+    CATALOG.update(catalog_snapshot)
 
 
 @pytest.fixture()
@@ -113,7 +132,7 @@ class TestToolRunnerInit:
 
     def test_init_sets_attributes(self, runner: MockRunner) -> None:
         assert runner.tool_name == _MOCK_TOOL_NAME
-        assert runner.entry is TOOL_REGISTRY[_MOCK_TOOL_NAME]
+        assert runner.tool is get_tool(_MOCK_TOOL_NAME)
         assert runner.config is not None
 
     def test_init_unknown_tool_raises(self, config: AutobioConfig) -> None:
@@ -140,18 +159,7 @@ class TestResolveGpu:
         assert result == [0]
 
     def test_auto_with_no_gpu_tool(self, runner: MockRunner) -> None:
-        runner.entry = ToolEntry(
-            image_tag="mock:1",
-            category=ToolCategory.SCORING,
-            requires_gpu=False,
-            gpu_count=0,
-            input_schema=BaseInput,
-            output_schema=BaseOutput,
-            default_timeout=60,
-            supports_batch=False,
-            description="No GPU tool",
-            version="1",
-        )
+        runner.tool = dataclasses.replace(runner.tool, requires_gpu=False, gpu_count=0)
         result = runner._resolve_gpu("auto")
         runner._gpu.allocate.assert_not_called()
         assert result == []
@@ -429,8 +437,8 @@ class TestRunLifecycle:
 
         assert output_dir.exists()
 
-    def test_default_timeout_from_entry(self, runner: MockRunner, tmp_path: Path) -> None:
-        """When no timeout is given, uses the tool entry's default_timeout."""
+    def test_default_timeout_from_mode(self, runner: MockRunner, tmp_path: Path) -> None:
+        """When no timeout is given, uses the active mode's default_timeout."""
 
         def fake_container_run(
             image_uri: str,
@@ -450,6 +458,8 @@ class TestRunLifecycle:
 
         runner.run(BaseInput(), gpu="none", output_dir=tmp_path / "out")
 
+        assert runner.current_mode is not None
+        assert runner.current_mode.default_timeout == 600
         call_kwargs = runner._container.run.call_args
         assert call_kwargs.kwargs.get("timeout") == 600 or call_kwargs[1].get("timeout") == 600
 

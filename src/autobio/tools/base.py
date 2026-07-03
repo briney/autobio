@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 from autobio.core.catalog import CATALOG, Mode, Tool, get_tool
 from autobio.core.container import ContainerManager
 from autobio.core.gpu import GPUManager
-from autobio.core.registry import TOOL_REGISTRY, ToolEntry
 from autobio.core.result import AutobioError, ToolExecutionError
 from autobio.core.workspace import Workspace
 from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
@@ -34,15 +33,10 @@ class ToolRunner(ABC):
     """
 
     def __init__(self, tool_name: str, config: AutobioConfig) -> None:
-        self.tool: Tool | None = None
-        self.entry: ToolEntry | None = None
-        if tool_name in CATALOG:
-            self.tool = get_tool(tool_name)
-        elif tool_name in TOOL_REGISTRY:
-            self.entry = TOOL_REGISTRY[tool_name]
-        else:
-            available = ", ".join(sorted(set(CATALOG) | set(TOOL_REGISTRY))) or "(none)"
-            raise KeyError(f"Unknown tool {tool_name!r}. Available tools: {available}") from None
+        if tool_name not in CATALOG:
+            available = ", ".join(sorted(CATALOG)) or "(none)"
+            raise KeyError(f"Unknown tool {tool_name!r}. Available tools: {available}")
+        self.tool: Tool = get_tool(tool_name)
         self.tool_name = tool_name
         self.config = config
         self.current_mode: Mode | None = None
@@ -88,9 +82,8 @@ class ToolRunner(ABC):
     ) -> BaseOutput:
         """Full execution lifecycle. Do NOT override this method.
 
-        For migrated (catalog) tools, *mode* selects a :class:`Mode` by name
-        (defaulting to the Tool's ``default_mode``). Legacy tools ignore *mode*
-        (passing one raises).
+        *mode* selects a :class:`Mode` by name (defaulting to the Tool's
+        ``default_mode``).
 
         Steps:
             1. Create workspace
@@ -112,15 +105,15 @@ class ToolRunner(ABC):
             timeout: Maximum wall-clock seconds. Falls back to the tool's
                 ``default_timeout`` if *None*.
             output_dir: Persist workspace here instead of a temp directory.
-            mode: Name of the :class:`Mode` to run (catalog tools only).
-                Defaults to the Tool's ``default_mode``.
+            mode: Name of the :class:`Mode` to run. Defaults to the Tool's
+                ``default_mode``.
 
         Returns:
             Populated output model with metadata attached.
 
         Raises:
             ToolExecutionError: If the container reports a failure.
-            AutobioError: For an unknown mode, or a mode passed to a legacy tool.
+            AutobioError: For an unknown mode.
         """
         gpu_ids: list[int] = []
         workspace: Workspace | None = None
@@ -182,12 +175,8 @@ class ToolRunner(ABC):
             if workspace is not None and workspace._is_temp:
                 workspace.cleanup()
 
-    def _resolve_mode(self, mode: str | None) -> Mode | None:
-        """Resolve the selected Mode for a migrated tool, or None for a legacy tool."""
-        if self.tool is None:
-            if mode is not None:
-                raise AutobioError(f"Tool {self.tool_name!r} does not support modes.")
-            return None
+    def _resolve_mode(self, mode: str | None) -> Mode:
+        """Resolve the selected Mode by name, defaulting to the tool's default mode."""
         name = mode if mode is not None else self.tool.default_mode
         try:
             return self.tool.modes[name]
@@ -232,41 +221,26 @@ class ToolRunner(ABC):
         config.update(input_data.extra)
 
     def _image_tag(self) -> str:
-        """Container image tag for the current run (mode override, else tool/entry)."""
-        if self.tool is not None:
-            assert self.current_mode is not None
-            return self.current_mode.image_tag or self.tool.image_tag
-        assert self.entry is not None
-        return self.entry.image_tag
+        """Container image tag for the current run (mode override, else tool default)."""
+        assert self.current_mode is not None
+        return self.current_mode.image_tag or self.tool.image_tag
 
     def _default_timeout(self) -> int:
-        """Default timeout for the current run (per-mode for catalog tools)."""
-        if self.tool is not None:
-            assert self.current_mode is not None
-            return self.current_mode.default_timeout
-        assert self.entry is not None
-        return self.entry.default_timeout
+        """Default timeout for the current run (per-mode)."""
+        assert self.current_mode is not None
+        return self.current_mode.default_timeout
 
     def _requires_gpu(self) -> bool:
         """Whether the active tool requires a GPU."""
-        if self.tool is not None:
-            return self.tool.requires_gpu
-        assert self.entry is not None
-        return self.entry.requires_gpu
+        return self.tool.requires_gpu
 
     def _gpu_count(self) -> int:
         """Number of GPUs the active tool requests under ``gpu='auto'``."""
-        if self.tool is not None:
-            return self.tool.gpu_count
-        assert self.entry is not None
-        return self.entry.gpu_count
+        return self.tool.gpu_count
 
     def _tool_version(self) -> str:
         """Version string of the active tool."""
-        if self.tool is not None:
-            return self.tool.version
-        assert self.entry is not None
-        return self.entry.version
+        return self.tool.version
 
     def _resolve_gpu(self, gpu: str | list[int]) -> list[int]:
         """Translate the user-facing gpu parameter into a list of device IDs.

@@ -9,7 +9,6 @@ from typing import Annotated
 import typer
 
 from autobio.cli.formatters import OutputFormat, format_run_result, print_error
-from autobio.core.catalog import CATALOG
 from autobio.core.catalog import get_tool as get_catalog_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.result import AutobioError
@@ -57,25 +56,15 @@ def run_cmd(
         print_error(str(exc))
         raise typer.Exit(code=1) from None
 
-    # Choose the input schema (per-mode for catalog tools) and the mode to forward.
-    forward_mode: str | None = None
-    if tool in CATALOG:
-        catalog_tool = get_catalog_tool(tool)
-        mode_name = mode if mode is not None else catalog_tool.default_mode
-        if mode_name not in catalog_tool.modes:
-            available = ", ".join(sorted(catalog_tool.modes))
-            print_error(
-                f"Unknown mode {mode_name!r} for tool {tool!r}. Available modes: {available}"
-            )
-            raise typer.Exit(code=1) from None
-        input_schema = catalog_tool.modes[mode_name].input_schema
-        forward_mode = mode_name
-    else:
-        if mode is not None:
-            print_error(f"Tool {tool!r} does not support --mode.")
-            raise typer.Exit(code=1) from None
-        assert runner.entry is not None  # legacy branch: name is in TOOL_REGISTRY
-        input_schema = runner.entry.input_schema
+    # Choose the input schema (per-mode) and the mode to forward.
+    catalog_tool = get_catalog_tool(tool)
+    mode_name = mode if mode is not None else catalog_tool.default_mode
+    if mode_name not in catalog_tool.modes:
+        available = ", ".join(sorted(catalog_tool.modes))
+        print_error(f"Unknown mode {mode_name!r} for tool {tool!r}. Available modes: {available}")
+        raise typer.Exit(code=1) from None
+    input_schema = catalog_tool.modes[mode_name].input_schema
+    forward_mode = mode_name
 
     try:
         input_data = input_schema.model_validate(config_data)

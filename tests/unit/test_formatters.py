@@ -10,15 +10,13 @@ import pytest
 from autobio.cli.formatters import (
     OutputFormat,
     format_image_list,
-    format_tool_info,
     format_tool_info_catalog,
     format_tool_list,
-    format_tool_list_merged,
     format_workspace_result,
 )
 from autobio.core.catalog import Mode, Tool
 from autobio.core.container import ImageInfo
-from autobio.core.registry import ToolCategory, ToolEntry
+from autobio.core.registry import ToolCategory
 from autobio.core.result import RunResult
 from autobio.schemas.base import BaseInput, BaseOutput
 
@@ -35,22 +33,32 @@ class _MockOutput(BaseOutput):
     scores: list[float]
 
 
-def _make_entry(
+def _make_tool(
+    name: str = "mock-tool",
     *,
     category: ToolCategory = ToolCategory.STRUCTURE_PREDICTION,
     requires_gpu: bool = True,
-) -> ToolEntry:
-    return ToolEntry(
-        image_tag="mock-tool:1.0",
+) -> Tool:
+    return Tool(
+        name=name,
+        display_name=name,
         category=category,
-        requires_gpu=requires_gpu,
-        gpu_count=1,
-        input_schema=_MockInput,
-        output_schema=_MockOutput,
-        default_timeout=600,
-        supports_batch=False,
         description="A mock tool for testing.",
         version="1.0",
+        image_tag="mock-tool:1.0",
+        requires_gpu=requires_gpu,
+        gpu_count=1,
+        default_mode="default",
+        modes={
+            "default": Mode(
+                "default",
+                "Default",
+                "default mode",
+                _MockInput,
+                _MockOutput,
+                default_timeout=600,
+            ),
+        },
     )
 
 
@@ -96,7 +104,7 @@ class TestFormatToolList:
         assert json.loads(result) == []
 
     def test_json_populated(self) -> None:
-        tools = {"mock-tool": _make_entry()}
+        tools = {"mock-tool": _make_tool()}
         result = format_tool_list(tools, OutputFormat.JSON)
         parsed = json.loads(result)
         assert len(parsed) == 1
@@ -105,11 +113,12 @@ class TestFormatToolList:
         assert parsed[0]["gpu"] is True
         assert parsed[0]["version"] == "1.0"
         assert parsed[0]["description"] == "A mock tool for testing."
+        assert parsed[0]["modes"] == ["default"]
 
     def test_json_sorted_by_name(self) -> None:
         tools = {
-            "zzz-tool": _make_entry(),
-            "aaa-tool": _make_entry(),
+            "zzz-tool": _make_tool(name="zzz-tool"),
+            "aaa-tool": _make_tool(name="aaa-tool"),
         }
         result = format_tool_list(tools, OutputFormat.JSON)
         parsed = json.loads(result)
@@ -121,137 +130,8 @@ class TestFormatToolList:
         assert "No tools registered." in result
 
     def test_table_populated(self) -> None:
-        tools = {"mock-tool": _make_entry()}
+        tools = {"mock-tool": _make_tool()}
         result = format_tool_list(tools, OutputFormat.TABLE)
-        assert "mock-tool" in result
-        assert "structure-prediction" in result
-
-
-# ---------------------------------------------------------------------------
-# format_tool_info
-# ---------------------------------------------------------------------------
-
-
-class TestFormatToolInfo:
-    def test_json_includes_schema(self) -> None:
-        entry = _make_entry()
-        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
-        parsed = json.loads(result)
-        assert parsed["name"] == "mock-tool"
-        assert "input_schema" in parsed
-        schema = parsed["input_schema"]
-        assert "properties" in schema
-        assert "sequences" in schema["properties"]
-
-    def test_json_fields(self) -> None:
-        entry = _make_entry()
-        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
-        parsed = json.loads(result)
-        assert parsed["category"] == "structure-prediction"
-        assert parsed["image_tag"] == "mock-tool:1.0"
-        assert parsed["requires_gpu"] is True
-        assert parsed["gpu_count"] == 1
-        assert parsed["default_timeout"] == 600
-        assert parsed["supports_batch"] is False
-        assert parsed["version"] == "1.0"
-
-    def test_json_no_notes_when_empty(self) -> None:
-        entry = _make_entry()
-        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
-        parsed = json.loads(result)
-        assert "notes" not in parsed
-
-    def test_json_includes_notes(self) -> None:
-        entry = ToolEntry(
-            image_tag="mock-tool:1.0",
-            category=ToolCategory.STRUCTURE_PREDICTION,
-            requires_gpu=True,
-            gpu_count=1,
-            input_schema=_MockInput,
-            output_schema=_MockOutput,
-            default_timeout=600,
-            supports_batch=False,
-            description="A mock tool.",
-            version="1.0",
-            notes=("Parser may drop residues.", "Use unique chain IDs."),
-        )
-        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
-        parsed = json.loads(result)
-        assert parsed["notes"] == ["Parser may drop residues.", "Use unique chain IDs."]
-
-    def test_json_no_input_format_when_empty(self) -> None:
-        entry = _make_entry()
-        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
-        parsed = json.loads(result)
-        assert "input_format" not in parsed
-
-    def test_json_includes_input_format(self) -> None:
-        entry = ToolEntry(
-            image_tag="mock-tool:1.0",
-            category=ToolCategory.STRUCTURE_PREDICTION,
-            requires_gpu=True,
-            gpu_count=1,
-            input_schema=_MockInput,
-            output_schema=_MockOutput,
-            default_timeout=600,
-            supports_batch=False,
-            description="A mock tool.",
-            version="1.0",
-            input_format=("Uses YAML format.", "Example: version: 1"),
-        )
-        result = format_tool_info("mock-tool", entry, OutputFormat.JSON)
-        parsed = json.loads(result)
-        assert parsed["input_format"] == ["Uses YAML format.", "Example: version: 1"]
-
-    def test_table_contains_notes(self) -> None:
-        entry = ToolEntry(
-            image_tag="mock-tool:1.0",
-            category=ToolCategory.STRUCTURE_PREDICTION,
-            requires_gpu=True,
-            gpu_count=1,
-            input_schema=_MockInput,
-            output_schema=_MockOutput,
-            default_timeout=600,
-            supports_batch=False,
-            description="A mock tool.",
-            version="1.0",
-            notes=("Parser may drop residues.",),
-        )
-        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
-        assert "Notes" in result
-        assert "Parser may drop residues." in result
-
-    def test_table_no_notes_when_empty(self) -> None:
-        entry = _make_entry()
-        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
-        assert "Notes" not in result
-
-    def test_table_contains_input_format(self) -> None:
-        entry = ToolEntry(
-            image_tag="mock-tool:1.0",
-            category=ToolCategory.STRUCTURE_PREDICTION,
-            requires_gpu=True,
-            gpu_count=1,
-            input_schema=_MockInput,
-            output_schema=_MockOutput,
-            default_timeout=600,
-            supports_batch=False,
-            description="A mock tool.",
-            version="1.0",
-            input_format=("Uses YAML format.",),
-        )
-        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
-        assert "Input Format" in result
-        assert "Uses YAML format." in result
-
-    def test_table_no_input_format_when_empty(self) -> None:
-        entry = _make_entry()
-        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
-        assert "Input Format" not in result
-
-    def test_table_contains_name(self) -> None:
-        entry = _make_entry()
-        result = format_tool_info("mock-tool", entry, OutputFormat.TABLE)
         assert "mock-tool" in result
         assert "structure-prediction" in result
 
@@ -457,42 +337,29 @@ def test_format_tool_info_catalog_table_includes_tool_notes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# format_tool_list_merged
+# format_tool_list — multiple catalog Tools together
 # ---------------------------------------------------------------------------
 
 
-def _flat_entry() -> ToolEntry:
-    return ToolEntry(
-        image_tag="prodigy:1.0.0",
-        category=ToolCategory.SCORING,
-        requires_gpu=False,
-        gpu_count=0,
-        input_schema=_InInfo,
-        output_schema=_OutInfo,
-        default_timeout=300,
-        supports_batch=False,
-        description="legacy tool",
-        version="1.0.0",
-    )
-
-
-def test_format_tool_list_merged_json_has_both() -> None:
+def test_format_tool_list_multiple_tools_json() -> None:
     rows = json.loads(
-        format_tool_list_merged(
-            {"prodigy": _flat_entry()}, {"demo": _tool_for_info()}, OutputFormat.JSON
+        format_tool_list(
+            {"prodigy": _make_tool(name="prodigy", category=ToolCategory.SCORING)}
+            | {"demo": _tool_for_info()},
+            OutputFormat.JSON,
         )
     )
     by_name = {r["name"]: r for r in rows}
     assert set(by_name) == {"prodigy", "demo"}
     assert by_name["demo"]["modes"] == ["a", "b"]
     assert by_name["demo"]["categories"] == ["scoring", "simulation"]
-    assert "modes" not in by_name["prodigy"]  # legacy row keeps the old shape
+    assert by_name["prodigy"]["modes"] == ["default"]
     assert [r["name"] for r in rows] == ["demo", "prodigy"]  # sorted by name
 
 
-def test_format_tool_list_merged_table_runs() -> None:
-    out = format_tool_list_merged(
-        {"prodigy": _flat_entry()}, {"demo": _tool_for_info()}, OutputFormat.TABLE
+def test_format_tool_list_multiple_tools_table() -> None:
+    out = format_tool_list(
+        {"prodigy": _make_tool(name="prodigy")} | {"demo": _tool_for_info()}, OutputFormat.TABLE
     )
     assert "prodigy" in out and "demo" in out
 

@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from autobio.cli.main import app
 from autobio.core.catalog import CATALOG, Mode, Tool, register
 from autobio.core.container import ImageInfo
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.registry import ToolCategory
 from autobio.core.result import ContainerNotFoundError, RunResult, ToolExecutionError
 from autobio.schemas.base import BaseInput, BaseOutput, RunMetadata
 
@@ -31,23 +31,35 @@ class _MockOutput(BaseOutput):
     scores: list[float]
 
 
-def _make_entry(
+def _make_catalog_tool(
+    name: str = "mock-tool",
     *,
     category: ToolCategory = ToolCategory.STRUCTURE_PREDICTION,
     requires_gpu: bool = True,
     image_tag: str = "mock-tool:1.0",
-) -> ToolEntry:
-    return ToolEntry(
-        image_tag=image_tag,
+    mode_name: str = "default",
+) -> Tool:
+    """Build a mock catalog Tool with a single Mode, for CLI-test fake-tool injection."""
+    return Tool(
+        name=name,
+        display_name=name,
         category=category,
-        requires_gpu=requires_gpu,
-        gpu_count=1,
-        input_schema=_MockInput,
-        output_schema=_MockOutput,
-        default_timeout=600,
-        supports_batch=False,
         description="A mock tool for testing.",
         version="1.0",
+        image_tag=image_tag,
+        requires_gpu=requires_gpu,
+        gpu_count=1,
+        default_mode=mode_name,
+        modes={
+            mode_name: Mode(
+                name=mode_name,
+                display_name="Default",
+                description="Mock mode for testing.",
+                input_schema=_MockInput,
+                output_schema=_MockOutput,
+                default_timeout=600,
+            ),
+        },
     )
 
 
@@ -64,17 +76,8 @@ def _write_result_json(ws_dir: Path, *, status: str = "success") -> None:
 
 
 # ---------------------------------------------------------------------------
-# Registry fixture — snapshot/restore around each test
+# Catalog fixture — snapshot/restore around each test
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _clean_registry():
-    saved = dict(TOOL_REGISTRY)
-    TOOL_REGISTRY.clear()
-    yield
-    TOOL_REGISTRY.clear()
-    TOOL_REGISTRY.update(saved)
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +102,7 @@ class TestListCommand:
         assert json.loads(result.output) == []
 
     def test_populated_registry_json(self) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         result = runner.invoke(app, ["list", "--format", "json"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
@@ -107,8 +110,8 @@ class TestListCommand:
         assert parsed[0]["name"] == "mock-tool"
 
     def test_category_filter(self) -> None:
-        TOOL_REGISTRY["sp"] = _make_entry(category=ToolCategory.STRUCTURE_PREDICTION)
-        TOOL_REGISTRY["emb"] = _make_entry(category=ToolCategory.EMBEDDING)
+        register(_make_catalog_tool("sp", category=ToolCategory.STRUCTURE_PREDICTION))
+        register(_make_catalog_tool("emb", category=ToolCategory.EMBEDDING))
         result = runner.invoke(app, ["list", "--category", "embedding", "--format", "json"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
@@ -116,7 +119,7 @@ class TestListCommand:
         assert parsed[0]["name"] == "emb"
 
     def test_table_output(self) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         result = runner.invoke(app, ["list"])
         assert result.exit_code == 0
         assert "mock-tool" in result.output
@@ -134,19 +137,20 @@ class TestListCommand:
 
 class TestInfoCommand:
     def test_success_json(self) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         result = runner.invoke(app, ["info", "mock-tool", "--format", "json"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
         assert parsed["name"] == "mock-tool"
-        assert "input_schema" in parsed
+        assert "modes" in parsed
+        assert "input_schema" in parsed["modes"][0]
 
     def test_unknown_tool_exits_1(self) -> None:
         result = runner.invoke(app, ["info", "nonexistent"])
         assert result.exit_code == 1
 
     def test_table_output(self) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         result = runner.invoke(app, ["info", "mock-tool"])
         assert result.exit_code == 0
         assert "mock-tool" in result.output
@@ -195,7 +199,7 @@ class TestResultCommand:
 
 class TestRunCommand:
     def test_missing_config_exits_1(self) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         result = runner.invoke(app, ["run", "mock-tool", "--config", "/nonexistent.json"])
         assert result.exit_code == 1
 
@@ -206,28 +210,25 @@ class TestRunCommand:
         assert result.exit_code == 1
 
     def test_invalid_input_exits_1(self, tmp_path: Path) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         config_file = tmp_path / "input.json"
         # Missing required 'sequences' field
         config_file.write_text("{}")
         with patch("autobio.cli.run.get_runner") as mock_get_runner:
             mock_runner = MagicMock()
-            mock_runner.entry = _make_entry()
             mock_get_runner.return_value = mock_runner
             result = runner.invoke(app, ["run", "mock-tool", "--config", str(config_file)])
         assert result.exit_code == 1
 
     @patch("autobio.cli.run.get_runner")
     def test_successful_run_json(self, mock_get_runner: MagicMock, tmp_path: Path) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         config_file = tmp_path / "input.json"
         config_file.write_text('{"sequences": {"A": "MGKL"}}')
 
         mock_output = MagicMock()
         mock_output.model_dump.return_value = {"scores": [0.9], "status": "ok"}
         mock_runner = MagicMock()
-        mock_runner.entry = _make_entry()
-        mock_runner.entry.input_schema = _MockInput
         mock_runner.run.return_value = mock_output
         mock_get_runner.return_value = mock_runner
 
@@ -240,13 +241,11 @@ class TestRunCommand:
 
     @patch("autobio.cli.run.get_runner")
     def test_autobio_error_exits_1(self, mock_get_runner: MagicMock, tmp_path: Path) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         config_file = tmp_path / "input.json"
         config_file.write_text('{"sequences": {"A": "MGKL"}}')
 
         mock_runner = MagicMock()
-        mock_runner.entry = _make_entry()
-        mock_runner.entry.input_schema = _MockInput
         mock_runner.run.side_effect = ToolExecutionError(
             phase="inference",
             exit_code=1,
@@ -261,15 +260,13 @@ class TestRunCommand:
 
     @patch("autobio.cli.run.get_runner")
     def test_gpu_and_timeout_forwarded(self, mock_get_runner: MagicMock, tmp_path: Path) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         config_file = tmp_path / "input.json"
         config_file.write_text('{"sequences": {"A": "MGKL"}}')
 
         mock_output = MagicMock()
         mock_output.model_dump.return_value = {"scores": [0.9]}
         mock_runner = MagicMock()
-        mock_runner.entry = _make_entry()
-        mock_runner.entry.input_schema = _MockInput
         mock_runner.run.return_value = mock_output
         mock_get_runner.return_value = mock_runner
 
@@ -346,7 +343,7 @@ class TestPullCommand:
 
     @patch("autobio.cli.images.ContainerManager")
     def test_pull_single_tool(self, mock_cm_cls: MagicMock) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         result = runner.invoke(app, ["pull", "mock-tool"])
         assert result.exit_code == 0
         mock_cm_cls.return_value.pull_image.assert_called_once()
@@ -359,15 +356,15 @@ class TestPullCommand:
     def test_pull_all(self, mock_cm_cls: MagicMock) -> None:
         # Distinct image tags so both are pulled (identical-image tools are
         # deduped — see test_pull_resolves_catalog_tools_and_dedupes).
-        TOOL_REGISTRY["tool-a"] = _make_entry(image_tag="tool-a:1.0")
-        TOOL_REGISTRY["tool-b"] = _make_entry(image_tag="tool-b:1.0")
+        register(_make_catalog_tool("tool-a", image_tag="tool-a:1.0"))
+        register(_make_catalog_tool("tool-b", image_tag="tool-b:1.0"))
         result = runner.invoke(app, ["pull", "--all"])
         assert result.exit_code == 0
         assert mock_cm_cls.return_value.pull_image.call_count == 2
 
     @patch("autobio.cli.images.ContainerManager")
     def test_pull_failure_exits_1(self, mock_cm_cls: MagicMock) -> None:
-        TOOL_REGISTRY["mock-tool"] = _make_entry()
+        register(_make_catalog_tool("mock-tool"))
         mock_cm_cls.return_value.pull_image.side_effect = ContainerNotFoundError("not found")
         result = runner.invoke(app, ["pull", "mock-tool"])
         assert result.exit_code == 1
@@ -380,16 +377,16 @@ class TestPullCommand:
 
     @patch("autobio.cli.images.ContainerManager")
     def test_pull_resolves_catalog_tools_and_dedupes(self, mock_cm_cls: MagicMock) -> None:
-        """Catalog Tools (migrated from the flat registry) must be pullable too.
+        """Catalog Tools with per-mode image overrides pull all distinct images.
 
         Registers a catalog Tool with two modes — one falling back to the
         Tool's own ``image_tag``, one overriding with an image tag that
-        collides (post-prefix) with a flat ``TOOL_REGISTRY`` entry's image —
-        to exercise both multi-image pulls for a single Tool and cross-registry
-        URI dedup for ``pull --all``.
+        collides (post-prefix) with a second catalog Tool's image — to
+        exercise both multi-image pulls for a single Tool and cross-Tool URI
+        dedup for ``pull --all``.
         """
-        flat_entry = _make_entry()  # image_tag="mock-tool:1.0"
-        TOOL_REGISTRY["flat-tool"] = flat_entry
+        shared_image_tag = "mock-tool:1.0"
+        register(_make_catalog_tool("other-tool", image_tag=shared_image_tag))
 
         register(
             Tool(
@@ -411,7 +408,7 @@ class TestPullCommand:
                         _MockInput,
                         _MockOutput,
                         default_timeout=1,
-                        image_tag=flat_entry.image_tag,  # collides with flat-tool's image
+                        image_tag=shared_image_tag,  # collides with other-tool's image
                     ),
                 },
             )
@@ -427,8 +424,8 @@ class TestPullCommand:
             "ghcr.io/briney/autobio-mock-tool:1.0",
         }
 
-        # -- `pull --all` pulls the flat tool's image and the catalog tool's
-        # image(s), deduping the URI shared between flat-tool and cat-tool's
+        # -- `pull --all` pulls other-tool's image and the catalog tool's
+        # image(s), deduping the URI shared between other-tool and cat-tool's
         # mode-b override so it is only pulled once.
         mock_cm_cls.return_value.pull_image.reset_mock()
         result = runner.invoke(app, ["pull", "--all"])
@@ -539,30 +536,12 @@ def test_run_unknown_mode_exits_1(tmp_path: Path) -> None:
     mock_runner.run.assert_not_called()
 
 
-def test_run_rejects_mode_for_legacy_tool(tmp_path: Path) -> None:
-    # 'prodigy' is a legacy flat tool (in TOOL_REGISTRY, not CATALOG). get_runner is
-    # patched (like the other run-command tests in this class) so no real
-    # ContainerManager/GPUManager gets constructed.
-    TOOL_REGISTRY["prodigy"] = _make_entry()
-    cfg = tmp_path / "config.json"
-    cfg.write_text("{}")
-
-    mock_runner = MagicMock()
-    mock_runner.entry = _make_entry()
-
-    with patch("autobio.cli.run.get_runner", return_value=mock_runner):
-        result = CliRunner().invoke(app, ["run", "prodigy", "--mode", "x", "--config", str(cfg)])
-
-    assert result.exit_code == 1
-    assert "does not support --mode" in result.output
-
-
 # ---------------------------------------------------------------------------
-# autobio list / info — real merge coverage with the migrated freesasa Tool
+# autobio list / info — real coverage with the migrated freesasa Tool
 #
 # freesasa is the first real (non-mock) catalog Tool, so these tests exercise
 # the actual `list`/`info` CLI paths with a genuine multi-mode Tool alongside
-# a flat (legacy) tool, instead of only testing the formatters directly.
+# another catalog Tool, instead of only testing the formatters directly.
 # ---------------------------------------------------------------------------
 
 
@@ -570,10 +549,10 @@ def _register_freesasa() -> None:
     """Re-register the real freesasa Tool into CATALOG after fixture-clearing.
 
     Importing ``autobio.tools`` registers freesasa once (module import is
-    cached), but the autouse ``_clean_catalog``/``_clean_registry`` fixtures
-    snapshot-clear-restore CATALOG/TOOL_REGISTRY around every test in this
-    file for isolation — so tests that need freesasa present must re-register
-    it explicitly, using the module's own Tool object (not a reconstruction).
+    cached), but the autouse ``_clean_catalog`` fixture snapshot-clear-restores
+    CATALOG around every test in this file for isolation — so tests that need
+    freesasa present must re-register it explicitly, using the module's own
+    Tool object (not a reconstruction).
     """
     import autobio.tools  # noqa: F401 - ensures the module (and its schemas) are importable
     from autobio.tools.freesasa import FREESASA_TOOL
@@ -582,10 +561,10 @@ def _register_freesasa() -> None:
         register(FREESASA_TOOL)
 
 
-class TestListInfoMergedWithFreesasa:
-    def test_list_json_includes_freesasa_and_flat_tool(self) -> None:
+class TestListInfoWithFreesasa:
+    def test_list_json_includes_freesasa_and_another_tool(self) -> None:
         _register_freesasa()
-        TOOL_REGISTRY["prodigy"] = _make_entry(category=ToolCategory.SCORING)
+        register(_make_catalog_tool("mock-tool", category=ToolCategory.SCORING))
 
         result = runner.invoke(app, ["list", "--format", "json"])
 
@@ -593,7 +572,7 @@ class TestListInfoMergedWithFreesasa:
         parsed = json.loads(result.output)
         names = [row["name"] for row in parsed]
         assert names.count("freesasa") == 1
-        assert "prodigy" in names
+        assert "mock-tool" in names
 
         freesasa_row = next(row for row in parsed if row["name"] == "freesasa")
         assert freesasa_row["modes"] == ["sasa", "bsa"]
