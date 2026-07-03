@@ -19,13 +19,11 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.protein_binding_affinity import (
-    ProteinBindingAffinityInput,
-    ProteinBindingAffinityOutput,
-)
+from autobio.schemas.protein_binding_affinity import ProdigyInput, ProteinBindingAffinityOutput
 from autobio.tools.prodigy import ProdigyRunner
 
 # ---------------------------------------------------------------------------
@@ -124,7 +122,9 @@ def _make_runner(config: AutobioConfig) -> ProdigyRunner:
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return ProdigyRunner("prodigy", config)
+        runner = ProdigyRunner("prodigy", config)
+    runner.current_mode = get_tool("prodigy").modes["predict"]
+    return runner
 
 
 def _import_standardize():
@@ -139,7 +139,7 @@ def _import_standardize():
 
 def _run_e2e(
     config: AutobioConfig,
-    input_data: ProteinBindingAffinityInput,
+    input_data: ProdigyInput,
     raw_json_content: str,
     tmp_path: Path,
 ) -> ProteinBindingAffinityOutput:
@@ -189,7 +189,7 @@ class TestProdigyBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Single structure — basic pipeline."""
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
             chain_selection="A B",
         )
@@ -205,7 +205,7 @@ class TestProdigyBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Contact counts are preserved in score breakdown."""
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
             chain_selection="A B",
         )
@@ -221,7 +221,7 @@ class TestProdigyBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """NIS percentages are preserved in score breakdown."""
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
             chain_selection="A B",
         )
@@ -237,7 +237,7 @@ class TestProdigyBasicE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Chain selection is captured in score breakdown."""
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
             chain_selection="A B",
         )
@@ -260,7 +260,7 @@ class TestProdigyCustomParamsE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Custom temperature affects Kd but not delta-G."""
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
             chain_selection="A B",
             temperature=37.0,
@@ -280,7 +280,7 @@ class TestProdigyCustomParamsE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """None chain_selection (all inter-chain contacts)."""
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
         )
         output = _run_e2e(config, input_data, _SINGLE_OUTPUT_JSON, tmp_path)
@@ -308,11 +308,12 @@ class TestProdigyConfigE2E:
         """All parameters are correctly written to config.json."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
             chain_selection="A B",
             temperature=37.0,
-            extra={"distance_cutoff": 4.0, "contact_list": True},
+            distance_cutoff=4.0,
+            contact_list=True,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -326,7 +327,7 @@ class TestProdigyConfigE2E:
         """Nonexistent input structure raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=tmp_path / "nonexistent.pdb",
         )
         with pytest.raises(AutobioError, match="does not exist"):
@@ -338,7 +339,7 @@ class TestProdigyConfigE2E:
         """Temperature below absolute zero raises host-side validation error."""
         runner = _make_runner(config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=complex_pdb,
             temperature=-300.0,
         )

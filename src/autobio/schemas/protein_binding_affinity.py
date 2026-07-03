@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from autobio.schemas.base import BaseInput, BaseOutput
+from autobio.schemas.hints import Tier, Widget, ui
 
 
 class ProteinBindingAffinityInput(BaseInput):
@@ -20,7 +21,8 @@ class ProteinBindingAffinityInput(BaseInput):
     """
 
     structure_path: Path = Field(
-        description="Path to the protein-protein complex structure (PDB or mmCIF)."
+        description="Path to the protein-protein complex structure (PDB or mmCIF).",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=0),
     )
     chain_selection: str | None = Field(
         default=None,
@@ -30,6 +32,7 @@ class ProteinBindingAffinityInput(BaseInput):
             "treat chains A+B as one partner against chain C. When None, all "
             "inter-chain contacts are used."
         ),
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=1),
     )
     temperature: float = Field(
         default=25.0,
@@ -37,6 +40,25 @@ class ProteinBindingAffinityInput(BaseInput):
             "Temperature in Celsius for dissociation constant (Kd) calculation. "
             "Must be above absolute zero (-273.15)."
         ),
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, unit="°C", order=10),
+    )
+
+
+class ProdigyInput(ProteinBindingAffinityInput):
+    """Input for PRODIGY protein-protein affinity prediction."""
+
+    distance_cutoff: float = Field(
+        default=5.5,
+        gt=0,
+        description="Interatomic contact distance cutoff.",
+        json_schema_extra=ui(
+            widget=Widget.NUMBER, tier=Tier.ADVANCED, unit="Å", step=0.1, order=11
+        ),
+    )
+    contact_list: bool = Field(
+        default=False,
+        description="Include the detailed interface contact list in the output breakdown.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=12),
     )
 
 

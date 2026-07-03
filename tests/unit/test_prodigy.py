@@ -1,4 +1,4 @@
-"""Tests for ProdigyRunner — prepare_workspace, parse_output, and registration."""
+"""Tests for the migrated prodigy Tool (mode: predict)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.protein_binding_affinity import (
-    ProteinBindingAffinityInput,
-    ProteinBindingAffinityOutput,
-)
+from autobio.schemas.protein_binding_affinity import ProdigyInput, ProteinBindingAffinityOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
 from autobio.tools.prodigy import ProdigyRunner
 
@@ -33,14 +31,20 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> ProdigyRunner:
-    """Create a ProdigyRunner with mocked deps."""
+def _make_runner() -> ProdigyRunner:
+    """Create a ProdigyRunner with mocked deps, current_mode set to 'predict'."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return ProdigyRunner("prodigy", config)
+        runner = ProdigyRunner("prodigy", AutobioConfig.resolve())
+    runner.current_mode = get_tool("prodigy").modes["predict"]
+    return runner
+
+
+@pytest.fixture()
+def runner() -> ProdigyRunner:
+    return _make_runner()
 
 
 @pytest.fixture()
@@ -69,7 +73,7 @@ class TestProdigyPrepareWorkspace:
     def test_basic_config(self, runner: ProdigyRunner, tmp_path: Path, sample_pdb: Path) -> None:
         """Config contains correct fields for PRODIGY."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
             chain_selection="A B",
         )
@@ -80,12 +84,33 @@ class TestProdigyPrepareWorkspace:
         assert cfg["selection"] == "A B"
         assert cfg["output_dir"] == "/workspace/outputs/raw"
 
+    def test_full_config_byte_compat(
+        self, runner: ProdigyRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Full config.json equality — byte-compat contract, incl. the selection remap."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ProdigyInput(
+            structure_path=sample_pdb,
+            chain_selection="A B",
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "structure_path": "/workspace/inputs/complex.pdb",
+            "selection": "A B",
+            "temperature": 25.0,
+            "distance_cutoff": 5.5,
+            "contact_list": False,
+            "output_dir": "/workspace/outputs/raw",
+        }
+
     def test_structure_file_copied(
         self, runner: ProdigyRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         """Input structure is copied to inputs/ directory."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(structure_path=sample_pdb)
+        input_data = ProdigyInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         copied = workspace.inputs_dir / "complex.pdb"
@@ -97,7 +122,7 @@ class TestProdigyPrepareWorkspace:
     ) -> None:
         """Default temperature is 25.0."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(structure_path=sample_pdb)
+        input_data = ProdigyInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -108,7 +133,7 @@ class TestProdigyPrepareWorkspace:
     ) -> None:
         """Custom temperature is written to config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
             temperature=37.0,
         )
@@ -122,7 +147,7 @@ class TestProdigyPrepareWorkspace:
     ) -> None:
         """Default distance_cutoff is 5.5."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(structure_path=sample_pdb)
+        input_data = ProdigyInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -131,11 +156,11 @@ class TestProdigyPrepareWorkspace:
     def test_custom_distance_cutoff(
         self, runner: ProdigyRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Custom distance_cutoff from extra dict."""
+        """Custom distance_cutoff typed field value."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
-            extra={"distance_cutoff": 4.0},
+            distance_cutoff=4.0,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -147,7 +172,7 @@ class TestProdigyPrepareWorkspace:
     ) -> None:
         """Chain selection string appears in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
             chain_selection="A,B C",
         )
@@ -161,7 +186,7 @@ class TestProdigyPrepareWorkspace:
     ) -> None:
         """When None, selection is None in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(structure_path=sample_pdb)
+        input_data = ProdigyInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -172,7 +197,7 @@ class TestProdigyPrepareWorkspace:
     ) -> None:
         """Default contact_list is False."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(structure_path=sample_pdb)
+        input_data = ProdigyInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -181,11 +206,11 @@ class TestProdigyPrepareWorkspace:
     def test_contact_list_true(
         self, runner: ProdigyRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """contact_list=True from extra dict."""
+        """contact_list=True typed field value."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
-            extra={"contact_list": True},
+            contact_list=True,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -195,9 +220,9 @@ class TestProdigyPrepareWorkspace:
     def test_extra_dict_merged(
         self, runner: ProdigyRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Non-consumed extra dict keys appear at top level of config.json."""
+        """Non-typed extra dict keys appear at top level of config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
             extra={"custom_flag": "value"},
         )
@@ -206,21 +231,17 @@ class TestProdigyPrepareWorkspace:
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["custom_flag"] == "value"
 
-    def test_consumed_keys_not_leaked(
+    def test_extra_shadowing_typed_field_rejected(
         self, runner: ProdigyRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Consumed keys are placed explicitly, not duplicated at top level."""
+        """extra keys colliding with typed fields are rejected fail-fast."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
-            extra={"distance_cutoff": 4.0, "contact_list": True, "custom_flag": "value"},
+            extra={"distance_cutoff": 4.0},
         )
-        runner.prepare_workspace(input_data, workspace)
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert cfg["distance_cutoff"] == 4.0
-        assert cfg["contact_list"] is True
-        assert cfg["custom_flag"] == "value"
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +256,7 @@ class TestProdigyValidation:
         """Missing structure file raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
         fake_path = tmp_path / "nonexistent.pdb"
-        input_data = ProteinBindingAffinityInput(structure_path=fake_path)
+        input_data = ProdigyInput(structure_path=fake_path)
         with pytest.raises(AutobioError, match="does not exist"):
             runner.prepare_workspace(input_data, workspace)
 
@@ -244,7 +265,7 @@ class TestProdigyValidation:
     ) -> None:
         """Temperature below absolute zero raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
             temperature=-300.0,
         )
@@ -256,7 +277,7 @@ class TestProdigyValidation:
     ) -> None:
         """Empty chain_selection string raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=sample_pdb,
             chain_selection="   ",
         )
@@ -370,33 +391,40 @@ class TestProdigyParseOutput:
 
 
 class TestProdigyRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for tool and runner registration in the catalog."""
 
-    def test_in_tool_registry(self) -> None:
-        assert "prodigy" in TOOL_REGISTRY
+    def test_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.core.catalog import CATALOG
+        from autobio.core.registry import TOOL_REGISTRY
+
+        assert "prodigy" in CATALOG
+        assert set(get_tool("prodigy").modes) == {"predict"}
+        assert get_tool("prodigy").default_mode == "predict"
+        assert "prodigy" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
         assert "prodigy" in TOOL_RUNNERS
         assert TOOL_RUNNERS["prodigy"] is ProdigyRunner
 
     def test_scoring_category(self) -> None:
-        assert TOOL_REGISTRY["prodigy"].category == ToolCategory.SCORING
+        assert get_tool("prodigy").category == ToolCategory.SCORING
 
     def test_no_gpu_required(self) -> None:
-        entry = TOOL_REGISTRY["prodigy"]
-        assert entry.requires_gpu is False
-        assert entry.gpu_count == 0
+        tool = get_tool("prodigy")
+        assert tool.requires_gpu is False
+        assert tool.gpu_count == 0
 
     def test_schema_types(self) -> None:
-        entry = TOOL_REGISTRY["prodigy"]
-        assert entry.input_schema is ProteinBindingAffinityInput
-        assert entry.output_schema is ProteinBindingAffinityOutput
+        mode = get_tool("prodigy").modes["predict"]
+        assert mode.input_schema is ProdigyInput
+        assert mode.output_schema is ProteinBindingAffinityOutput
 
     def test_image_tag(self) -> None:
-        assert TOOL_REGISTRY["prodigy"].image_tag == "prodigy:2.4.0"
+        assert get_tool("prodigy").image_tag == "prodigy:2.4.0"
 
     def test_timeout(self) -> None:
-        assert TOOL_REGISTRY["prodigy"].default_timeout == 300
+        assert get_tool("prodigy").modes["predict"].default_timeout == 300
 
     def test_get_runner_returns_prodigy_runner(self, config: AutobioConfig) -> None:
         with (
@@ -406,3 +434,24 @@ class TestProdigyRegistration:
             r = get_runner("prodigy", config)
         assert isinstance(r, ProdigyRunner)
         assert r.tool_name == "prodigy"
+
+    def test_tool_constant_registered(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.tools.prodigy import PRODIGY_TOOL
+
+        assert PRODIGY_TOOL.name == "prodigy"
+        assert get_tool("prodigy") is PRODIGY_TOOL
+
+
+def test_info_snapshot_prodigy() -> None:
+    import autobio.tools  # noqa: F401
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("prodigy"), OutputFormat.JSON))
+    assert [m["name"] for m in parsed["modes"]] == ["predict"]
+    predict = parsed["modes"][0]
+    struct = predict["input_schema"]["properties"]["structure_path"]
+    assert struct["x-autobio"]["widget"] == "file"
+    contact_list = predict["input_schema"]["properties"]["contact_list"]
+    assert contact_list["x-autobio"]["widget"] == "toggle"
+    assert "output_schema" in predict
