@@ -2185,3 +2185,80 @@ No Critical issues found. Config byte-compat, dispatch, `_apply_extra` adoption,
 All named risks in the brief were checked independently (not just re-reading the report's claims) and held up: config key order/values, dropped `_ModelSpec` duplicates, description-string fidelity, catalog registration shape, registry disjointness, and test-port completeness were all verified by direct inspection/diff/execution rather than trusting the report's narrative. The one Important finding (`_PLL_NOTES` stale reference to `extra['per_position']`) is a real, verifiable documentation-accuracy regression that will confuse users of `autobio info`, but it's a self-contained doc string, not a functional or test-coverage defect — it doesn't affect config byte-compat, dispatch, or any tested behavior, and is a one-line fix. Given the scope of the task and the near-perfect byte-compat/test-fidelity execution otherwise, this doesn't block approval but should be fixed before/alongside teardown.</result>
 <usage><subagent_tokens>114454</subagent_tokens><tool_uses>41</tool_uses><duration_ms>262801</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a90559a5f471dbe8d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a90559a5f471dbe8d.output</output-file>
+<status>completed</status>
+<summary>Agent "Whole-branch final review Plan 4j" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All verification complete. Here is my final whole-branch review.
+
+---
+
+## Final Review — Plan 4j (antibody LM Tools→Modes migration), `60fce0b..e11f1b9`
+
+### Strengths
+
+- **Byte-compat is exact.** I traced the final `prepare_workspace` config block against pre-branch `git show 60fce0b:.../antibody_lm.py`. The dict is identical key-for-key and value-for-value except the three sanctioned changes: `mode = self.current_mode.name` (mode names are literally `"embedding"`/`"pll"`, so the emitted value is unchanged in both modes), `"per_position": input_data.per_position` (typed field, was `extra.get(...)`), and `self._apply_extra(config, input_data)` replacing the manual flat-merge. `"pooling": input_data.pooling or "mean"` is verbatim, key order matches the recon, and `sequences.json` generation is untouched. The byte-compat tests assert full-dict equality **and** `list(cfg.keys())` order for embedding, pll-defaults, pll-with-per_position, and embedding-with-flat-extra.
+- **Import cycle cleanly broken.** `AntibodySequence` moved verbatim (fields + `_at_least_one_chain` validator) to the pydantic-only leaf `schemas/antibody_types.py`; `schemas/sequences.py`, `utils/sequences.py`, and `schemas/antibody.py` all import from the leaf. `python -c "import autobio"` is clean and `AntibodySequence is` the same object from both `schemas.antibody` and `schemas.antibody_types` (verified identity). `__all__` added to keep the re-export explicit.
+- **Migration faithful.** All 6 `_ModelSpec` values are unchanged (diff only deletes the 6 byte-identical `*_pll` dups). Each `embed_description`/`pll_description` is copied verbatim from the corresponding pre-branch `ToolEntry.description`; the 6 Tools are shaped identically by the `_register_antibody_lm` factory; per-mode output (Embedding/AntibodyPLL) + timeout (600/1800) + `supports_batch=True`, per-model `image_tag`, modes don't override the image (`Mode.image_tag is None` asserted). `_ANTIBODY_INPUT_FORMAT`→`Tool.notes`, `_ANTIBODY_NOTES(+_PLL_NOTES)`→mode notes, as sanctioned.
+- **`_apply_extra` correct and reachable.** Rejects both typed-field shadows (`layer`, `per_position`) and set-config-key collisions (`model_name`) with an `AutobioError` matching `"collide"`; all three rejection paths tested. `per_position` promotion is consistent end-to-end: schema typed field, runner reads the field, `_PLL_NOTES`, `SequencePLL.per_position_pll` description, module docstring, and tests all reference `per_position=True` — no `extra['per_position']` anywhere in `src/`.
+- **Registry cleanup complete.** The 12 flat names are gone from `TOOL_REGISTRY` and `TOOL_RUNNERS`; the 6 model names present in CATALOG + `TOOL_RUNNERS`, absent from `TOOL_REGISTRY`; `get_runner("*_pll")` raises `KeyError`; disjointness guard passes.
+- **Test coverage preserved + expanded.** 8 test classes / 130 collected items: host validation (with identical `AutobioError` messages), parse_output, byte-compat, `_apply_extra` rejections, catalog registration, `info` snapshot (`format_tool_info_catalog`), and full `run()` lifecycle asserting `metadata.mode` for both modes. Integration files correctly re-pointed to `model + mode="pll"`.
+- **Fix commit is sound** — stale `_PLL_NOTES` note, module docstring, and the footgun `test_extra_passthrough` (which passed `per_position` via `extra`, now an invalid shadow) all corrected; added `test_per_position_typed_field`.
+
+### Issues
+
+**Critical:** none. **Important:** none.
+
+**Minor (informational, not defects of this branch):**
+- `src/autobio/tools/openmm.py:106,221,289` still uses the old `_CONSUMED_EXTRA_KEYS` + manual flat-merge pattern rather than `_apply_extra`. This is a sibling divergence, but openmm is a separate future plan (per project memory), so it is out of scope here — noted only for the eventual convergence.
+- `README.md` and the untracked `docs/CREDIT_SYSTEM.md` still name the flat `*_pll` tools. README is explicitly deferred to teardown (not flagged per instructions); `docs/CREDIT_SYSTEM.md` is untracked and not part of this branch.
+
+### Verification (independently re-run)
+- `pytest tests/unit/test_antibody_lm.py test_schemas.py test_sequence_set.py test_registry_disjoint.py -q` → exit 0
+- `pytest -m "not docker and not gpu" -q` → exit 0
+- `ruff check src/ tests/` → All checks passed; `ruff format --check` → 136 files already formatted; `mypy src/` → Success, no issues (57 files)
+
+### Assessment
+**Ready to merge? Yes**
+**Reasoning:** The branch is a coherent, faithful Tools→Modes migration that meets every binding constraint — byte-identical config/`sequences.json` in both modes, clean acyclic leaf-module extraction, lossless 12→6 consolidation, and hardened-but-compatible `extra` handling — with all quality gates green and the only remaining flat-name references confined to explicitly out-of-scope/untracked docs.</result>
+<usage><subagent_tokens>92286</subagent_tokens><tool_uses>17</tool_uses><duration_ms>208131</duration_ms></usage>
+</task-notification>
+
+---
+
+PR merged and branch deleted. go ahead with the final teardown + README plan
+
+---
+
+<task-notification>
+<task-id>abfc5f4cff546a44f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/abfc5f4cff546a44f.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon teardown scope" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+I completed read-only recon for the teardown phase and wrote a precise fact sheet to `/home/briney/git/autobio/.superpowers/sdd/recon/teardown.md`.
+
+Key findings:
+
+1. **`TOOL_REGISTRY`/`ToolEntry`**: `ToolCategory` is fully independent and must stay; `ToolEntry`/`TOOL_REGISTRY`/`get_tool`/`list_tools` in `registry.py` can be deleted together. Confirmed `TOOL_REGISTRY` is empty (`len == 0`) even after `import autobio`. Consumers span `core/__init__.py`, `tools/base.py`, `cli/{formatters,info,images,list,run}.py`, plus dev specs `SCHEMA_SPEC.md`/`TOOL_SPEC.md` (the latter's "Adding a New Tool" walkthrough is fully written against the legacy pattern).
+
+2. **`base.py` dual-path**: every dual-path branch (`_image_tag`, `_default_timeout`, `_requires_gpu`, `_gpu_count`, `_tool_version`, `_resolve_mode`) follows `if self.tool is not None: ... ; assert self.entry is not None; return self.entry.X` — all legacy tails are dead since `self.tool` is never `None` for real tools. Removing them is a pure dead-code deletion with no behavior change for catalog tools. `TOOL_RUNNERS`/`get_runner` in `tools/__init__.py` never touch `TOOL_REGISTRY` at all.
+
+3. **Unused schemas**: `StructurePredictionInput`, `StructureDesignInput`, `EmbeddingInput` have zero production consumers (only their *Output* siblings are used). `BindingAffinityInput`/`ProteinBindingAffinityInput` are used only as base classes for `AntipastiInput`/`ProdigyInput` — flagged separately since deleting them would require inlining fields first.
+
+4. **Carry-forwards**: `_resolve_container_path` duplicated identically in 12 files (11 methods + 1 free function in `ligandmpnn_packer.py`); dispatch-structure survey across all 7 consolidated runners; duplicated structure-staging block in esm_if1.py/antifold.py; confirmed `_ROSETTA_BIN` and evoef2's `out_dir` are dead (plus found the same dead-`out_dir` pattern in rosetta.py and freesasa.py, contrasted with complexa.py where `out_dir` is live); **found a real latent bug**: `openfold3.py`'s `templates`/`msa_paths` and `chai.py`'s `templates` are copied into the workspace and validated but never wired into the actual container payload (boltz.py, by contrast, wires both correctly); duplicated "no matching file" check in both rfd3.py and complexa.py; 133 occurrences of repeated `import autobio.tools # noqa` across 21 test files.
+
+5. **README/docs**: README's structure-design/embedding/structure-utilities/energy-minimization/scoring/simulation tables list ~15 stale flat tool names that no longer exist as invocable names (now modes); neither README documents the `--mode` flag at all. `docs/{WORKPLAN,DESIGN,REFACTOR}.md` and `docs/superpowers/**` are historical/dated design records, not live docs to fix. `docs/CREDIT_SYSTEM.md` (untracked) is a forward-looking proposal written entirely against the legacy model.
+
+6. **Tests**: confirmed `test_registry_disjoint.py` is a vacuous migration guard, safe to delete. Identified which test files need substantive rework (`test_tool_runner.py` — entire 480-line file's fixtures are legacy-only; `test_registry.py`; `test_cli.py` — heaviest consumer, 20 hits) versus surgical/mechanical removal (`test_tool_runner_modes.py` — only 1 of 12 tests is legacy; 20 files with simple `assert "x" not in TOOL_REGISTRY` guards). Also surfaced that `format_tool_list` (non-merged) has no production caller at all.</result>
+<usage><subagent_tokens>214590</subagent_tokens><tool_uses>75</tool_uses><duration_ms>570148</duration_ms></usage>
+</task-notification>
