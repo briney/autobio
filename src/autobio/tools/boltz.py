@@ -247,7 +247,7 @@ class BoltzRunner(ToolRunner):
 
         if not has_boltz_yaml and not input_data.sequences:
             raise AutobioError(
-                "sequences must be non-empty, or provide a raw Boltz YAML via extra['boltz_yaml']."
+                "sequences must be non-empty, or provide a raw Boltz YAML via the boltz_yaml field."
             )
 
         # Validate template files exist

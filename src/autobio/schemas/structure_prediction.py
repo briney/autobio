@@ -144,7 +144,11 @@ class BoltzInput(BaseInput):
         default_factory=dict,
         description=(
             "Per-chain entity type: 'protein'/'dna'/'rna', or a dict "
-            "{'smiles': 'CC...'} / {'ccd': 'ATP'} for ligands. Default 'protein'."
+            "{'smiles': 'CC...'} / {'ccd': 'ATP'} for ligands. Default 'protein'. "
+            "In the generated Boltz YAML, a chain entity may use a list for its "
+            "id to specify multiple identical chains, e.g. "
+            "{protein: {id: [A, B], sequence: MKLL...}} — use boltz_yaml to take "
+            "advantage of this directly."
         ),
         json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=12),
     )
@@ -162,7 +166,14 @@ class BoltzInput(BaseInput):
     )
     constraints: list[Any] | None = Field(
         default=None,
-        description="Boltz YAML 'constraints' section (bond/pocket/contact entries).",
+        description=(
+            "Boltz YAML 'constraints' section. Three constraint types: bond — "
+            "covalent bond between atoms: {bond: {atom1: [A, 437, N], atom2: "
+            "[B, 1, C1]}}. pocket — binding site conditioning: {pocket: {binder: "
+            "B, contacts: [[A, 100], [A, 101]]}}. contact — distance restraint "
+            "between residues: {contact: {atoms: [[A, 100], [B, 50]], "
+            "max_distance: 5.5}}."
+        ),
         json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=15),
     )
     properties: list[Any] | None = Field(
@@ -179,7 +190,9 @@ class BoltzInput(BaseInput):
         default=None,
         description=(
             "Raw Boltz YAML (dict or string) — bypasses automatic YAML generation "
-            "for full control over sequences/constraints/modifications/properties."
+            "for full control over sequences/constraints/modifications/properties. "
+            "See https://github.com/jwohlwend/boltz/blob/main/docs/prediction.md "
+            "for the full native YAML schema."
         ),
         json_schema_extra=ui(widget=Widget.TEXTAREA, tier=Tier.ADVANCED, order=18),
     )

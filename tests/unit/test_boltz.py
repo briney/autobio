@@ -420,7 +420,11 @@ class TestBoltzHostValidation:
     def test_empty_sequences_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         input_data = BoltzInput(sequences={})
-        with pytest.raises(AutobioError, match="sequences must be non-empty"):
+        with pytest.raises(
+            AutobioError,
+            match="sequences must be non-empty, or provide a raw Boltz YAML via the boltz_yaml "
+            "field",
+        ):
             runner.prepare_workspace(input_data, workspace)
 
     def test_empty_sequences_ok_with_boltz_yaml(self, runner: BoltzRunner, tmp_path: Path) -> None:
