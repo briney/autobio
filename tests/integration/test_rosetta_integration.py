@@ -1,4 +1,4 @@
-"""Integration tests for Rosetta tools.
+"""Integration tests for the rosetta Tool (modes: score, relax, minimize, flexddg).
 
 These tests require Docker (no GPU — Rosetta is CPU-only). They download PDB
 structures from RCSB, run the autobio-rosetta containers, and verify
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import RosettaBaseInput, RosettaFlexDdgInput, ScoringOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ def rcsb_1brs(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# rosetta_score
+# rosetta (mode="score")
 # ---------------------------------------------------------------------------
 
 
@@ -72,13 +72,14 @@ class TestRosettaScore:
         self, rcsb_1ubq: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Score ubiquitin and verify energy breakdown."""
-        input_data = ScoringInput(structure_path=rcsb_1ubq)
-        runner = get_runner("rosetta_score", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        input_data = RosettaBaseInput(structure_path=rcsb_1ubq)
+        runner = get_runner("rosetta", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws", mode="score")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "rosetta_score"
+        assert output.metadata.tool_name == "rosetta"
+        assert output.metadata.mode == "score"
         assert output.metadata.wall_time_seconds > 0
 
         s = output.scores[0]
@@ -91,7 +92,7 @@ class TestRosettaScore:
 
 
 # ---------------------------------------------------------------------------
-# rosetta_relax
+# rosetta (mode="relax")
 # ---------------------------------------------------------------------------
 
 
@@ -102,16 +103,14 @@ class TestRosettaRelax:
         self, rcsb_1ubq: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Relax ubiquitin (1 structure) and verify output PDB."""
-        input_data = ScoringInput(
-            structure_path=rcsb_1ubq,
-            extra={"nstruct": 1},
-        )
-        runner = get_runner("rosetta_relax", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        input_data = RosettaBaseInput(structure_path=rcsb_1ubq, nstruct=1)
+        runner = get_runner("rosetta", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws", mode="relax")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "rosetta_relax"
+        assert output.metadata.tool_name == "rosetta"
+        assert output.metadata.mode == "relax"
 
         s = output.scores[0]
         assert s.total_score < 0
@@ -123,7 +122,7 @@ class TestRosettaRelax:
 
 
 # ---------------------------------------------------------------------------
-# rosetta_minimize
+# rosetta (mode="minimize")
 # ---------------------------------------------------------------------------
 
 
@@ -134,13 +133,14 @@ class TestRosettaMinimize:
         self, rcsb_1ubq: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Minimize ubiquitin and verify output."""
-        input_data = ScoringInput(structure_path=rcsb_1ubq)
-        runner = get_runner("rosetta_minimize", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        input_data = RosettaBaseInput(structure_path=rcsb_1ubq)
+        runner = get_runner("rosetta", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws", mode="minimize")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "rosetta_minimize"
+        assert output.metadata.tool_name == "rosetta"
+        assert output.metadata.mode == "minimize"
 
         s = output.scores[0]
         assert s.total_score < 0
@@ -149,7 +149,7 @@ class TestRosettaMinimize:
 
 
 # ---------------------------------------------------------------------------
-# rosetta_flexddg
+# rosetta (mode="flexddg")
 # ---------------------------------------------------------------------------
 
 
@@ -160,22 +160,20 @@ class TestRosettaFlexddG:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Predict binding DDG for barnase-barstar (quick: 3 samples)."""
-        input_data = ScoringInput(
+        input_data = RosettaFlexDdgInput(
             structure_path=rcsb_1brs,
-            extra={
-                "mutations": ["A42G"],
-                "chains_to_move": "D",
-                "nstruct": 3,
-                "backrub_trials": 1000,
-                "max_minimization_iter": 100,
-            },
+            mutations=["A42G"],
+            chains_to_move="D",
+            nstruct=3,
+            extra={"backrub_trials": 1000, "max_minimization_iter": 100},
         )
-        runner = get_runner("rosetta_flexddg", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        runner = get_runner("rosetta", autobio_config)
+        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws", mode="flexddg")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "rosetta_flexddg"
+        assert output.metadata.tool_name == "rosetta"
+        assert output.metadata.mode == "flexddg"
 
         s = output.scores[0]
         assert s.mutations == ["A42G"]

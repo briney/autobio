@@ -1,4 +1,4 @@
-"""End-to-end tests for all Rosetta tools.
+"""End-to-end tests for the rosetta Tool (modes: score, relax, minimize, flexddg).
 
 Each test exercises the full pipeline:
     input construction → validation → prepare_workspace →
@@ -14,16 +14,25 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import (
+    RosettaBaseInput,
+    RosettaFlexDdgInput,
+    RosettaRelaxInput,
+    ScoringOutput,
+)
 from autobio.tools.rosetta import RosettaRunner
+
+if TYPE_CHECKING:
+    from autobio.schemas.base import BaseInput
 
 # Import the shared score file parser
 _ROSETTA_BASE_DIR = str(
@@ -125,13 +134,15 @@ def complex_pdb(tmp_path: Path) -> Path:
     return pdb_path
 
 
-def _make_runner(tool_name: str, config: AutobioConfig) -> RosettaRunner:
+def _make_runner(mode_name: str, config: AutobioConfig) -> RosettaRunner:
     """Create a runner with mocked container/GPU (we simulate container output)."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return RosettaRunner(tool_name, config)
+        runner = RosettaRunner("rosetta", config)
+    runner.current_mode = get_tool("rosetta").modes[mode_name]
+    return runner
 
 
 def _import_standardize(tool_dir_name: str):
@@ -149,10 +160,9 @@ def _import_standardize(tool_dir_name: str):
 
 
 def _run_e2e(
-    tool_name: str,
-    container_dir_name: str,
+    mode_name: str,
     config: AutobioConfig,
-    input_data: ScoringInput,
+    input_data: BaseInput,
     raw_output_files: dict[str, str],
     tmp_path: Path,
 ) -> ScoringOutput:
@@ -163,7 +173,7 @@ def _run_e2e(
     3. Run the container's standardize.py
     4. parse_output
     """
-    runner = _make_runner(tool_name, config)
+    runner = _make_runner(mode_name, config)
     workspace = Workspace.create(tmp_path / "ws")
 
     # Step 1: prepare workspace (host-side validation + config writing)
@@ -179,7 +189,7 @@ def _run_e2e(
         (workspace.raw_output_dir / filename).write_text(content)
 
     # Step 3: run the actual standardize.py script
-    std_mod = _import_standardize(container_dir_name)
+    std_mod = _import_standardize(f"rosetta-{mode_name}")
     std_mod.standardize(workspace.root)
 
     # Verify result_data.json was produced
@@ -198,16 +208,15 @@ def _run_e2e(
 
 
 class TestRosettaScoreE2E:
-    """End-to-end test for rosetta_score: full lifecycle."""
+    """End-to-end test for rosetta mode=score: full lifecycle."""
 
     def test_score_full_pipeline(
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Score a structure and verify score breakdown."""
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaBaseInput(structure_path=sample_pdb)
         output = _run_e2e(
-            tool_name="rosetta_score",
-            container_dir_name="rosetta-score",
+            mode_name="score",
             config=config,
             input_data=input_data,
             raw_output_files={"score.sc": _SCORE_SC},
@@ -233,13 +242,10 @@ class TestRosettaScoreE2E:
     def test_score_custom_scorefunction(
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
-        """Custom score function is written to config.json."""
-        runner = _make_runner("rosetta_score", config)
+        """Custom score function (typed field) is written to config.json."""
+        runner = _make_runner("score", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=sample_pdb,
-            extra={"score_function": "beta_nov16"},
-        )
+        input_data = RosettaBaseInput(structure_path=sample_pdb, score_function="beta_nov16")
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -249,9 +255,9 @@ class TestRosettaScoreE2E:
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Extra rotamer flags pass through to config.json."""
-        runner = _make_runner("rosetta_score", config)
+        runner = _make_runner("score", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = RosettaBaseInput(
             structure_path=sample_pdb,
             extra={"ex1": True, "ex2": True},
         )
@@ -268,16 +274,13 @@ class TestRosettaScoreE2E:
 
 
 class TestRosettaRelaxE2E:
-    """End-to-end test for rosetta_relax: refinement + scoring."""
+    """End-to-end test for rosetta mode=relax: refinement + scoring."""
 
     def test_relax_full_pipeline(
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Relax a structure and verify refined PDBs + scores."""
-        input_data = ScoringInput(
-            structure_path=sample_pdb,
-            extra={"nstruct": 3},
-        )
+        input_data = RosettaRelaxInput(structure_path=sample_pdb, nstruct=3)
 
         # Simulated output: 3 relaxed PDBs + score file
         raw_files = {
@@ -288,8 +291,7 @@ class TestRosettaRelaxE2E:
         }
 
         output = _run_e2e(
-            tool_name="rosetta_relax",
-            container_dir_name="rosetta-relax",
+            mode_name="relax",
             config=config,
             input_data=input_data,
             raw_output_files=raw_files,
@@ -318,9 +320,9 @@ class TestRosettaRelaxE2E:
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Default nstruct for relax is 5."""
-        runner = _make_runner("rosetta_relax", config)
+        runner = _make_runner("relax", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaRelaxInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -330,9 +332,9 @@ class TestRosettaRelaxE2E:
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Relax config includes the XML protocol path."""
-        runner = _make_runner("rosetta_relax", config)
+        runner = _make_runner("relax", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaRelaxInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -346,13 +348,13 @@ class TestRosettaRelaxE2E:
 
 
 class TestRosettaMinimizeE2E:
-    """End-to-end test for rosetta_minimize: energy minimization."""
+    """End-to-end test for rosetta mode=minimize: energy minimization."""
 
     def test_minimize_full_pipeline(
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Minimize a structure and verify output."""
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaBaseInput(structure_path=sample_pdb)
 
         # Single minimized structure
         minimize_sc = (
@@ -366,8 +368,7 @@ class TestRosettaMinimizeE2E:
         }
 
         output = _run_e2e(
-            tool_name="rosetta_minimize",
-            container_dir_name="rosetta-minimize",
+            mode_name="minimize",
             config=config,
             input_data=input_data,
             raw_output_files=raw_files,
@@ -384,9 +385,9 @@ class TestRosettaMinimizeE2E:
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
         """Default nstruct for minimize is 1."""
-        runner = _make_runner("rosetta_minimize", config)
+        runner = _make_runner("minimize", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaBaseInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -399,25 +400,22 @@ class TestRosettaMinimizeE2E:
 
 
 class TestRosettaFlexddGE2E:
-    """End-to-end test for rosetta_flexddg: ensemble DDG prediction."""
+    """End-to-end test for rosetta mode=flexddg: ensemble DDG prediction."""
 
     def test_flexddg_full_pipeline(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Run flex-ddG ensemble and verify DDG statistics."""
-        input_data = ScoringInput(
+        input_data = RosettaFlexDdgInput(
             structure_path=complex_pdb,
-            extra={
-                "mutations": ["A42F"],
-                "chains_to_move": "B",
-                "nstruct": 3,
-                "backrub_trials": 1000,
-            },
+            mutations=["A42F"],
+            chains_to_move="B",
+            nstruct=3,
+            extra={"backrub_trials": 1000},
         )
 
         output = _run_e2e(
-            tool_name="rosetta_flexddg",
-            container_dir_name="rosetta-flexddg",
+            mode_name="flexddg",
             config=config,
             input_data=input_data,
             raw_output_files={
@@ -461,17 +459,14 @@ class TestRosettaFlexddGE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Flex-ddG parameters are correctly written to config.json."""
-        runner = _make_runner("rosetta_flexddg", config)
+        runner = _make_runner("flexddg", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = RosettaFlexDdgInput(
             structure_path=complex_pdb,
-            extra={
-                "mutations": ["A42F"],
-                "chains_to_move": "B",
-                "nstruct": 10,
-                "backrub_trials": 5000,
-                "max_minimization_iter": 2000,
-            },
+            mutations=["A42F"],
+            chains_to_move="B",
+            nstruct=10,
+            extra={"backrub_trials": 5000, "max_minimization_iter": 2000},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -486,12 +481,11 @@ class TestRosettaFlexddGE2E:
     def test_flexddg_missing_chains_fails(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
-        """Missing chains_to_move raises host-side validation error."""
-        runner = _make_runner("rosetta_flexddg", config)
+        """Empty chains_to_move raises host-side validation error."""
+        runner = _make_runner("flexddg", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["A42F"]},
+        input_data = RosettaFlexDdgInput(
+            structure_path=complex_pdb, mutations=["A42F"], chains_to_move=""
         )
         with pytest.raises(AutobioError, match="chains_to_move"):
             runner.prepare_workspace(input_data, workspace)
@@ -500,16 +494,14 @@ class TestRosettaFlexddGE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Custom resfile content is written to inputs/."""
-        runner = _make_runner("rosetta_flexddg", config)
+        runner = _make_runner("flexddg", config)
         workspace = Workspace.create(tmp_path / "ws")
         resfile = "NATAA\nstart\n42 A PIKAA F\n"
-        input_data = ScoringInput(
+        input_data = RosettaFlexDdgInput(
             structure_path=complex_pdb,
-            extra={
-                "mutations": ["A42F"],
-                "chains_to_move": "B",
-                "resfile": resfile,
-            },
+            mutations=["A42F"],
+            chains_to_move="B",
+            resfile=resfile,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -521,11 +513,10 @@ class TestRosettaFlexddGE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Default nstruct for flexddg is 35."""
-        runner = _make_runner("rosetta_flexddg", config)
+        runner = _make_runner("flexddg", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["A42F"], "chains_to_move": "B"},
+        input_data = RosettaFlexDdgInput(
+            structure_path=complex_pdb, mutations=["A42F"], chains_to_move="B"
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -539,36 +530,37 @@ class TestRosettaFlexddGE2E:
 
 
 class TestInputValidation:
-    """Validation tests that apply across all tools."""
+    """Validation tests that apply across all modes."""
 
     def test_nonexistent_structure_fails(self, config: AutobioConfig, tmp_path: Path) -> None:
-        """All tools reject nonexistent input structures."""
-        for tool_name in ("rosetta_score", "rosetta_relax", "rosetta_minimize"):
-            runner = _make_runner(tool_name, config)
-            workspace = Workspace.create(tmp_path / f"ws_{tool_name}")
-            input_data = ScoringInput(structure_path=tmp_path / "nonexistent.pdb")
+        """All modes reject nonexistent input structures."""
+        for mode_name in ("score", "relax", "minimize"):
+            runner = _make_runner(mode_name, config)
+            workspace = Workspace.create(tmp_path / f"ws_{mode_name}")
+            input_data = RosettaBaseInput(structure_path=tmp_path / "nonexistent.pdb")
             with pytest.raises(AutobioError, match="does not exist"):
                 runner.prepare_workspace(input_data, workspace)
 
-    def test_ddg_invalid_mutations_type_fails(
+    def test_ddg_empty_mutations_fails(
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
-        """DDG tools reject non-list mutations."""
-        runner = _make_runner("rosetta_flexddg", config)
+        """Flex-ddG rejects an empty mutations list."""
+        runner = _make_runner("flexddg", config)
         workspace = Workspace.create(tmp_path / "ws_flexddg")
-        extra: dict[str, Any] = {"mutations": "A42F", "chains_to_move": "B"}
-        input_data = ScoringInput(structure_path=sample_pdb, extra=extra)
-        with pytest.raises(AutobioError, match="must be a list"):
+        input_data = RosettaFlexDdgInput(
+            structure_path=sample_pdb, mutations=[], chains_to_move="B"
+        )
+        with pytest.raises(AutobioError, match="requires at least one mutation"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_structure_copied_correctly(
         self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
     ) -> None:
-        """Input structure is copied to workspace inputs/ for all tools."""
-        for tool_name in ("rosetta_score", "rosetta_relax", "rosetta_minimize"):
-            runner = _make_runner(tool_name, config)
-            workspace = Workspace.create(tmp_path / f"ws_{tool_name}")
-            input_data = ScoringInput(structure_path=sample_pdb)
+        """Input structure is copied to workspace inputs/ for all modes."""
+        for mode_name in ("score", "relax", "minimize"):
+            runner = _make_runner(mode_name, config)
+            workspace = Workspace.create(tmp_path / f"ws_{mode_name}")
+            input_data = RosettaBaseInput(structure_path=sample_pdb)
             runner.prepare_workspace(input_data, workspace)
 
             copied = workspace.inputs_dir / sample_pdb.name

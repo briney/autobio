@@ -1,19 +1,18 @@
-"""Rosetta tool runners — scoring, relaxation, minimization, and DDG prediction.
+"""Rosetta tool — structure scoring, refinement, and interface DDG prediction.
 
-All Rosetta tools share a single ``RosettaRunner`` class that dispatches by
-``tool_name`` using the ``_VARIANT_CONFIG`` dict.  Each tool maps to a
-different Docker image (thin layer on top of the shared
-``autobio-rosetta-base`` image).
+A single catalog Tool, ``rosetta``, exposing four Modes sharing the
+``RosettaRunner`` runner class:
+
+- ``score`` (default) — Score a structure with Rosetta's energy function.
+- ``relax`` — FastRelax a structure (cycles of minimization + repacking).
+- ``minimize`` — Local energy minimization of a structure.
+- ``flexddg`` — Ensemble-based interface DDG prediction using backrub sampling.
+
+Unlike most catalog Tools, each Rosetta mode ships as its own Docker image
+(a thin layer on top of the shared ``autobio-rosetta-base`` image) — see the
+per-mode ``image_tag`` overrides on the ``ROSETTA_TOOL`` modes below.
 
 Rosetta tools are **CPU-only** — no GPU is required.
-
-Supported tools:
-
-- ``rosetta_score`` — Score a structure with Rosetta energy function.
-- ``rosetta_relax`` — FastRelax a structure (cycles of minimization + repacking).
-- ``rosetta_minimize`` — Local energy minimization of a structure.
-- ``rosetta_ddg_monomer`` — Predict stability change (DDG) upon point mutation.
-- ``rosetta_flexddg`` — Ensemble-based DDG prediction using backrub sampling.
 """
 
 from __future__ import annotations
@@ -23,10 +22,17 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
-from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.scoring import (
+    RosettaBaseInput,
+    RosettaFlexDdgInput,
+    RosettaRelaxInput,
+    ScoredStructure,
+    ScoringOutput,
+)
 from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
@@ -40,51 +46,23 @@ _ROSETTA_BIN = "/app/rosetta/bin"
 _ROSETTA_DB = "/usr/local/lib/python3.8/dist-packages/pyrosetta/database"
 
 # ---------------------------------------------------------------------------
-# Variant configuration — maps tool name to protocol-specific settings
+# Mode configuration — maps mode name to protocol-specific settings
 # ---------------------------------------------------------------------------
 
-_VARIANT_CONFIG: dict[str, dict[str, Any]] = {
-    "rosetta_score": {
-        "binary": "score_jd2",
-        "protocol": "score",
-        "uses_xml": False,
-        "produces_structure": False,
-        "requires_mutations": False,
-        "default_nstruct": 1,
-    },
-    "rosetta_relax": {
+_MODE_CONFIG: dict[str, dict[str, str]] = {
+    "score": {"binary": "score_jd2", "protocol": "score"},
+    "relax": {
         "binary": "rosetta_scripts",
         "protocol": "relax",
-        "uses_xml": True,
         "xml_path": "/opt/tool/xml/relax.xml",
-        "produces_structure": True,
-        "requires_mutations": False,
-        "default_nstruct": 5,
     },
-    "rosetta_minimize": {
+    "minimize": {
         "binary": "rosetta_scripts",
         "protocol": "minimize",
-        "uses_xml": True,
         "xml_path": "/opt/tool/xml/minimize.xml",
-        "produces_structure": True,
-        "requires_mutations": False,
-        "default_nstruct": 1,
     },
-    "rosetta_flexddg": {
-        "binary": "rosetta_scripts",
-        "protocol": "flexddg",
-        "uses_xml": False,
-        "produces_structure": False,
-        "requires_mutations": True,
-        "default_nstruct": 35,
-    },
+    "flexddg": {"binary": "rosetta_scripts", "protocol": "flexddg"},
 }
-
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset(
-    {"mutations", "chains", "chains_to_move", "resfile", "nstruct", "score_function"}
-)
 
 # Mutation format: single-letter original + residue number + single-letter new
 # e.g., "A42F" means Ala-42 -> Phe
@@ -99,10 +77,10 @@ _MUTATION_PATTERN_HELP = (
 
 
 class RosettaRunner(ToolRunner):
-    """Runner for Rosetta computational biology tools.
+    """Runner for the Rosetta score/relax/minimize/flexddg modes.
 
     ``prepare_workspace`` validates inputs on the host side, copies the input
-    structure into the workspace, generates mutation files for DDG tools, and
+    structure into the workspace, generates mutation files for flex-ddG, and
     writes ``config.json``.
 
     ``parse_output`` reads the standardised ``result_data.json`` produced by
@@ -111,13 +89,13 @@ class RosettaRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
+        assert isinstance(input_data, RosettaBaseInput)
+        assert self.current_mode is not None
+        mode = self.current_mode.name
+        mode_cfg = _MODE_CONFIG[mode]
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
-
-        # -- Resolve variant config -----------------------------------------
-        variant_cfg = _VARIANT_CONFIG[self.tool_name]
 
         # -- Copy input structure into workspace ----------------------------
         src_path = input_data.structure_path
@@ -127,29 +105,25 @@ class RosettaRunner(ToolRunner):
 
         # -- Build config.json ----------------------------------------------
         config: dict[str, Any] = {
-            "binary": variant_cfg["binary"],
-            "protocol": variant_cfg["protocol"],
+            "binary": mode_cfg["binary"],
+            "protocol": mode_cfg["protocol"],
             "structure_path": container_structure_path,
             "database_path": _ROSETTA_DB,
-            "score_function": input_data.extra.get("score_function", "ref2015"),
+            "score_function": input_data.score_function,
             "out_dir": "/workspace/outputs/raw",
         }
+        config["nstruct"] = input_data.nstruct
 
-        # nstruct: from extra or variant default
-        config["nstruct"] = input_data.extra.get("nstruct", variant_cfg["default_nstruct"])
+        # XML protocol path (for rosetta_scripts-based modes)
+        if "xml_path" in mode_cfg:
+            config["xml_path"] = mode_cfg["xml_path"]
 
-        # XML protocol path (for rosetta_scripts-based tools)
-        if variant_cfg["uses_xml"]:
-            config["xml_path"] = variant_cfg["xml_path"]
-
-        # DDG tools: mutation handling
-        if variant_cfg["requires_mutations"]:
+        # flex-ddG: mutation handling
+        if mode == "flexddg":
+            assert isinstance(input_data, RosettaFlexDdgInput)
             self._prepare_mutations(input_data, workspace, config)
 
-        # Flat-merge extra dict (excluding consumed keys)
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -195,71 +169,53 @@ class RosettaRunner(ToolRunner):
             return container_path
         return workspace.root / relative
 
-    def _validate_inputs(self, input_data: ScoringInput) -> None:
+    def _validate_inputs(self, input_data: RosettaBaseInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
 
-        variant_cfg = _VARIANT_CONFIG[self.tool_name]
-
-        # DDG tools require mutations
-        if variant_cfg["requires_mutations"]:
-            mutations = input_data.extra.get("mutations")
-            if not mutations:
+        assert self.current_mode is not None
+        if self.current_mode.name == "flexddg":
+            assert isinstance(input_data, RosettaFlexDdgInput)
+            if not input_data.mutations:
                 raise AutobioError(
-                    f"Tool {self.tool_name!r} requires 'mutations' in the extra dict. "
-                    f"{_MUTATION_PATTERN_HELP}"
+                    f"Rosetta flex-ddG requires at least one mutation. {_MUTATION_PATTERN_HELP}"
                 )
-            if not isinstance(mutations, list) or not all(isinstance(m, str) for m in mutations):
+            if not input_data.chains_to_move:
                 raise AutobioError(
-                    f"'mutations' must be a list of strings, got {type(mutations).__name__}. "
-                    f"{_MUTATION_PATTERN_HELP}"
+                    "Tool 'rosetta' (mode 'flexddg') requires 'chains_to_move' "
+                    "(e.g., 'B' for the partner chain at the interface)."
                 )
-
-            # flexddg requires chains_to_move
-            if self.tool_name == "rosetta_flexddg":
-                chains = input_data.extra.get("chains_to_move") or input_data.extra.get("chains")
-                if not chains:
-                    raise AutobioError(
-                        "Tool 'rosetta_flexddg' requires 'chains_to_move' in the extra "
-                        "dict (e.g., 'B' for the partner chain at the interface)."
-                    )
 
     @staticmethod
     def _prepare_mutations(
-        input_data: ScoringInput,
+        input_data: RosettaFlexDdgInput,
         workspace: Workspace,
         config: dict[str, Any],
     ) -> None:
-        """Generate mutation specification files for DDG tools."""
-        mutations: list[str] = input_data.extra.get("mutations", [])
-        config["mutations"] = mutations
+        """Generate mutation specification files for flex-ddG."""
+        config["mutations"] = input_data.mutations
+        config["chains_to_move"] = input_data.chains_to_move
 
-        # chains_to_move for flexddg
-        chains = input_data.extra.get("chains_to_move") or input_data.extra.get("chains")
-        if chains:
-            config["chains_to_move"] = chains
-
-        # Write a resfile for flexddg or a .mut file for ddg_monomer
-        # The container's run.sh reads these from inputs/
-        resfile_content = input_data.extra.get("resfile")
-        if resfile_content:
+        # Write a resfile for flex-ddG, or fall back to the raw mutation list.
+        # The container's run.sh reads these from inputs/.
+        if input_data.resfile:
             # Power-user escape hatch: raw resfile content
-            (workspace.inputs_dir / "mutations.resfile").write_text(resfile_content)
+            (workspace.inputs_dir / "mutations.resfile").write_text(input_data.resfile)
             config["resfile_path"] = "/workspace/inputs/mutations.resfile"
         else:
             # Generate from mutations list — container handles format conversion
-            config["mutation_list"] = mutations
+            config["mutation_list"] = input_data.mutations
 
 
 # ---------------------------------------------------------------------------
-# Registry entries — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _SCORE_NOTES = (
     "Scores a PDB structure using Rosetta's energy function. The default "
     "score function is ref2015 (the recommended modern score function). "
-    "Override via extra['score_function']. Supported: ref2015, ref2015_cart, "
+    "Override via score_function. Supported: ref2015, ref2015_cart, "
     "beta_nov16, score12, talaris2014, franklin2019.",
     "Output includes total_score in REU (Rosetta Energy Units) and a "
     "score_breakdown with all individual energy terms (fa_atr, fa_rep, "
@@ -268,50 +224,33 @@ _SCORE_NOTES = (
     "extra['ex1'] = True and/or extra['ex2'] = True.",
 )
 
-_SCORE_INPUT_FORMAT = (
-    "Provide a PDB or mmCIF file via structure_path. The structure should "
-    "be clean (no missing backbone atoms). Rosetta handles hydrogens "
-    "internally — pre-protonated structures are fine but not required.",
-)
-
 _RELAX_NOTES = (
     "FastRelax cycles through minimization and side-chain repacking to "
     "find a low-energy conformation near the input structure. Produces "
     "both scored and refined PDB output.",
-    "Set extra['nstruct'] to generate multiple relaxed structures (default 5). "
+    "Set nstruct to generate multiple relaxed structures (default 5). "
     "The lowest-energy structure is typically the best starting point for "
     "downstream analysis.",
-    "Default score function is ref2015. Override with extra['score_function'].",
-)
-
-_RELAX_INPUT_FORMAT = (
-    "Provide a PDB or mmCIF file via structure_path. The structure will "
-    "be relaxed using Rosetta's FastRelax protocol. Output includes the "
-    "refined structure(s) and their scores.",
+    "Default score function is ref2015. Override with score_function.",
 )
 
 _MINIMIZE_NOTES = (
     "Gradient-based energy minimization of a structure. Faster than relax "
     "but explores less conformational space — useful for resolving clashes "
     "or refining after mutations without full repacking.",
-    "Default score function is ref2015. Override with extra['score_function'].",
-)
-
-_MINIMIZE_INPUT_FORMAT = (
-    "Provide a PDB or mmCIF file via structure_path. The structure will "
-    "be minimized. Output includes the minimized structure and its score.",
+    "Default score function is ref2015. Override with score_function.",
 )
 
 _FLEXDDG_NOTES = (
     "Ensemble-based DDG prediction using backrub conformational sampling. "
     "More accurate than ddg_monomer for interface mutations because it "
     "accounts for backbone flexibility.",
-    "Requires extra['chains_to_move'] — the chain ID(s) of the binding "
-    "partner (e.g., 'B'). Mutations are specified in extra['mutations'] "
-    "as a list of strings like ['A42F'].",
+    "Requires chains_to_move — the chain ID(s) of the binding partner "
+    "(e.g., 'B'). Mutations are specified in the mutations field as a "
+    "list of strings like ['A42F'].",
     "Key parameters (via extra dict): 'backrub_trials' (default 35000), "
-    "'max_minimization_iter' (default 5000), 'nstruct' (number of "
-    "independent backrub samples, default 35 — use 3 for quick tests).",
+    "'max_minimization_iter' (default 5000). nstruct is the number of "
+    "independent backrub samples (default 35 — use 3 for quick tests).",
     "The protocol runs multiple independent backrub trajectories and "
     "averages the DDG predictions across the ensemble for robust "
     "estimates. Runtime scales linearly with nstruct.",
@@ -319,92 +258,64 @@ _FLEXDDG_NOTES = (
     "(mean, standard deviation) in the score_breakdown.",
 )
 
-_FLEXDDG_INPUT_FORMAT = (
-    "Provide a protein complex PDB via structure_path. Specify "
-    "extra['mutations'] (list of strings like ['A42F']) and "
-    "extra['chains_to_move'] (partner chain ID, e.g., 'B'). "
-    "The structure should be pre-relaxed with rosetta_relax.",
-)
-
-TOOL_REGISTRY["rosetta_score"] = ToolEntry(
+ROSETTA_TOOL = Tool(
+    name="rosetta",
+    display_name="Rosetta",
+    category=ToolCategory.SCORING,
+    description=(
+        "Rosetta structure scoring, refinement, and interface DDG prediction. Modes: "
+        "score (energy), relax (FastRelax), minimize (gradient minimization), and "
+        "flexddg (flex-ddG interface mutation DDG)."
+    ),
+    version="1.0.0",
     image_tag="rosetta-score:1.0.0",
-    category=ToolCategory.SCORING,
     requires_gpu=False,
     gpu_count=0,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
-    description=(
-        "Score a protein structure using Rosetta's energy function. "
-        "Returns total energy in REU (Rosetta Energy Units) with a "
-        "per-term breakdown (van der Waals, electrostatics, hydrogen "
-        "bonds, solvation, etc.). Useful for evaluating structure "
-        "quality or comparing conformations."
-    ),
-    version="1.0.0",
-    notes=_SCORE_NOTES,
-    input_format=_SCORE_INPUT_FORMAT,
+    default_mode="score",
+    modes={
+        "score": Mode(
+            name="score",
+            display_name="Score",
+            description="Score a structure with Rosetta's energy function.",
+            input_schema=RosettaBaseInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            image_tag="rosetta-score:1.0.0",
+            notes=_SCORE_NOTES,
+        ),
+        "relax": Mode(
+            name="relax",
+            display_name="Relax",
+            description="FastRelax a structure to a low-energy conformation.",
+            input_schema=RosettaRelaxInput,
+            output_schema=ScoringOutput,
+            default_timeout=3600,
+            image_tag="rosetta-relax:1.0.0",
+            notes=_RELAX_NOTES,
+        ),
+        "minimize": Mode(
+            name="minimize",
+            display_name="Minimize",
+            description="Gradient-based energy minimization of a structure.",
+            input_schema=RosettaBaseInput,
+            output_schema=ScoringOutput,
+            default_timeout=1800,
+            image_tag="rosetta-minimize:1.0.0",
+            notes=_MINIMIZE_NOTES,
+        ),
+        "flexddg": Mode(
+            name="flexddg",
+            display_name="Flex-ddG",
+            description="Predict interface binding DDG with backrub sampling.",
+            input_schema=RosettaFlexDdgInput,
+            output_schema=ScoringOutput,
+            default_timeout=14400,
+            image_tag="rosetta-flexddg:1.0.0",
+            notes=_FLEXDDG_NOTES,
+        ),
+    },
+    keywords=("rosetta", "scoring", "relax", "minimize", "flexddg", "ddg", "energy"),
 )
+"""Catalog Tool for Rosetta (score/relax/minimize/flexddg modes)."""
 
-TOOL_REGISTRY["rosetta_relax"] = ToolEntry(
-    image_tag="rosetta-relax:1.0.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=3600,
-    supports_batch=False,
-    description=(
-        "Relax a protein structure using Rosetta's FastRelax protocol. "
-        "Iteratively minimizes energy and repacks side chains, producing "
-        "a low-energy conformation close to the input. Returns the "
-        "refined structure and its score. Essential preprocessing step "
-        "before DDG calculations or design."
-    ),
-    version="1.0.0",
-    notes=_RELAX_NOTES,
-    input_format=_RELAX_INPUT_FORMAT,
-)
-
-TOOL_REGISTRY["rosetta_minimize"] = ToolEntry(
-    image_tag="rosetta-minimize:1.0.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=1800,
-    supports_batch=False,
-    description=(
-        "Minimize a protein structure using gradient-based energy "
-        "minimization. Faster than full relax — resolves clashes and "
-        "refines geometry without side-chain repacking. Returns the "
-        "minimized structure and its score."
-    ),
-    version="1.0.0",
-    notes=_MINIMIZE_NOTES,
-    input_format=_MINIMIZE_INPUT_FORMAT,
-)
-
-TOOL_REGISTRY["rosetta_flexddg"] = ToolEntry(
-    image_tag="rosetta-flexddg:1.0.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=14400,
-    supports_batch=False,
-    description=(
-        "Predict binding DDG at protein-protein interfaces using the "
-        "flex-ddG protocol with backrub conformational sampling. More "
-        "accurate than ddg_monomer for interface mutations. Runs an "
-        "ensemble of backrub trajectories and averages DDG predictions. "
-        "Requires a complex structure and chains_to_move specification."
-    ),
-    version="1.0.0",
-    notes=_FLEXDDG_NOTES,
-    input_format=_FLEXDDG_INPUT_FORMAT,
-)
+register(ROSETTA_TOOL)

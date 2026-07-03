@@ -16,6 +16,7 @@ class RunMetadata(BaseModel):
     """
 
     tool_name: str
+    mode: str | None = None
     tool_version: str
     image_uri: str
     wall_time_seconds: float

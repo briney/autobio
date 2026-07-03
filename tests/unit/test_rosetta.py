@@ -1,27 +1,40 @@
-"""Tests for RosettaRunner — prepare_workspace, parse_output, and registration."""
+"""Tests for the migrated rosetta Tool (modes: score, relax, minimize, flexddg)."""
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import (
+    RosettaBaseInput,
+    RosettaFlexDdgInput,
+    RosettaRelaxInput,
+    ScoringOutput,
+)
 from autobio.tools import TOOL_RUNNERS, get_runner
-from autobio.tools.rosetta import _VARIANT_CONFIG, RosettaRunner
+from autobio.tools.rosetta import _MODE_CONFIG, _ROSETTA_DB, RosettaRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
+_MODES = ("score", "relax", "minimize", "flexddg")
+_NON_DDG_MODES = ("score", "relax", "minimize")
+
+_OLD_FLAT_NAMES = ("rosetta_score", "rosetta_relax", "rosetta_minimize", "rosetta_flexddg")
+
+
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
@@ -30,44 +43,47 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> RosettaRunner:
-    """Create a RosettaRunner for rosetta_score with mocked deps."""
+def _make_runner(mode_name: str, config: AutobioConfig) -> RosettaRunner:
+    """Create a RosettaRunner with mocked deps, current_mode pinned to *mode_name*."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return RosettaRunner("rosetta_score", config)
+        runner = RosettaRunner("rosetta", config)
+    runner.current_mode = get_tool("rosetta").modes[mode_name]
+    return runner
+
+
+def _input_for_mode(mode_name: str, structure_path: Path, **kwargs: object):
+    """Build the correct typed input class for *mode_name*."""
+    if mode_name == "relax":
+        return RosettaRelaxInput(structure_path=structure_path, **kwargs)  # type: ignore[arg-type]
+    if mode_name == "flexddg":
+        kwargs.setdefault("mutations", ["A42F"])
+        kwargs.setdefault("chains_to_move", "B")
+        return RosettaFlexDdgInput(structure_path=structure_path, **kwargs)  # type: ignore[arg-type]
+    return RosettaBaseInput(structure_path=structure_path, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> RosettaRunner:
+    """Score-mode runner (the common case)."""
+    return _make_runner("score", config)
 
 
 @pytest.fixture()
 def relax_runner(config: AutobioConfig) -> RosettaRunner:
-    """Create a RosettaRunner for rosetta_relax."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return RosettaRunner("rosetta_relax", config)
+    return _make_runner("relax", config)
 
 
 @pytest.fixture()
 def minimize_runner(config: AutobioConfig) -> RosettaRunner:
-    """Create a RosettaRunner for rosetta_minimize."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return RosettaRunner("rosetta_minimize", config)
+    return _make_runner("minimize", config)
 
 
 @pytest.fixture()
 def flexddg_runner(config: AutobioConfig) -> RosettaRunner:
-    """Create a RosettaRunner for rosetta_flexddg."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return RosettaRunner("rosetta_flexddg", config)
+    return _make_runner("flexddg", config)
 
 
 @pytest.fixture()
@@ -82,37 +98,29 @@ def sample_pdb(tmp_path: Path) -> Path:
 # TestRosettaPrepareWorkspace
 # ---------------------------------------------------------------------------
 
-_ALL_TOOL_NAMES = list(_VARIANT_CONFIG.keys())
-_NON_DDG_TOOLS = [t for t in _ALL_TOOL_NAMES if not _VARIANT_CONFIG[t]["requires_mutations"]]
-_DDG_TOOLS = [t for t in _ALL_TOOL_NAMES if _VARIANT_CONFIG[t]["requires_mutations"]]
-
 
 class TestRosettaPrepareWorkspace:
     """Tests for RosettaRunner.prepare_workspace."""
 
-    @pytest.mark.parametrize("tool_name", _NON_DDG_TOOLS)
+    @pytest.mark.parametrize("mode_name", _NON_DDG_MODES)
     def test_basic_config(
         self,
-        tool_name: str,
+        mode_name: str,
         config: AutobioConfig,
         tmp_path: Path,
         sample_pdb: Path,
     ) -> None:
         """Config contains correct binary, protocol, and database path."""
-        with (
-            patch("autobio.tools.base.ContainerManager"),
-            patch("autobio.tools.base.GPUManager"),
-        ):
-            r = RosettaRunner(tool_name, config)
+        r = _make_runner(mode_name, config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = _input_for_mode(mode_name, sample_pdb)
         r.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
-        expected = _VARIANT_CONFIG[tool_name]
+        expected = _MODE_CONFIG[mode_name]
         assert cfg["binary"] == expected["binary"]
         assert cfg["protocol"] == expected["protocol"]
-        assert cfg["database_path"] == "/usr/local/lib/python3.8/dist-packages/pyrosetta/database"
+        assert cfg["database_path"] == _ROSETTA_DB
         assert cfg["score_function"] == "ref2015"
 
     def test_structure_file_copied(
@@ -120,7 +128,7 @@ class TestRosettaPrepareWorkspace:
     ) -> None:
         """Input structure is copied to inputs/ and config references container path."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaBaseInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         copied = workspace.inputs_dir / "test.pdb"
@@ -133,51 +141,52 @@ class TestRosettaPrepareWorkspace:
     def test_score_function_override(
         self, runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Custom score function from extra dict is used."""
+        """Custom score function (typed field) is used."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb, extra={"score_function": "beta_nov16"})
+        input_data = RosettaBaseInput(structure_path=sample_pdb, score_function="beta_nov16")
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["score_function"] == "beta_nov16"
 
-    def test_nstruct_from_extra(
+    def test_nstruct_override(
         self, relax_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """nstruct from extra overrides variant default."""
+        """nstruct (typed field) overrides the mode default."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb, extra={"nstruct": 10})
+        input_data = RosettaRelaxInput(structure_path=sample_pdb, nstruct=10)
         relax_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["nstruct"] == 10
 
+    @pytest.mark.parametrize(
+        ("mode_name", "expected_nstruct"),
+        [("score", 1), ("relax", 5), ("minimize", 1), ("flexddg", 35)],
+    )
     def test_nstruct_defaults(
         self,
+        mode_name: str,
+        expected_nstruct: int,
         config: AutobioConfig,
         tmp_path: Path,
         sample_pdb: Path,
     ) -> None:
-        """Each variant uses its own default nstruct."""
-        for tool_name in _NON_DDG_TOOLS:
-            with (
-                patch("autobio.tools.base.ContainerManager"),
-                patch("autobio.tools.base.GPUManager"),
-            ):
-                r = RosettaRunner(tool_name, config)
-            workspace = Workspace.create(tmp_path / f"ws_{tool_name}")
-            input_data = ScoringInput(structure_path=sample_pdb)
-            r.prepare_workspace(input_data, workspace)
+        """Each mode uses its own default nstruct."""
+        r = _make_runner(mode_name, config)
+        workspace = Workspace.create(tmp_path / f"ws_{mode_name}")
+        input_data = _input_for_mode(mode_name, sample_pdb)
+        r.prepare_workspace(input_data, workspace)
 
-            cfg = json.loads(workspace.config_path.read_text())
-            assert cfg["nstruct"] == _VARIANT_CONFIG[tool_name]["default_nstruct"]
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["nstruct"] == expected_nstruct
 
-    def test_xml_path_for_script_tools(
+    def test_xml_path_for_script_modes(
         self, relax_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Tools using rosetta_scripts include xml_path in config."""
+        """Modes using rosetta_scripts include xml_path in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaRelaxInput(structure_path=sample_pdb)
         relax_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -186,9 +195,9 @@ class TestRosettaPrepareWorkspace:
     def test_no_xml_path_for_score(
         self, runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Score tool does not include xml_path in config."""
+        """Score mode does not include xml_path in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb)
+        input_data = RosettaBaseInput(structure_path=sample_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -197,9 +206,9 @@ class TestRosettaPrepareWorkspace:
     def test_extra_dict_merged(
         self, runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Extra dict keys (non-consumed) appear at top level of config.json."""
+        """Extra dict keys (non-typed) appear at top level of config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = RosettaBaseInput(
             structure_path=sample_pdb,
             extra={"ex1": True, "ex2": True, "custom_flag": "value"},
         )
@@ -210,23 +219,29 @@ class TestRosettaPrepareWorkspace:
         assert cfg["ex2"] is True
         assert cfg["custom_flag"] == "value"
 
-    def test_consumed_keys_not_merged(
+    def test_extra_shadowing_typed_field_rejected(
         self, runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Consumed extra keys don't leak into config.json top level."""
+        """extra containing a typed field name (score_function/nstruct) raises."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
+        input_data = RosettaBaseInput(
             structure_path=sample_pdb,
-            extra={"nstruct": 3, "score_function": "ref2015", "ex1": True},
+            extra={"score_function": "ref2015"},
         )
-        runner.prepare_workspace(input_data, workspace)
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
 
-        cfg = json.loads(workspace.config_path.read_text())
-        # nstruct and score_function are consumed but placed explicitly
-        assert cfg["nstruct"] == 3
-        assert cfg["score_function"] == "ref2015"
-        # ex1 is NOT consumed — it should be merged
-        assert cfg["ex1"] is True
+    def test_extra_shadowing_config_key_rejected(
+        self, runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """extra containing a runner-derived config key (out_dir) raises."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = RosettaBaseInput(
+            structure_path=sample_pdb,
+            extra={"out_dir": "/somewhere/else"},
+        )
+        with pytest.raises(AutobioError, match="collide"):
+            runner.prepare_workspace(input_data, workspace)
 
 
 # ---------------------------------------------------------------------------
@@ -235,22 +250,23 @@ class TestRosettaPrepareWorkspace:
 
 
 class TestRosettaDDGWorkspace:
-    """Tests for DDG-specific prepare_workspace logic."""
+    """Tests for flex-ddG-specific prepare_workspace logic."""
 
     def test_flexddg_with_chains_to_move(
         self, flexddg_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Flex-ddG accepts mutations and chains_to_move."""
+        """Flex-ddG accepts mutations and chains_to_move (typed fields)."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=sample_pdb,
-            extra={"mutations": ["A42F"], "chains_to_move": "B"},
+        input_data = RosettaFlexDdgInput(
+            structure_path=sample_pdb, mutations=["A42F"], chains_to_move="B"
         )
         flexddg_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["mutations"] == ["A42F"]
         assert cfg["chains_to_move"] == "B"
+        assert cfg["mutation_list"] == ["A42F"]
+        assert "resfile_path" not in cfg
 
     def test_resfile_passthrough(
         self, flexddg_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
@@ -258,13 +274,11 @@ class TestRosettaDDGWorkspace:
         """Raw resfile content is written to inputs/ when provided."""
         workspace = Workspace.create(tmp_path / "ws")
         resfile_content = "NATAA\nstart\n42 A PIKAA F\n"
-        input_data = ScoringInput(
+        input_data = RosettaFlexDdgInput(
             structure_path=sample_pdb,
-            extra={
-                "mutations": ["A42F"],
-                "chains_to_move": "B",
-                "resfile": resfile_content,
-            },
+            mutations=["A42F"],
+            chains_to_move="B",
+            resfile=resfile_content,
         )
         flexddg_runner.prepare_workspace(input_data, workspace)
 
@@ -274,6 +288,24 @@ class TestRosettaDDGWorkspace:
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["resfile_path"] == "/workspace/inputs/mutations.resfile"
+        assert "mutation_list" not in cfg
+
+    def test_flexddg_extra_passthrough(
+        self, flexddg_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """backrub_trials/max_minimization_iter remain extra-only pass-through keys."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = RosettaFlexDdgInput(
+            structure_path=sample_pdb,
+            mutations=["A42F"],
+            chains_to_move="B",
+            extra={"backrub_trials": 5000, "max_minimization_iter": 2000},
+        )
+        flexddg_runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["backrub_trials"] == 5000
+        assert cfg["max_minimization_iter"] == 2000
 
 
 # ---------------------------------------------------------------------------
@@ -288,37 +320,29 @@ class TestRosettaValidation:
         """Missing structure file raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
         fake_path = tmp_path / "nonexistent.pdb"
-        input_data = ScoringInput(structure_path=fake_path)
+        input_data = RosettaBaseInput(structure_path=fake_path)
         with pytest.raises(AutobioError, match="does not exist"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_flexddg_missing_mutations_raises(
         self, flexddg_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Flex-ddG without mutations raises AutobioError."""
+        """Flex-ddG with an empty mutations list raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb, extra={"chains_to_move": "B"})
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
-            flexddg_runner.prepare_workspace(input_data, workspace)
-
-    def test_flexddg_invalid_mutations_type_raises(
-        self, flexddg_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
-    ) -> None:
-        """Non-list mutations raises AutobioError."""
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=sample_pdb,
-            extra={"mutations": "A42F", "chains_to_move": "B"},
+        input_data = RosettaFlexDdgInput(
+            structure_path=sample_pdb, mutations=[], chains_to_move="B"
         )
-        with pytest.raises(AutobioError, match="must be a list"):
+        with pytest.raises(AutobioError, match="requires at least one mutation"):
             flexddg_runner.prepare_workspace(input_data, workspace)
 
     def test_flexddg_missing_chains_raises(
         self, flexddg_runner: RosettaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Flex-ddG without chains_to_move raises AutobioError."""
+        """Flex-ddG with an empty chains_to_move raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=sample_pdb, extra={"mutations": ["A42F"]})
+        input_data = RosettaFlexDdgInput(
+            structure_path=sample_pdb, mutations=["A42F"], chains_to_move=""
+        )
         with pytest.raises(AutobioError, match="chains_to_move"):
             flexddg_runner.prepare_workspace(input_data, workspace)
 
@@ -393,7 +417,6 @@ class TestRosettaParseOutput:
         self, relax_runner: RosettaRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        # Create the expected output PDB
         pdb_dest = workspace.std_output_dir / "relaxed_0001.pdb"
         pdb_dest.write_text("ATOM  relaxed\nEND\n")
         (workspace.std_output_dir / "result_data.json").write_text(json.dumps(_RELAX_RESULT))
@@ -426,48 +449,286 @@ class TestRosettaParseOutput:
 
 
 # ---------------------------------------------------------------------------
+# TestRosettaByteCompatConfig — full-dict config.json equality, per mode
+# ---------------------------------------------------------------------------
+
+
+class TestRosettaByteCompatConfig:
+    """Full-dict ``config.json`` equality tests, pinning key order per mode."""
+
+    def test_score_full_config(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        r = _make_runner("score", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(RosettaBaseInput(structure_path=sample_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "binary": "score_jd2",
+            "protocol": "score",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "database_path": _ROSETTA_DB,
+            "score_function": "ref2015",
+            "out_dir": "/workspace/outputs/raw",
+            "nstruct": 1,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_relax_full_config(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        r = _make_runner("relax", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(RosettaRelaxInput(structure_path=sample_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "binary": "rosetta_scripts",
+            "protocol": "relax",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "database_path": _ROSETTA_DB,
+            "score_function": "ref2015",
+            "out_dir": "/workspace/outputs/raw",
+            "nstruct": 5,
+            "xml_path": "/opt/tool/xml/relax.xml",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_minimize_full_config(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        r = _make_runner("minimize", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(RosettaBaseInput(structure_path=sample_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "binary": "rosetta_scripts",
+            "protocol": "minimize",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "database_path": _ROSETTA_DB,
+            "score_function": "ref2015",
+            "out_dir": "/workspace/outputs/raw",
+            "nstruct": 1,
+            "xml_path": "/opt/tool/xml/minimize.xml",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_flexddg_full_config_mutation_list(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """No resfile: config carries mutation_list (not resfile_path)."""
+        r = _make_runner("flexddg", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            RosettaFlexDdgInput(structure_path=sample_pdb, mutations=["A42F"], chains_to_move="B"),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "binary": "rosetta_scripts",
+            "protocol": "flexddg",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "database_path": _ROSETTA_DB,
+            "score_function": "ref2015",
+            "out_dir": "/workspace/outputs/raw",
+            "nstruct": 35,
+            "mutations": ["A42F"],
+            "chains_to_move": "B",
+            "mutation_list": ["A42F"],
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_flexddg_full_config_resfile(
+        self, config: AutobioConfig, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """With resfile: config carries resfile_path (not mutation_list)."""
+        r = _make_runner("flexddg", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        resfile_content = "NATAA\nstart\n42 A PIKAA F\n"
+        r.prepare_workspace(
+            RosettaFlexDdgInput(
+                structure_path=sample_pdb,
+                mutations=["A42F"],
+                chains_to_move="B",
+                resfile=resfile_content,
+            ),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "binary": "rosetta_scripts",
+            "protocol": "flexddg",
+            "structure_path": f"/workspace/inputs/{sample_pdb.name}",
+            "database_path": _ROSETTA_DB,
+            "score_function": "ref2015",
+            "out_dir": "/workspace/outputs/raw",
+            "nstruct": 35,
+            "mutations": ["A42F"],
+            "chains_to_move": "B",
+            "resfile_path": "/workspace/inputs/mutations.resfile",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+
+# ---------------------------------------------------------------------------
 # TestRosettaRegistration
 # ---------------------------------------------------------------------------
 
 
 class TestRosettaRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for the catalog Tool + runner registration."""
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_in_tool_registry(self, tool_name: str) -> None:
-        assert tool_name in TOOL_REGISTRY
+    def test_rosetta_registered_as_single_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - populate registries
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_in_tool_runners(self, tool_name: str) -> None:
-        assert tool_name in TOOL_RUNNERS
-        assert TOOL_RUNNERS[tool_name] is RosettaRunner
+        tool = get_tool("rosetta")
+        assert set(tool.modes) == {"score", "relax", "minimize", "flexddg"}
+        assert tool.default_mode == "score"
+        assert tool.category == ToolCategory.SCORING
+        assert tool.requires_gpu is False
+        assert tool.gpu_count == 0
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_scoring_category(self, tool_name: str) -> None:
-        assert TOOL_REGISTRY[tool_name].category == ToolCategory.SCORING
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_no_gpu_required(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.requires_gpu is False
-        assert entry.gpu_count == 0
+        assert flat_name not in TOOL_REGISTRY
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOL_NAMES)
-    def test_schema_types(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.input_schema is ScoringInput
-        assert entry.output_schema is ScoringOutput
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
 
-    def test_each_tool_has_unique_image_tag(self) -> None:
-        """Unlike Complexa, each Rosetta tool has its own image."""
-        tags = {TOOL_REGISTRY[t].image_tag for t in _ALL_TOOL_NAMES}
-        assert len(tags) == len(_ALL_TOOL_NAMES)
+        assert flat_name not in TOOL_RUNNERS
+
+    def test_rosetta_in_tool_runners(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert "rosetta" in TOOL_RUNNERS
+        assert TOOL_RUNNERS["rosetta"] is RosettaRunner
+
+    def test_modes_have_distinct_image_tags(self) -> None:
+        """Each of the 4 modes resolves to its own Docker image."""
+        tool = get_tool("rosetta")
+        tags = {mode.image_tag for mode in tool.modes.values()}
+        assert len(tags) == 4
+        assert tags == {
+            "rosetta-score:1.0.0",
+            "rosetta-relax:1.0.0",
+            "rosetta-minimize:1.0.0",
+            "rosetta-flexddg:1.0.0",
+        }
+
+    @pytest.mark.parametrize(
+        ("mode_name", "timeout"),
+        [("score", 600), ("relax", 3600), ("minimize", 1800), ("flexddg", 14400)],
+    )
+    def test_modes_have_per_mode_timeout(self, mode_name: str, timeout: int) -> None:
+        assert get_tool("rosetta").modes[mode_name].default_timeout == timeout
 
     def test_get_runner_returns_rosetta_runner(self, config: AutobioConfig) -> None:
         with (
             patch("autobio.tools.base.ContainerManager"),
             patch("autobio.tools.base.GPUManager"),
         ):
-            r = get_runner("rosetta_score", config)
+            r = get_runner("rosetta", config)
         assert isinstance(r, RosettaRunner)
-        assert r.tool_name == "rosetta_score"
+        assert r.tool_name == "rosetta"
+
+    def test_get_runner_removed_flat_name_raises(self, config: AutobioConfig) -> None:
+        with pytest.raises(KeyError, match="rosetta_score"):
+            get_runner("rosetta_score", config)
+
+
+# ---------------------------------------------------------------------------
+# TestRosettaInfoSnapshot
+# ---------------------------------------------------------------------------
+
+
+class TestRosettaInfoSnapshot:
+    """``autobio info rosetta`` output — per-mode notes, hints, output_schema."""
+
+    def test_info_snapshot(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+        parsed = json.loads(format_tool_info_catalog(get_tool("rosetta"), OutputFormat.JSON))
+        assert [m["name"] for m in parsed["modes"]] == ["score", "relax", "minimize", "flexddg"]
+
+        score_mode = parsed["modes"][0]
+        assert len(score_mode["notes"]) > 0
+        assert "output_schema" in score_mode
+
+        score_function_prop = score_mode["input_schema"]["properties"]["score_function"]
+        assert score_function_prop["x-autobio"]["widget"] == "select"
+
+        flexddg_mode = parsed["modes"][3]
+        mutations_prop = flexddg_mode["input_schema"]["properties"]["mutations"]
+        assert mutations_prop["x-autobio"]["widget"] == "text"
+        assert "output_schema" in flexddg_mode
+
+
+# ---------------------------------------------------------------------------
+# TestRosettaRunMetadataMode — full run() lifecycle threads mode into metadata
+# ---------------------------------------------------------------------------
+
+
+_MIN_RESULT = {
+    "scores": [
+        {
+            "total_score": -10.0,
+            "score_breakdown": None,
+            "units": "REU",
+            "per_residue_scores": None,
+            "structure_path": None,
+            "ddg": None,
+            "mutations": None,
+        }
+    ]
+}
+
+
+class TestRosettaRunMetadataMode:
+    """``run(...).metadata.mode`` reflects the selected mode for each mode."""
+
+    @pytest.mark.parametrize("mode_name", _MODES)
+    def test_run_metadata_mode(
+        self,
+        mode_name: str,
+        config: AutobioConfig,
+        tmp_path: Path,
+        sample_pdb: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import autobio.tools  # noqa: F401
+
+        output_dir = tmp_path / "ws"
+        std_dir = output_dir / "outputs" / "standardized"
+        std_dir.mkdir(parents=True)
+        (std_dir / "result_data.json").write_text(json.dumps(_MIN_RESULT))
+
+        monkeypatch.setattr(
+            "autobio.core.workspace.Workspace.read_result",
+            lambda self: SimpleNamespace(
+                status="success", phase="run", exit_code=0, error_message=None
+            ),
+        )
+
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = RosettaRunner("rosetta", config)
+
+        input_data = _input_for_mode(mode_name, sample_pdb)
+        out = r.run(input_data, gpu="none", output_dir=output_dir, mode=mode_name)
+        assert out.metadata.mode == mode_name
+        assert out.metadata.tool_name == "rosetta"
