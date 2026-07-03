@@ -183,10 +183,10 @@ ESM1B_TOOL = Tool(
     image_tag="esm:1.0.0",
     requires_gpu=True,
     gpu_count=1,
-    default_mode="embed",
+    default_mode="embedding",
     modes={
-        "embed": Mode(
-            name="embed",
+        "embedding": Mode(
+            name="embedding",
             display_name="Embeddings",
             description="Extract per-sequence or per-residue embeddings.",
             input_schema=ESMEmbedInput,
@@ -215,10 +215,10 @@ ESM2_TOOL = Tool(
     image_tag="esm:1.0.0",
     requires_gpu=True,
     gpu_count=1,
-    default_mode="embed",
+    default_mode="embedding",
     modes={
-        "embed": Mode(
-            name="embed",
+        "embedding": Mode(
+            name="embedding",
             display_name="Embeddings",
             description="Extract per-sequence or per-residue embeddings.",
             input_schema=ESM2Input,

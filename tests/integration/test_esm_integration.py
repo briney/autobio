@@ -60,7 +60,7 @@ class TestESM2SingleSequence:
             sequences={"crambin": _CRAMBIN_SEQ},
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embedding")
 
         assert isinstance(output, EmbeddingOutput)
         assert len(output.embeddings) == 1
@@ -85,7 +85,7 @@ class TestESM2SingleSequence:
             pooling="per_residue",
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embedding")
 
         e = output.embeddings[0]
         emb = np.load(e.embedding_path)
@@ -106,7 +106,7 @@ class TestESM2MultipleSequences:
             sequences={"crambin": _CRAMBIN_SEQ, "insulin_b": _INSULIN_B},
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embedding")
 
         assert len(output.embeddings) == 2
         ids = {e.sequence_id for e in output.embeddings}
@@ -133,7 +133,7 @@ class TestESM2CheckpointSelection:
             checkpoint="8M",
         )
         runner = get_runner("esm2", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embedding")
 
         assert output.embedding_dimension == 320
         e = output.embeddings[0]
@@ -155,7 +155,7 @@ class TestESM1b:
             sequences={"crambin": _CRAMBIN_SEQ},
         )
         runner = get_runner("esm1b", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embed")
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="embedding")
 
         assert isinstance(output, EmbeddingOutput)
         assert output.model_name == "esm1b_t33_650M_UR50S"
