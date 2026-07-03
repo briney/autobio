@@ -1,10 +1,10 @@
 """Input/output schemas for antibody language model tools.
 
 Shared by CurrAb, BALM-paired, BALM-unpaired, ft-ESM, AbLang2, and
-AntiBERTa2.  Each model has two tool variants (embedding and pseudo
-log-likelihood), all using ``AntibodyInput`` as input.  Embedding tools
-reuse ``EmbeddingOutput`` from :mod:`autobio.schemas.embedding`; PLL
-tools return ``AntibodyPLLOutput``.
+AntiBERTa2.  Each model is one catalog Tool with two modes (embedding and
+pseudo log-likelihood), all using ``AntibodyInput`` as input.  The embedding
+mode reuses ``EmbeddingOutput`` from :mod:`autobio.schemas.embedding`; the PLL
+mode returns ``AntibodyPLLOutput``.
 """
 
 from __future__ import annotations

@@ -332,7 +332,7 @@ _ANTIBODY_INPUT_FORMAT = (
 _PLL_NOTES = (
     "Pseudo log-likelihood (PLL) is computed by masking each non-special "
     "token position individually and summing the log-probabilities of the "
-    "true tokens. Per-position scores are available via extra['per_position']=True.",
+    "true tokens. Per-position scores are available via per_position=True.",
     "PLL computation requires N forward passes for an N-token sequence. "
     "This is significantly slower than embedding extraction.",
 )

@@ -313,10 +313,17 @@ class TestAntibodyInput:
     def test_extra_passthrough(self) -> None:
         inp = AntibodyInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")],
-            extra={"per_position": True, "batch_size": 8},
+            extra={"seed": 42, "batch_size": 8},
         )
-        assert inp.extra["per_position"] is True
+        assert inp.extra["seed"] == 42
         assert inp.extra["batch_size"] == 8
+
+    def test_per_position_typed_field(self) -> None:
+        inp = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")],
+            per_position=True,
+        )
+        assert inp.per_position is True
 
     def test_round_trip(self) -> None:
         inp = AntibodyInput(
