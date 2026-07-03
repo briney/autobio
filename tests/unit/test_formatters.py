@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+import pytest
+
 from autobio.cli.formatters import (
     OutputFormat,
     format_image_list,
@@ -417,3 +419,31 @@ def test_format_tool_list_merged_table_runs() -> None:
         {"prodigy": _flat_entry()}, {"demo": _tool_for_info()}, OutputFormat.TABLE
     )
     assert "prodigy" in out and "demo" in out
+
+
+def test_format_tool_info_catalog_table_skips_schema_computation() -> None:
+    """TABLE format must not call model_json_schema() on mode schemas (micro-opt)."""
+
+    class _ExplodingInput(BaseInput):
+        @classmethod
+        def model_json_schema(cls, *args, **kwargs):
+            raise AssertionError("model_json_schema must not be called for TABLE")
+
+    tool = Tool(
+        name="demo",
+        display_name="Demo",
+        category=ToolCategory.SCORING,
+        description="demo tool",
+        version="1.0.0",
+        image_tag="demo:1.0.0",
+        requires_gpu=False,
+        gpu_count=0,
+        default_mode="a",
+        modes={
+            "a": Mode("a", "Alpha", "alpha mode", _ExplodingInput, _OutInfo, default_timeout=300),
+        },
+    )
+    out = format_tool_info_catalog(tool, OutputFormat.TABLE)
+    assert "Mode: a" in out
+    with pytest.raises(AssertionError, match="must not be called"):
+        format_tool_info_catalog(tool, OutputFormat.JSON)
