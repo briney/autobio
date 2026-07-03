@@ -1,4 +1,4 @@
-"""Tests for ComplexaRunner — prepare_workspace, parse_output, host validation, and registration."""
+"""Tests for the migrated complexa Tool (modes: protein_binder, ligand_binder, ame)."""
 
 from __future__ import annotations
 
@@ -8,23 +8,47 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.structure_design import (
-    StructureDesignInput,
-    StructureDesignOutput,
-)
+from autobio.schemas.structure_design import ComplexaInput, StructureDesignOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
 from autobio.tools.complexa import ComplexaRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+# Pre-migration flat TOOL_REGISTRY names (all 3 must be gone).
+_OLD_FLAT_NAMES = ("complexa", "complexa_ligand", "complexa_ame")
+# TOOL_RUNNERS keys retired by the collapse ("complexa" itself is reused,
+# now dispatching via Modes instead of a flat ToolEntry).
+_RETIRED_RUNNER_KEYS = ("complexa_ligand", "complexa_ame")
+
+_MODE_NAMES = ("protein_binder", "ligand_binder", "ame")
+
+_MODE_CONFIG_EXPECTED = {
+    "protein_binder": {
+        "pipeline_config": "search_binder_local_pipeline",
+        "ckpt_name": "complexa.ckpt",
+        "ae_ckpt_name": "complexa_ae.ckpt",
+    },
+    "ligand_binder": {
+        "pipeline_config": "search_ligand_binder_local_pipeline",
+        "ckpt_name": "complexa_ligand.ckpt",
+        "ae_ckpt_name": "complexa_ligand_ae.ckpt",
+    },
+    "ame": {
+        "pipeline_config": "search_ame_local_pipeline",
+        "ckpt_name": "complexa_ame.ckpt",
+        "ae_ckpt_name": "complexa_ame_ae.ckpt",
+    },
+}
+
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
@@ -33,34 +57,33 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> ComplexaRunner:
-    """Create a ComplexaRunner (protein binder variant) with mocked infra."""
+def _make_runner(mode_name: str, config: AutobioConfig) -> ComplexaRunner:
+    """Create a ComplexaRunner with mocked infra, current_mode pinned to *mode_name*."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return ComplexaRunner("complexa", config)
+        runner = ComplexaRunner("complexa", config)
+    runner.current_mode = get_tool("complexa").modes[mode_name]
+    return runner
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> ComplexaRunner:
+    """Create a ComplexaRunner pinned to the protein_binder mode."""
+    return _make_runner("protein_binder", config)
 
 
 @pytest.fixture()
 def ligand_runner(config: AutobioConfig) -> ComplexaRunner:
-    """Create a ComplexaRunner (ligand binder variant) with mocked infra."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return ComplexaRunner("complexa_ligand", config)
+    """Create a ComplexaRunner pinned to the ligand_binder mode."""
+    return _make_runner("ligand_binder", config)
 
 
 @pytest.fixture()
 def ame_runner(config: AutobioConfig) -> ComplexaRunner:
-    """Create a ComplexaRunner (AME variant) with mocked infra."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return ComplexaRunner("complexa_ame", config)
+    """Create a ComplexaRunner pinned to the ame mode."""
+    return _make_runner("ame", config)
 
 
 @pytest.fixture()
@@ -83,7 +106,7 @@ class TestComplexaPrepareWorkspace:
         self, runner: ComplexaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[sample_pdb],
             design_specs={
                 "pdl1": {
@@ -103,50 +126,26 @@ class TestComplexaPrepareWorkspace:
         assert cfg["design_specs"]["pdl1"]["hotspot_residues"] == ["A37", "A39"]
         assert cfg["design_specs"]["pdl1"]["binder_length"] == [64, 155]
 
-    def test_variant_config_protein_binder(self, runner: ComplexaRunner, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("mode_name", _MODE_NAMES)
+    def test_mode_config(self, mode_name: str, config: AutobioConfig, tmp_path: Path) -> None:
+        """variant/pipeline_config/ckpt_name/ae_ckpt_name differ per mode."""
+        r = _make_runner(mode_name, config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
-            design_specs={"test": {"target_input": "A1-50"}},
-        )
-        runner.prepare_workspace(input_data, workspace)
+        input_data = ComplexaInput(design_specs={"test": {"target_input": "A1-50"}})
+        r.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
-        assert cfg["variant"] == "protein_binder"
-        assert cfg["ckpt_name"] == "complexa.ckpt"
-        assert cfg["ae_ckpt_name"] == "complexa_ae.ckpt"
-        assert cfg["pipeline_config"] == "search_binder_local_pipeline"
-
-    def test_variant_config_ligand_binder(
-        self, ligand_runner: ComplexaRunner, tmp_path: Path
-    ) -> None:
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
-            design_specs={"test": {"target_input": "A1-50"}},
-        )
-        ligand_runner.prepare_workspace(input_data, workspace)
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert cfg["variant"] == "ligand_binder"
-        assert cfg["ckpt_name"] == "complexa_ligand.ckpt"
-        assert cfg["ae_ckpt_name"] == "complexa_ligand_ae.ckpt"
-
-    def test_variant_config_ame(self, ame_runner: ComplexaRunner, tmp_path: Path) -> None:
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
-            design_specs={"test": {"target_input": "A1-50"}},
-        )
-        ame_runner.prepare_workspace(input_data, workspace)
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert cfg["variant"] == "ame"
-        assert cfg["ckpt_name"] == "complexa_ame.ckpt"
-        assert cfg["ae_ckpt_name"] == "complexa_ame_ae.ckpt"
+        expected = _MODE_CONFIG_EXPECTED[mode_name]
+        assert cfg["variant"] == mode_name
+        assert cfg["pipeline_config"] == expected["pipeline_config"]
+        assert cfg["ckpt_name"] == expected["ckpt_name"]
+        assert cfg["ae_ckpt_name"] == expected["ae_ckpt_name"]
 
     def test_input_structures_copied(
         self, runner: ComplexaRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[sample_pdb],
             design_specs={"test": {"input": str(sample_pdb), "target_input": "A1-50"}},
         )
@@ -161,7 +160,7 @@ class TestComplexaPrepareWorkspace:
     ) -> None:
         """'input' values in specs are rewritten to container-internal paths."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[sample_pdb],
             design_specs={"test": {"input": str(sample_pdb), "target_input": "A1-50"}},
         )
@@ -172,7 +171,7 @@ class TestComplexaPrepareWorkspace:
 
     def test_n_batches_in_config(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             design_specs={"test": {"target_input": "A1-50"}},
             n_batches=3,
         )
@@ -183,9 +182,7 @@ class TestComplexaPrepareWorkspace:
 
     def test_out_dir_set(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
-            design_specs={"test": {"target_input": "A1-50"}},
-        )
+        input_data = ComplexaInput(design_specs={"test": {"target_input": "A1-50"}})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -193,9 +190,7 @@ class TestComplexaPrepareWorkspace:
 
     def test_weights_dir_set(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
-            design_specs={"test": {"target_input": "A1-50"}},
-        )
+        input_data = ComplexaInput(design_specs={"test": {"target_input": "A1-50"}})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -204,7 +199,7 @@ class TestComplexaPrepareWorkspace:
     def test_extra_dict_merged(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         """Extra dict keys appear at the top level of config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             design_specs={"test": {"target_input": "A1-50"}},
             extra={"batch_size": 8, "seed": 123, "search_algorithm": "best-of-n"},
         )
@@ -218,7 +213,7 @@ class TestComplexaPrepareWorkspace:
     def test_multiple_specs(self, runner: ComplexaRunner, tmp_path: Path, sample_pdb: Path) -> None:
         """Multiple named specs are preserved in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[sample_pdb],
             design_specs={
                 "target_a": {
@@ -246,7 +241,7 @@ class TestComplexaPrepareWorkspace:
         """prepare_workspace deep-copies specs; original input_data is unchanged."""
         workspace = Workspace.create(tmp_path / "ws")
         original_path = str(sample_pdb)
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[sample_pdb],
             design_specs={"test": {"input": original_path, "target_input": "A1-50"}},
         )
@@ -256,9 +251,9 @@ class TestComplexaPrepareWorkspace:
         assert input_data.design_specs["test"]["input"] == original_path
 
     def test_mode_design_passed_through(self, runner: ComplexaRunner, tmp_path: Path) -> None:
-        """extra={'mode': 'design'} appears in config.json."""
+        """extra={'mode': 'design'} appears in config.json (container-level pipeline switch)."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             design_specs={"test": {"target_input": "A1-50"}},
             extra={"mode": "design"},
         )
@@ -270,9 +265,7 @@ class TestComplexaPrepareWorkspace:
     def test_mode_generate_default(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         """No mode in extra → no mode key in config (container defaults to generate)."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
-            design_specs={"test": {"target_input": "A1-50"}},
-        )
+        input_data = ComplexaInput(design_specs={"test": {"target_input": "A1-50"}})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -281,7 +274,7 @@ class TestComplexaPrepareWorkspace:
     def test_design_mode_eval_njobs(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         """Design mode extra keys (eval_njobs, gen_njobs) pass through to config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             design_specs={"test": {"target_input": "A1-50"}},
             extra={"mode": "design", "eval_njobs": 4, "gen_njobs": 2},
         )
@@ -303,13 +296,13 @@ class TestComplexaHostValidation:
 
     def test_empty_design_specs_raises(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(design_specs={})
+        input_data = ComplexaInput(design_specs={})
         with pytest.raises(AutobioError, match="at least one specification"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_n_batches_zero_raises(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             design_specs={"test": {"target_input": "A1-50"}},
             n_batches=0,
         )
@@ -318,7 +311,7 @@ class TestComplexaHostValidation:
 
     def test_negative_n_batches_raises(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             design_specs={"test": {"target_input": "A1-50"}},
             n_batches=-1,
         )
@@ -328,7 +321,7 @@ class TestComplexaHostValidation:
     def test_missing_input_file_raises(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         nonexistent = tmp_path / "nonexistent.pdb"
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[nonexistent],
             design_specs={"test": {"input": str(nonexistent), "target_input": "A1-50"}},
         )
@@ -338,7 +331,7 @@ class TestComplexaHostValidation:
     def test_unreferenced_spec_input_raises(self, runner: ComplexaRunner, tmp_path: Path) -> None:
         """Spec references a file not in input_structures."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[],
             design_specs={"test": {"input": "/some/file.pdb", "target_input": "A1-50"}},
         )
@@ -516,74 +509,262 @@ class TestComplexaParseOutput:
 
 
 # ---------------------------------------------------------------------------
+# TestComplexaByteCompatConfig — full-dict config.json equality, per mode
+# ---------------------------------------------------------------------------
+
+
+class TestComplexaByteCompatConfig:
+    """Full-dict ``config.json`` equality tests, pinning key order per mode."""
+
+    def test_protein_binder_full_config(
+        self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
+    ) -> None:
+        r = _make_runner("protein_binder", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ComplexaInput(
+            input_structures=[sample_pdb],
+            design_specs={
+                "pdl1": {"input": str(sample_pdb), "target_input": "A1-115"},
+            },
+            n_batches=2,
+            extra={"mode": "design", "batch_size": 8},
+        )
+        r.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "variant": "protein_binder",
+            "pipeline_config": "search_binder_local_pipeline",
+            "ckpt_name": "complexa.ckpt",
+            "ae_ckpt_name": "complexa_ae.ckpt",
+            "weights_dir": "/app/proteina-complexa/ckpts",
+            "design_specs": {
+                "pdl1": {
+                    "input": "/workspace/inputs/target.pdb",
+                    "target_input": "A1-115",
+                },
+            },
+            "n_batches": 2,
+            "out_dir": "/workspace/outputs/raw",
+            "mode": "design",
+            "batch_size": 8,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_ligand_binder_full_config(
+        self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path
+    ) -> None:
+        r = _make_runner("ligand_binder", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ComplexaInput(
+            input_structures=[sample_pdb],
+            design_specs={
+                "trypsin": {
+                    "input": str(sample_pdb),
+                    "target_input": "A1-223",
+                    "ligand": "BEN",
+                },
+            },
+            n_batches=1,
+            extra={"seed": 42},
+        )
+        r.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "variant": "ligand_binder",
+            "pipeline_config": "search_ligand_binder_local_pipeline",
+            "ckpt_name": "complexa_ligand.ckpt",
+            "ae_ckpt_name": "complexa_ligand_ae.ckpt",
+            "weights_dir": "/app/proteina-complexa/ckpts",
+            "design_specs": {
+                "trypsin": {
+                    "input": "/workspace/inputs/target.pdb",
+                    "target_input": "A1-223",
+                    "ligand": "BEN",
+                },
+            },
+            "n_batches": 1,
+            "out_dir": "/workspace/outputs/raw",
+            "seed": 42,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_ame_full_config(self, config: AutobioConfig, sample_pdb: Path, tmp_path: Path) -> None:
+        r = _make_runner("ame", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ComplexaInput(
+            input_structures=[sample_pdb],
+            design_specs={
+                "motif": {
+                    "input": str(sample_pdb),
+                    "contig_atoms": "A5: [N, CA, C, O, CB]",
+                },
+            },
+            n_batches=1,
+        )
+        r.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "variant": "ame",
+            "pipeline_config": "search_ame_local_pipeline",
+            "ckpt_name": "complexa_ame.ckpt",
+            "ae_ckpt_name": "complexa_ame_ae.ckpt",
+            "weights_dir": "/app/proteina-complexa/ckpts",
+            "design_specs": {
+                "motif": {
+                    "input": "/workspace/inputs/target.pdb",
+                    "contig_atoms": "A5: [N, CA, C, O, CB]",
+                },
+            },
+            "n_batches": 1,
+            "out_dir": "/workspace/outputs/raw",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_extra_shadowing_typed_field_rejected(
+        self, runner: ComplexaRunner, tmp_path: Path
+    ) -> None:
+        """extra containing a typed field name (n_batches) raises."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ComplexaInput(
+            design_specs={"test": {"target_input": "A1-50"}},
+            extra={"n_batches": 5},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_extra_unknown_key_passed_through(self, runner: ComplexaRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ComplexaInput(
+            design_specs={"test": {"target_input": "A1-50"}},
+            extra={"custom_flag": True},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["custom_flag"] is True
+
+
+# ---------------------------------------------------------------------------
 # TestComplexaRegistration
 # ---------------------------------------------------------------------------
 
 
 class TestComplexaRegistration:
-    """Tests for tool and runner registration across all three variants."""
+    """Tests for the catalog Tool + runner registration."""
 
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_in_registry(self, tool_name: str) -> None:
-        assert tool_name in TOOL_REGISTRY
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.category == ToolCategory.STRUCTURE_DESIGN
-        assert entry.input_schema is StructureDesignInput
-        assert entry.output_schema is StructureDesignOutput
-        assert entry.requires_gpu is True
-        assert entry.gpu_count == 1
+    def test_complexa_registered_as_single_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - populate registries
 
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_tool_runner_registered(self, tool_name: str) -> None:
-        assert tool_name in TOOL_RUNNERS
-        assert TOOL_RUNNERS[tool_name] is ComplexaRunner
+        tool = get_tool("complexa")
+        assert set(tool.modes) == {"protein_binder", "ligand_binder", "ame"}
+        assert tool.default_mode == "protein_binder"
+        assert tool.category == ToolCategory.STRUCTURE_DESIGN
+        assert tool.requires_gpu is True
+        assert tool.gpu_count == 1
 
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_get_runner_returns_complexa_runner(
-        self, config: AutobioConfig, tool_name: str
-    ) -> None:
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_REGISTRY
+
+    @pytest.mark.parametrize("flat_name", _RETIRED_RUNNER_KEYS)
+    def test_retired_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_RUNNERS
+
+    def test_complexa_in_tool_runners(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert "complexa" in TOOL_RUNNERS
+        assert TOOL_RUNNERS["complexa"] is ComplexaRunner
+
+    def test_get_runner_complexa_resolves_catalog_tool(self, config: AutobioConfig) -> None:
         with (
             patch("autobio.tools.base.ContainerManager"),
             patch("autobio.tools.base.GPUManager"),
         ):
-            r = get_runner(tool_name, config)
+            r = get_runner("complexa", config)
         assert isinstance(r, ComplexaRunner)
-        assert r.tool_name == tool_name
+        assert r.tool_name == "complexa"
+        assert r.tool is not None and r.tool.name == "complexa"
 
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_notes_populated(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert len(entry.notes) > 0
-        all_notes = " ".join(entry.notes).lower()
+    @pytest.mark.parametrize("flat_name", _RETIRED_RUNNER_KEYS)
+    def test_get_runner_removed_flat_name_raises(
+        self, flat_name: str, config: AutobioConfig
+    ) -> None:
+        with pytest.raises(KeyError, match=flat_name):
+            get_runner(flat_name, config)
+
+    @pytest.mark.parametrize(
+        ("mode_name", "timeout"),
+        [("protein_binder", 43200), ("ligand_binder", 43200), ("ame", 43200)],
+    )
+    def test_modes_have_uniform_timeout(self, mode_name: str, timeout: int) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert get_tool("complexa").modes[mode_name].default_timeout == timeout
+
+    def test_modes_share_single_image(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        tool = get_tool("complexa")
+        assert tool.image_tag == "complexa:2.0.0"
+        for mode in tool.modes.values():
+            assert mode.image_tag is None  # falls back to Tool.image_tag
+
+    @pytest.mark.parametrize("mode_name", _MODE_NAMES)
+    def test_supports_batch(self, mode_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert get_tool("complexa").modes[mode_name].supports_batch is True
+
+    @pytest.mark.parametrize("mode_name", _MODE_NAMES)
+    def test_notes_populated(self, mode_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        notes = get_tool("complexa").modes[mode_name].notes
+        assert len(notes) > 0
+        all_notes = " ".join(notes).lower()
         assert "gpu" in all_notes or "search" in all_notes
 
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_input_format_populated(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert len(entry.input_format) > 0
-        all_fmt = " ".join(entry.input_format).lower()
-        assert "design_specs" in all_fmt or "input" in all_fmt
-
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_shared_image_tag(self, tool_name: str) -> None:
-        """All three variants share the same container image."""
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.image_tag == "complexa:2.0.0"
-
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_default_timeout(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.default_timeout == 43200
-
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_supports_batch(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.supports_batch is True
-
-    @pytest.mark.parametrize("tool_name", ["complexa", "complexa_ligand", "complexa_ame"])
-    def test_design_mode_documented_in_notes(self, tool_name: str) -> None:
-        """All variants document design mode in their notes."""
-        entry = TOOL_REGISTRY[tool_name]
-        all_notes = " ".join(entry.notes).lower()
+    @pytest.mark.parametrize("mode_name", _MODE_NAMES)
+    def test_design_mode_documented_in_notes(self, mode_name: str) -> None:
+        """All modes document the container-level design/generate pipeline switch."""
+        notes = get_tool("complexa").modes[mode_name].notes
+        all_notes = " ".join(notes).lower()
         assert "design" in all_notes
         assert "mode" in all_notes
+
+
+# ---------------------------------------------------------------------------
+# TestComplexaInfoSnapshot
+# ---------------------------------------------------------------------------
+
+
+class TestComplexaInfoSnapshot:
+    """``autobio info complexa`` output — per-mode notes, hints, output_schema."""
+
+    def test_info_snapshot(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+        parsed = json.loads(format_tool_info_catalog(get_tool("complexa"), OutputFormat.JSON))
+        assert [m["name"] for m in parsed["modes"]] == ["protein_binder", "ligand_binder", "ame"]
+
+        for mode in parsed["modes"]:
+            assert len(mode["notes"]) > 0
+            assert "output_schema" in mode
+            design_specs_prop = mode["input_schema"]["properties"]["design_specs"]
+            assert design_specs_prop["x-autobio"]["widget"] == "textarea"
+
+        # Only the output-format note text differs per mode.
+        assert parsed["modes"][0]["notes"] != parsed["modes"][1]["notes"]
+        assert parsed["modes"][0]["notes"] != parsed["modes"][2]["notes"]

@@ -54,8 +54,6 @@ TOOL_RUNNERS: dict[str, type[ToolRunner]] = {
     "ligandmpnn": MPNNRunner,
     "rfd3": RFD3Runner,
     "complexa": ComplexaRunner,
-    "complexa_ligand": ComplexaRunner,
-    "complexa_ame": ComplexaRunner,
     "boltz1": BoltzRunner,
     "boltz2": BoltzRunner,
     "chai1": ChaiRunner,
