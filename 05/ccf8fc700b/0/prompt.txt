@@ -2122,3 +2122,66 @@ None found — Critical, Important, and Minor are all empty.
 **Reasoning:** Every constraint in the brief/recon is met exactly as specified, the import cycle fix is verified correct and cycle-free, all specified test/lint/type-check commands pass under independent re-run (not just report trust), and no out-of-scope files were touched.</result>
 <usage><subagent_tokens>62991</subagent_tokens><tool_uses>28</tool_uses><duration_ms>102088</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>add8c8c1ca7b310d4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/add8c8c1ca7b310d4.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Plan 4j Task 2 migration" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed cleanly, working tree clean except gitignored files. Did not push, open a PR, or switch branches.
+
+Status: DONE
+Commit SHA: `3c35016`
+Tests: `pytest tests/unit/test_antibody_lm.py tests/unit/test_schemas.py tests/unit/test_registry_disjoint.py` and `pytest -m "not docker and not gpu"` both exit 0; ruff check/format clean; mypy clean (57 files).
+Concerns: none blocking. One judgment call — also fixed `extra={"per_position": True}` → `per_position=True` in the 3 Docker-gated integration test files' per-position tests (not explicitly called out in the brief for those files, but required since `per_position` is now a typed field and would otherwise trip the new `_apply_extra` collision guard). Full details in `.superpowers/sdd/task-2-report.md`.</result>
+<usage><subagent_tokens>195106</subagent_tokens><tool_uses>59</tool_uses><duration_ms>450414</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7df9441b1f5a7c21</task-id>
+<tool-use-id>toolu_01Uosa54UovJ1rhRuvnZxiLG</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a7df9441b1f5a7c21.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Plan 4j Task 2 migration" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Task 2 Review: antibody-LM migration (6 models → catalog Tools with `{embedding, pll}` modes)
+
+**Verification performed:** re-ran `python -m pytest tests/unit/test_antibody_lm.py tests/unit/test_schemas.py tests/unit/test_registry_disjoint.py -q` (exit 0, 218 passed), full `python -m pytest -m "not docker and not gpu" -q` (exit 0), `ruff check`/`ruff format --check` (clean), `mypy src/` (clean), `python -c "import autobio"` (OK). Independently diffed `_MODEL_CONFIG` entries, ToolEntry description strings, and the `TestAntibodyLMHostValidation`/`TestAntibodyLMParseOutput` test blocks byte-for-byte against pre-branch (`60fce0b`/`1bb6660`) with scripted comparisons — all identical except the intended mechanical changes.
+
+### Spec Compliance
+
+1. **Config byte-compat** ✅ — `src/autobio/tools/antibody_lm.py:164-178` matches the recon's key order exactly; only the two sanctioned changes (`mode = self.current_mode.name`, `per_position = input_data.per_position`) plus `_apply_extra` replacing the flat-merge loop. Byte-compat tests (`TestAntibodyLMByteCompatConfig`, lines 335-447) assert full-dict equality + key-order for embedding defaults, pll defaults, pll with `per_position=True`/`layer`/`pooling` overrides, and embedding with a flat-merged non-consumed extra key.
+2. **Dispatch** ✅ — `_MODEL_CONFIG` re-keyed to 6 names; scripted diff confirms each dropped `*_pll` `_ModelSpec` was byte-identical to its base entry (no data lost). `prepare_workspace`/`_is_pll_mode` match the brief exactly.
+3. **`_apply_extra` adoption** ✅ — flat-merge loop and `_CONSUMED_EXTRA_KEYS` gone; three rejection tests present and passing (`model_name` collision, `layer` shadow, `per_position` shadow), all matching `"collide"`.
+4. **`per_position` promotion** ✅ — typed `bool = False` with correct `ui()` hint; integration tests correctly switched from `extra={"per_position": True}` to the typed field (necessary given the new `_apply_extra` hardening — this was flagged transparently in the report and is the correct fix, not a deviation to worry about).
+5. **6 Tools correct** ✅ — all `category=EMBEDDING`, `tool_categories(tool) == (EMBEDDING,)` (verified live), per-model `image_tag` on `Tool` only (`Mode.image_tag is None`, verified), per-mode output/timeout correct, `supports_batch=True`, built via `_register_antibody_lm`. Scripted regex-diff confirms all 12 embed/pll description strings match pre-branch verbatim — no drift. `_ModelSpec` values (all 6) confirmed byte-identical to pre-branch.
+6. **Registry cleanup** ✅ — verified live: all 12 flat names absent from `TOOL_REGISTRY` and `CATALOG` (as appropriate), 6 base names present only in `CATALOG`/`TOOL_RUNNERS`; `test_registry_disjoint` passes.
+7. **Test port completeness** ✅ — `TestAntibodyLMHostValidation` and `TestAntibodyLMParseOutput` blocks are byte-identical to pre-branch (confirmed via diff). `test_consumed_keys_excluded` was correctly removed/replaced (its old scenario — flat-merging `per_position` via `extra` — is now a rejected collision by design; coverage moved to `test_extra_per_position_shadow_raises` + `test_pll_full_config_with_per_position`). `run()` lifecycle test present for both modes asserting `metadata.mode`; `info` snapshot test present.
+
+### Strengths
+- Scripted/mechanical verification (not just eyeballing) was easy because the diff is disciplined: only the load-bearing lines changed, everything else is a clean lift.
+- The `_apply_extra` rejection tests and byte-compat tests are genuinely thorough — they test the exact hardening behavior change called out in the recon, not just happy paths.
+- Test organization mirrors `test_openmm.py`/`test_esm_if1.py` as instructed, with clear class-per-concern structure.
+
+### Issues
+
+**Important**
+- `src/autobio/tools/antibody_lm.py:335` (`_PLL_NOTES`) — still reads `"Per-position scores are available via extra['per_position']=True."` This is stale: `per_position` was promoted to a typed `AntibodyInput` field in this same task, and passing it via `extra` now raises `AutobioError` (collision). This note is user-facing (verified live: it appears in `get_tool("currab").modes["pll"].notes`, surfaced through `autobio info`/`format_tool_info_catalog`), so it actively misleads API/CLI consumers into using a construction that will now fail. The brief said to keep `_PLL_NOTES` (as a constant to reuse), but since its content directly documents the very field this task changed, the text should have been updated to `per_position=True` (matching the schema field's own docstring, which the report says *was* updated). Fix: change the note text to reference the typed field, e.g. `"Per-position scores are available via per_position=True."`
+
+**Minor**
+- `src/autobio/schemas/antibody.py:1-8` (module docstring) — "Each model has two tool variants (embedding and pseudo log-likelihood)" is leftover pre-migration terminology (now one Tool, two Modes). Not user-facing (dev-only docstring), purely cosmetic.
+
+No Critical issues found. Config byte-compat, dispatch, `_apply_extra` adoption, catalog registration, registry cleanup, and test-port completeness all hold up under independent re-verification (live registry checks, scripted diffs against pre-branch source, and full test/lint/type-check re-runs).
+
+### Task quality: **Approved**
+
+### Reasoning
+All named risks in the brief were checked independently (not just re-reading the report's claims) and held up: config key order/values, dropped `_ModelSpec` duplicates, description-string fidelity, catalog registration shape, registry disjointness, and test-port completeness were all verified by direct inspection/diff/execution rather than trusting the report's narrative. The one Important finding (`_PLL_NOTES` stale reference to `extra['per_position']`) is a real, verifiable documentation-accuracy regression that will confuse users of `autobio info`, but it's a self-contained doc string, not a functional or test-coverage defect — it doesn't affect config byte-compat, dispatch, or any tested behavior, and is a one-line fix. Given the scope of the task and the near-perfect byte-compat/test-fidelity execution otherwise, this doesn't block approval but should be fixed before/alongside teardown.</result>
+<usage><subagent_tokens>114454</subagent_tokens><tool_uses>41</tool_uses><duration_ms>262801</duration_ms></usage>
+</task-notification>
