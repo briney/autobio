@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.binding_affinity import BindingAffinityInput, BindingAffinityOutput
+from autobio.schemas.binding_affinity import AntipastiInput, BindingAffinityOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -71,7 +71,7 @@ class TestAntipastiPrediction:
 
         Verifies the full pipeline: PDB input -> NMA/DCCM -> CNN prediction.
         """
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=rcsb_1ahw,
             heavy_chain="A",
             light_chain="B",

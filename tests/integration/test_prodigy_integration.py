@@ -17,7 +17,7 @@ import pytest
 
 from autobio.core.config import AutobioConfig
 from autobio.schemas.protein_binding_affinity import (
-    ProteinBindingAffinityInput,
+    ProdigyInput,
     ProteinBindingAffinityOutput,
 )
 from autobio.tools import get_runner
@@ -73,7 +73,7 @@ class TestProdigyPrediction:
 
         Verifies the full pipeline: PDB input -> contact counting -> prediction.
         """
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=rcsb_1ppe,
             chain_selection="E I",
         )
@@ -113,7 +113,7 @@ class TestProdigyPrediction:
         self, rcsb_1ppe: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Predict binding affinity using all inter-chain contacts (no selection)."""
-        input_data = ProteinBindingAffinityInput(
+        input_data = ProdigyInput(
             structure_path=rcsb_1ppe,
         )
         runner = get_runner("prodigy", autobio_config)

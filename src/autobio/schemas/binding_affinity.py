@@ -44,7 +44,12 @@ class AntipastiInput(BindingAffinityInput):
 
     modes: str | int = Field(
         default="all",
-        description="Normal modes for the DCCM calculation: 'all', or an integer count.",
+        description=(
+            "Normal modes for the DCCM calculation: 'all', or an integer count. "
+            "This is the ANTIPASTI-specific 'modes' config key (number of normal "
+            "modes used in the Dynamic Cross-Correlation Matrix), distinct from "
+            "the Tool-level notion of 'modes' (e.g. Tool.modes / predict mode)."
+        ),
         json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.ADVANCED, order=10),
     )
 

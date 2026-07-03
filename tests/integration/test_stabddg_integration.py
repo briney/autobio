@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import ScoringOutput, StaBddGInput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -65,14 +65,12 @@ class TestStaBddGSingleMutation:
 
         Uses reduced mc_samples for faster execution.
         """
-        input_data = ScoringInput(
+        input_data = StaBddGInput(
             structure_path=rcsb_1ao7,
-            extra={
-                "mutations": ["EA63Q"],
-                "chains": "ABC_DE",
-                "mc_samples": 5,
-                "seed": 0,
-            },
+            mutations=["EA63Q"],
+            chains="ABC_DE",
+            mc_samples=5,
+            seed=0,
         )
         runner = get_runner("stabddg", autobio_config)
         output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
@@ -111,14 +109,12 @@ class TestStaBddGMultipleMutations:
 
         This matches the default StaB-ddG example: EA63Q, QD30V, KA66A.
         """
-        input_data = ScoringInput(
+        input_data = StaBddGInput(
             structure_path=rcsb_1ao7,
-            extra={
-                "mutations": ["EA63Q", "QD30V", "KA66A"],
-                "chains": "ABC_DE",
-                "mc_samples": 5,
-                "seed": 0,
-            },
+            mutations=["EA63Q", "QD30V", "KA66A"],
+            chains="ABC_DE",
+            mc_samples=5,
+            seed=0,
         )
         runner = get_runner("stabddg", autobio_config)
         output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")

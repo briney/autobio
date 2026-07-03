@@ -453,6 +453,9 @@ class TestBAddGRegistration:
     def test_image_tag(self) -> None:
         assert get_tool("baddg").image_tag == "baddg:1.0.0"
 
+    def test_timeout(self) -> None:
+        assert get_tool("baddg").modes["predict"].default_timeout == 600
+
     def test_get_runner_returns_baddg_runner(self, config: AutobioConfig) -> None:
         with (
             patch("autobio.tools.base.ContainerManager"),
