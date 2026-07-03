@@ -16,7 +16,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import (
+    EvoEF2BindingInput,
+    EvoEF2BuildMutantInput,
+    EvoEF2RepairInput,
+    ScoringOutput,
+)
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -64,13 +69,14 @@ class TestEvoEF2Repair:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Repair barnase-barstar and verify output structure."""
-        input_data = ScoringInput(structure_path=rcsb_1brs)
-        runner = get_runner("evoef2_repair", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        input_data = EvoEF2RepairInput(structure_path=rcsb_1brs)
+        runner = get_runner("evoef2", autobio_config)
+        output = runner.run(input_data, gpu="none", mode="repair", output_dir=tmp_path / "ws")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "evoef2_repair"
+        assert output.metadata.tool_name == "evoef2"
+        assert output.metadata.mode == "repair"
         assert output.metadata.wall_time_seconds > 0
 
         s = output.scores[0]
@@ -95,16 +101,17 @@ class TestEvoEF2Binding:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Compute binding energy for barnase-barstar with auto-repair."""
-        input_data = ScoringInput(
+        input_data = EvoEF2BindingInput(
             structure_path=rcsb_1brs,
-            extra={"split_chains": "A,D"},
+            split_chains="A,D",
         )
-        runner = get_runner("evoef2_binding", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        runner = get_runner("evoef2", autobio_config)
+        output = runner.run(input_data, gpu="none", mode="binding", output_dir=tmp_path / "ws")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "evoef2_binding"
+        assert output.metadata.tool_name == "evoef2"
+        assert output.metadata.mode == "binding"
         assert output.metadata.wall_time_seconds > 0
 
         s = output.scores[0]
@@ -122,12 +129,13 @@ class TestEvoEF2Binding:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Compute binding energy without auto-repair."""
-        input_data = ScoringInput(
+        input_data = EvoEF2BindingInput(
             structure_path=rcsb_1brs,
-            extra={"repair": False, "split_chains": "A,D"},
+            repair=False,
+            split_chains="A,D",
         )
-        runner = get_runner("evoef2_binding", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        runner = get_runner("evoef2", autobio_config)
+        output = runner.run(input_data, gpu="none", mode="binding", output_dir=tmp_path / "ws")
 
         assert isinstance(output, ScoringOutput)
         s = output.scores[0]
@@ -149,16 +157,17 @@ class TestEvoEF2BuildMutant:
         self, rcsb_1brs: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Build a single-point mutant of barnase."""
-        input_data = ScoringInput(
+        input_data = EvoEF2BuildMutantInput(
             structure_path=rcsb_1brs,
-            extra={"mutations": ["AA42G"]},
+            mutations=["AA42G"],
         )
-        runner = get_runner("evoef2_build_mutant", autobio_config)
-        output = runner.run(input_data, gpu="none", output_dir=tmp_path / "ws")
+        runner = get_runner("evoef2", autobio_config)
+        output = runner.run(input_data, gpu="none", mode="build_mutant", output_dir=tmp_path / "ws")
 
         assert isinstance(output, ScoringOutput)
         assert len(output.scores) >= 1
-        assert output.metadata.tool_name == "evoef2_build_mutant"
+        assert output.metadata.tool_name == "evoef2"
+        assert output.metadata.mode == "build_mutant"
 
         s = output.scores[0]
         assert s.structure_path is not None

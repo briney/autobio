@@ -267,6 +267,49 @@ class LigandMPNNPackerInput(BaseInput):
     )
 
 
+class EvoEF2BaseInput(BaseInput):
+    """Shared input for EvoEF2 modes (PDB only)."""
+
+    structure_path: Path = Field(
+        description="Path to the input PDB structure (EvoEF2 supports PDB only).",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=0),
+    )
+
+
+class EvoEF2RepairInput(EvoEF2BaseInput):
+    """Input for EvoEF2 repair mode (rebuild side chains, optimize hydrogen positions)."""
+
+
+class EvoEF2BindingInput(EvoEF2BaseInput):
+    """Input for EvoEF2 protein-protein binding-energy mode."""
+
+    repair: bool = Field(
+        default=True,
+        description="Auto-repair the structure before scoring.",
+        json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=10),
+    )
+    split_chains: str | None = Field(
+        default=None,
+        description=(
+            "Chain grouping 'group1,group2' (exactly one comma), e.g. 'A,BC' = chain A "
+            "vs chains B+C. None uses EvoEF2's default grouping."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.ADVANCED, order=11),
+    )
+
+
+class EvoEF2BuildMutantInput(EvoEF2BaseInput):
+    """Input for EvoEF2 build-mutant mode."""
+
+    mutations: list[str] = Field(
+        description=(
+            "Mutations to introduce, format [WT_AA][ChainID][Resnum][Mut_AA] "
+            "(e.g. ['EA63Q', 'KB42A']); applied simultaneously."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=1),
+    )
+
+
 class ScoredStructure(BaseModel):
     """Scoring results for a single structure."""
 

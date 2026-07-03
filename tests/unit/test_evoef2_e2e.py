@@ -1,6 +1,6 @@
-"""End-to-end tests for EvoEF2.
+"""Tests for the migrated evoef2 Tool (modes: repair, binding, build_mutant).
 
-Each test exercises the full pipeline:
+Each E2E test exercises the full pipeline:
     input construction -> validation -> prepare_workspace ->
     (simulated EvoEF2 output) -> standardize.py -> parse_output -> verify
 
@@ -19,11 +19,21 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
+from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.scoring import ScoringInput, ScoringOutput
+from autobio.schemas.scoring import (
+    EvoEF2BindingInput,
+    EvoEF2BuildMutantInput,
+    EvoEF2RepairInput,
+    ScoringOutput,
+)
+from autobio.tools import TOOL_RUNNERS, get_runner
 from autobio.tools.evoef2 import EvoEF2Runner
+
+_OLD_FLAT_NAMES = ("evoef2_repair", "evoef2_binding", "evoef2_build_mutant")
 
 # ---------------------------------------------------------------------------
 # Realistic EvoEF2 output data
@@ -96,7 +106,7 @@ _MODEL_PDB_CONTENT = (
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
@@ -113,13 +123,15 @@ def complex_pdb(tmp_path: Path) -> Path:
     return pdb_path
 
 
-def _make_runner(tool_name: str, config: AutobioConfig) -> EvoEF2Runner:
-    """Create a runner with mocked container/GPU (we simulate container output)."""
+def _make_runner(mode_name: str, config: AutobioConfig) -> EvoEF2Runner:
+    """Create a runner with mocked container/GPU, current_mode pinned to *mode_name*."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return EvoEF2Runner(tool_name, config)
+        runner = EvoEF2Runner("evoef2", config)
+    runner.current_mode = get_tool("evoef2").modes[mode_name]
+    return runner
 
 
 def _import_standardize():
@@ -133,9 +145,9 @@ def _import_standardize():
 
 
 def _run_e2e(
-    tool_name: str,
+    mode_name: str,
     config: AutobioConfig,
-    input_data: ScoringInput,
+    input_data,
     raw_files: dict[str, str],
     tmp_path: Path,
     log_files: dict[str, str] | None = None,
@@ -148,7 +160,7 @@ def _run_e2e(
     4. Run the container's standardize.py
     5. parse_output
     """
-    runner = _make_runner(tool_name, config)
+    runner = _make_runner(mode_name, config)
     workspace = Workspace.create(tmp_path / "ws")
 
     # Step 1: prepare workspace
@@ -183,15 +195,15 @@ def _run_e2e(
 
 
 class TestEvoEF2RepairE2E:
-    """End-to-end tests for evoef2_repair."""
+    """End-to-end tests for evoef2 repair mode."""
 
     def test_repair_full_pipeline(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Repair pipeline produces structure and energy score."""
-        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        input_data = EvoEF2RepairInput(structure_path=complex_pdb)
         output = _run_e2e(
-            "evoef2_repair",
+            "repair",
             config,
             input_data,
             raw_files={"complex_Repair.pdb": _REPAIRED_PDB_CONTENT},
@@ -212,9 +224,9 @@ class TestEvoEF2RepairE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Repair output includes energy term breakdown."""
-        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        input_data = EvoEF2RepairInput(structure_path=complex_pdb)
         output = _run_e2e(
-            "evoef2_repair",
+            "repair",
             config,
             input_data,
             raw_files={"complex_Repair.pdb": _REPAIRED_PDB_CONTENT},
@@ -233,9 +245,9 @@ class TestEvoEF2RepairE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Config.json has correct command and default parameters."""
-        runner = _make_runner("evoef2_repair", config)
+        runner = _make_runner("repair", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        input_data = EvoEF2RepairInput(structure_path=complex_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -250,15 +262,15 @@ class TestEvoEF2RepairE2E:
 
 
 class TestEvoEF2BindingE2E:
-    """End-to-end tests for evoef2_binding."""
+    """End-to-end tests for evoef2 binding mode."""
 
     def test_binding_full_pipeline(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Binding pipeline produces energy score with breakdown."""
-        input_data = ScoringInput(structure_path=complex_pdb, extra={"repair": False})
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb, repair=False)
         output = _run_e2e(
-            "evoef2_binding",
+            "binding",
             config,
             input_data,
             raw_files={"binding_output.txt": _BINDING_ENERGY_OUTPUT},
@@ -275,9 +287,9 @@ class TestEvoEF2BindingE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Binding with auto-repair includes repaired structure path."""
-        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb)
         output = _run_e2e(
-            "evoef2_binding",
+            "binding",
             config,
             input_data,
             raw_files={
@@ -295,9 +307,9 @@ class TestEvoEF2BindingE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Binding without repair has no structure path."""
-        input_data = ScoringInput(structure_path=complex_pdb, extra={"repair": False})
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb, repair=False)
         output = _run_e2e(
-            "evoef2_binding",
+            "binding",
             config,
             input_data,
             raw_files={"binding_output.txt": _BINDING_ENERGY_OUTPUT},
@@ -310,9 +322,9 @@ class TestEvoEF2BindingE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Repair defaults to true in config."""
-        runner = _make_runner("evoef2_binding", config)
+        runner = _make_runner("binding", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=complex_pdb, extra={})
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -322,9 +334,9 @@ class TestEvoEF2BindingE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """split_chains parameter is written to config."""
-        runner = _make_runner("evoef2_binding", config)
+        runner = _make_runner("binding", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=complex_pdb, extra={"split_chains": "A,B"})
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb, split_chains="A,B")
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -334,9 +346,9 @@ class TestEvoEF2BindingE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Binding output includes per-term energy breakdown."""
-        input_data = ScoringInput(structure_path=complex_pdb, extra={"repair": False})
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb, repair=False)
         output = _run_e2e(
-            "evoef2_binding",
+            "binding",
             config,
             input_data,
             raw_files={"binding_output.txt": _BINDING_ENERGY_OUTPUT},
@@ -357,18 +369,15 @@ class TestEvoEF2BindingE2E:
 
 
 class TestEvoEF2BuildMutantE2E:
-    """End-to-end tests for evoef2_build_mutant."""
+    """End-to-end tests for evoef2 build_mutant mode."""
 
     def test_build_mutant_pipeline(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Build mutant pipeline produces model structure."""
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"]},
-        )
+        input_data = EvoEF2BuildMutantInput(structure_path=complex_pdb, mutations=["EA63Q"])
         output = _run_e2e(
-            "evoef2_build_mutant",
+            "build_mutant",
             config,
             input_data,
             raw_files={"complex_Model_0001.pdb": _MODEL_PDB_CONTENT},
@@ -387,12 +396,9 @@ class TestEvoEF2BuildMutantE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multiple model PDBs produce multiple ScoredStructure entries."""
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"]},
-        )
+        input_data = EvoEF2BuildMutantInput(structure_path=complex_pdb, mutations=["EA63Q"])
         output = _run_e2e(
-            "evoef2_build_mutant",
+            "build_mutant",
             config,
             input_data,
             raw_files={
@@ -413,12 +419,9 @@ class TestEvoEF2BuildMutantE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Mutation file is written in EvoEF2 format."""
-        runner = _make_runner("evoef2_build_mutant", config)
+        runner = _make_runner("build_mutant", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"]},
-        )
+        input_data = EvoEF2BuildMutantInput(structure_path=complex_pdb, mutations=["EA63Q"])
         runner.prepare_workspace(input_data, workspace)
 
         mut_file = workspace.inputs_dir / "individual_list.txt"
@@ -429,11 +432,10 @@ class TestEvoEF2BuildMutantE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Multiple mutations are comma-separated in mutation file."""
-        runner = _make_runner("evoef2_build_mutant", config)
+        runner = _make_runner("build_mutant", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q", "KB42A"]},
+        input_data = EvoEF2BuildMutantInput(
+            structure_path=complex_pdb, mutations=["EA63Q", "KB42A"]
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -444,12 +446,9 @@ class TestEvoEF2BuildMutantE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Config.json has correct command and parameters."""
-        runner = _make_runner("evoef2_build_mutant", config)
+        runner = _make_runner("build_mutant", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["EA63Q"]},
-        )
+        input_data = EvoEF2BuildMutantInput(structure_path=complex_pdb, mutations=["EA63Q"])
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -468,12 +467,9 @@ class TestEvoEF2ValidationE2E:
 
     def test_nonexistent_structure_fails(self, config: AutobioConfig, tmp_path: Path) -> None:
         """Nonexistent input structure raises validation error."""
-        runner = _make_runner("evoef2_repair", config)
+        runner = _make_runner("repair", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=tmp_path / "nonexistent.pdb",
-            extra={},
-        )
+        input_data = EvoEF2RepairInput(structure_path=tmp_path / "nonexistent.pdb")
         with pytest.raises(AutobioError, match="does not exist"):
             runner.prepare_workspace(input_data, workspace)
 
@@ -481,45 +477,31 @@ class TestEvoEF2ValidationE2E:
         """Non-PDB format raises validation error."""
         cif_path = tmp_path / "structure.cif"
         cif_path.write_text("data_test\n")
-        runner = _make_runner("evoef2_binding", config)
+        runner = _make_runner("binding", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=cif_path, extra={})
+        input_data = EvoEF2BindingInput(structure_path=cif_path)
         with pytest.raises(AutobioError, match="PDB format"):
             runner.prepare_workspace(input_data, workspace)
 
-    def test_build_mutant_missing_mutations_fails(
+    def test_build_mutant_empty_mutations_fails(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
-        """Missing mutations for build_mutant raises validation error."""
-        runner = _make_runner("evoef2_build_mutant", config)
+        """Empty mutations list for build_mutant raises the reworded validation error."""
+        runner = _make_runner("build_mutant", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(structure_path=complex_pdb, extra={})
-        with pytest.raises(AutobioError, match="requires 'mutations'"):
-            runner.prepare_workspace(input_data, workspace)
-
-    def test_build_mutant_invalid_mutation_type_fails(
-        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
-    ) -> None:
-        """Non-list mutations raises validation error."""
-        runner = _make_runner("evoef2_build_mutant", config)
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": "EA63Q"},  # string, not list
-        )
-        with pytest.raises(AutobioError, match="list of strings"):
+        input_data = EvoEF2BuildMutantInput(structure_path=complex_pdb, mutations=[])
+        with pytest.raises(
+            AutobioError, match="EvoEF2 build_mutant requires at least one mutation"
+        ):
             runner.prepare_workspace(input_data, workspace)
 
     def test_build_mutant_invalid_mutation_format_fails(
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Invalid mutation format raises validation error."""
-        runner = _make_runner("evoef2_build_mutant", config)
+        runner = _make_runner("build_mutant", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"mutations": ["invalid"]},
-        )
+        input_data = EvoEF2BuildMutantInput(structure_path=complex_pdb, mutations=["invalid"])
         with pytest.raises(AutobioError, match="Invalid mutation format"):
             runner.prepare_workspace(input_data, workspace)
 
@@ -527,11 +509,226 @@ class TestEvoEF2ValidationE2E:
         self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
     ) -> None:
         """Invalid split_chains format raises validation error."""
-        runner = _make_runner("evoef2_binding", config)
+        runner = _make_runner("binding", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = ScoringInput(
-            structure_path=complex_pdb,
-            extra={"split_chains": "ABC"},  # missing comma
-        )
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb, split_chains="ABC")
         with pytest.raises(AutobioError, match="exactly one comma"):
             runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestEvoEF2ByteCompatConfig — full-dict config.json equality, per mode
+# ---------------------------------------------------------------------------
+
+
+class TestEvoEF2ByteCompatConfig:
+    """Full-dict ``config.json`` equality tests, pinning key order per mode."""
+
+    def test_repair_full_config(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        r = _make_runner("repair", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(EvoEF2RepairInput(structure_path=complex_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "command": "RepairStructure",
+            "structure_path": f"/workspace/inputs/{complex_pdb.name}",
+            "evoef2_bin": "/app/evoef2/EvoEF2",
+            "out_dir": "/workspace/outputs/raw",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_binding_full_config_without_split_chains(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """Binding config with default repair, no split_chains key present."""
+        r = _make_runner("binding", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(EvoEF2BindingInput(structure_path=complex_pdb), workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "command": "ComputeBinding",
+            "structure_path": f"/workspace/inputs/{complex_pdb.name}",
+            "evoef2_bin": "/app/evoef2/EvoEF2",
+            "out_dir": "/workspace/outputs/raw",
+            "repair": True,
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+        assert "split_chains" not in cfg
+
+    def test_binding_full_config_with_split_chains(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """Binding config with repair disabled and split_chains present, in order."""
+        r = _make_runner("binding", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            EvoEF2BindingInput(structure_path=complex_pdb, repair=False, split_chains="A,B"),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "command": "ComputeBinding",
+            "structure_path": f"/workspace/inputs/{complex_pdb.name}",
+            "evoef2_bin": "/app/evoef2/EvoEF2",
+            "out_dir": "/workspace/outputs/raw",
+            "repair": False,
+            "split_chains": "A,B",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_build_mutant_full_config(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        r = _make_runner("build_mutant", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        r.prepare_workspace(
+            EvoEF2BuildMutantInput(structure_path=complex_pdb, mutations=["EA63Q", "KB42A"]),
+            workspace,
+        )
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "command": "BuildMutant",
+            "structure_path": f"/workspace/inputs/{complex_pdb.name}",
+            "evoef2_bin": "/app/evoef2/EvoEF2",
+            "out_dir": "/workspace/outputs/raw",
+            "mutations": ["EA63Q", "KB42A"],
+            "mutant_file": "/workspace/inputs/individual_list.txt",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_extra_shadowing_typed_field_rejected(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        """extra containing a typed field name (repair) raises."""
+        r = _make_runner("binding", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = EvoEF2BindingInput(structure_path=complex_pdb, extra={"repair": True})
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            r.prepare_workspace(input_data, workspace)
+
+    def test_extra_unknown_key_passed_through(
+        self, config: AutobioConfig, complex_pdb: Path, tmp_path: Path
+    ) -> None:
+        r = _make_runner("repair", config)
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = EvoEF2RepairInput(structure_path=complex_pdb, extra={"custom_flag": True})
+        r.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["custom_flag"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestEvoEF2Registration
+# ---------------------------------------------------------------------------
+
+
+class TestEvoEF2Registration:
+    """Tests for the catalog Tool + runner registration."""
+
+    def test_evoef2_registered_as_single_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - populate registries
+
+        tool = get_tool("evoef2")
+        assert set(tool.modes) == {"repair", "binding", "build_mutant"}
+        assert tool.default_mode == "repair"
+        assert tool.category == ToolCategory.SCORING
+        assert tool.requires_gpu is False
+        assert tool.gpu_count == 0
+
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_old_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_REGISTRY
+
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_RUNNERS
+
+    def test_evoef2_in_tool_runners(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert "evoef2" in TOOL_RUNNERS
+        assert TOOL_RUNNERS["evoef2"] is EvoEF2Runner
+
+    def test_get_runner_evoef2_resolves_catalog_tool(self, config: AutobioConfig) -> None:
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = get_runner("evoef2", config)
+        assert isinstance(r, EvoEF2Runner)
+        assert r.tool_name == "evoef2"
+        assert r.tool is not None and r.tool.name == "evoef2"
+
+    @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
+    def test_get_runner_removed_flat_name_raises(
+        self, flat_name: str, config: AutobioConfig
+    ) -> None:
+        with pytest.raises(KeyError, match=flat_name):
+            get_runner(flat_name, config)
+
+    @pytest.mark.parametrize(
+        ("mode_name", "timeout"),
+        [("repair", 600), ("binding", 600), ("build_mutant", 600)],
+    )
+    def test_modes_have_uniform_timeout(self, mode_name: str, timeout: int) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert get_tool("evoef2").modes[mode_name].default_timeout == timeout
+
+    def test_modes_share_single_image(self) -> None:
+        import autobio.tools  # noqa: F401
+
+        tool = get_tool("evoef2")
+        assert tool.image_tag == "evoef2:1.0.0"
+        for mode in tool.modes.values():
+            assert mode.image_tag is None  # falls back to Tool.image_tag
+
+
+# ---------------------------------------------------------------------------
+# TestEvoEF2InfoSnapshot
+# ---------------------------------------------------------------------------
+
+
+class TestEvoEF2InfoSnapshot:
+    """``autobio info evoef2`` output — per-mode notes, hints, output_schema."""
+
+    def test_info_snapshot(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+        parsed = json.loads(format_tool_info_catalog(get_tool("evoef2"), OutputFormat.JSON))
+        assert [m["name"] for m in parsed["modes"]] == ["repair", "binding", "build_mutant"]
+
+        repair_mode = parsed["modes"][0]
+        assert len(repair_mode["notes"]) > 0
+        assert "output_schema" in repair_mode
+
+        binding_mode = parsed["modes"][1]
+        assert len(binding_mode["notes"]) > 0
+        assert "output_schema" in binding_mode
+        repair_prop = binding_mode["input_schema"]["properties"]["repair"]
+        assert repair_prop["x-autobio"]["widget"] == "toggle"
+        # Reworded notes no longer mention the extra dict.
+        assert not any("extra[" in note for note in binding_mode["notes"])
+
+        build_mutant_mode = parsed["modes"][2]
+        assert "output_schema" in build_mutant_mode
+        mutations_prop = build_mutant_mode["input_schema"]["properties"]["mutations"]
+        assert mutations_prop["x-autobio"]["widget"] == "text"
+        assert not any("extra[" in note for note in build_mutant_mode["notes"])
+        assert not any("extra[" in note for note in repair_mode["notes"])
