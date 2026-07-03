@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.structure_design import StructureDesignInput, StructureDesignOutput
+from autobio.schemas.structure_design import RFD3Input, StructureDesignOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ class TestUnconditionalDesign:
     """Simplest RFD3 use case: design a small protein from scratch."""
 
     def test_unconditioned_design(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={
                 "small_protein": {
                     "length": "50",
@@ -94,7 +94,7 @@ class TestBinderDesign:
     def test_binder_design(
         self, rcsb_target_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             input_structures=[rcsb_target_pdb],
             design_specs={
                 "crambin_binder": {
@@ -130,7 +130,7 @@ class TestMultiSpecConfig:
     def test_multi_spec_produces_designs_for_each(
         self, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
-        input_data = StructureDesignInput(
+        input_data = RFD3Input(
             design_specs={
                 "short_protein": {
                     "length": "50",

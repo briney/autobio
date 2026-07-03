@@ -1,12 +1,12 @@
 """RFDiffusion3 tool runner.
 
-Exposes RFDiffusion3 as a single tool with the full set of design options.
-The ``design_specs`` dict is passed through to the container essentially
-verbatim — agents construct RFD3-native config dicts directly, guided by the
-comprehensive ``notes`` on the registry entry.
+Exposes RFDiffusion3 as a single-mode (``generate``) catalog Tool with the
+full set of design options. The ``design_specs`` dict is passed through to
+the container essentially verbatim — agents construct RFD3-native config
+dicts directly, guided by the comprehensive ``notes`` on the ``generate`` mode.
 
 CLI-level args (``diffusion_batch_size``, ``step_scale``, etc.) are passed
-through the ``extra`` dict on ``StructureDesignInput``.
+through the ``extra`` dict on ``RFD3Input``.
 """
 
 from __future__ import annotations
@@ -17,12 +17,13 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.structure_design import (
     DesignedStructure,
-    StructureDesignInput,
+    RFD3Input,
     StructureDesignOutput,
 )
 from autobio.tools.base import ToolRunner
@@ -48,7 +49,7 @@ class RFD3Runner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structures into the workspace."""
-        assert isinstance(input_data, StructureDesignInput)
+        assert isinstance(input_data, RFD3Input)
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
@@ -82,8 +83,8 @@ class RFD3Runner(ToolRunner):
             "out_dir": "/workspace/outputs/raw",
         }
 
-        # Flat-merge extra dict for CLI-level args
-        config.update(input_data.extra)
+        # Flat-merge extra dict for CLI-level args.
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -134,7 +135,7 @@ class RFD3Runner(ToolRunner):
         return workspace.root / relative
 
     @staticmethod
-    def _validate_inputs(input_data: StructureDesignInput) -> None:
+    def _validate_inputs(input_data: RFD3Input) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.design_specs:
             raise AutobioError("design_specs must contain at least one specification.")
@@ -166,39 +167,8 @@ class RFD3Runner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entry — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
-
-_RFD3_INPUT_FORMAT = (
-    # Contig syntax
-    "RFD3 uses a contig string to specify which residues come from the input "
-    "structure and which are newly designed. Format: indexed residues from input "
-    "use chain+range (e.g., 'A1-10', 'B5-24'), newly designed residues use a "
-    "plain integer or range (e.g., '50', '60-80'), chain breaks use '/0'. "
-    "Example: 'A1-10,/0,B15-24,/0,120-130' means keep A1-10, chain break, "
-    "keep B15-24, chain break, design 120-130 new residues.",
-    # Select field mini-language
-    "The select_* fields (select_fixed_atoms, select_unfixed_sequence, "
-    "select_buried, select_exposed, select_hbond_donor, select_hbond_acceptor, "
-    "select_hotspots) accept three formats: a boolean (true=all, false=none), "
-    "a contig string ('A1-10,B5-8'), or a dict mapping residue IDs to atom "
-    "names ('A10': 'N,CA,C,O,CB'). Special atom keywords: 'BKBN' (backbone: "
-    "N,CA,C,O), 'ALL' (all atoms), 'TIP' (standard tip atom).",
-    # Common use cases
-    "Common use case patterns for design_specs entries: "
-    "(1) Protein binder: set 'input' (target PDB), 'contig' (designed + target "
-    "residues), 'select_hotspots' (target interface atoms), "
-    "'infer_ori_strategy': 'hotspots', 'is_non_loopy': true. "
-    "(2) Unconditioned design: set 'length' (e.g., '100' or '80-120'), no "
-    "'input' needed. "
-    "(3) Enzyme design: set 'input', 'ligand' (component codes), 'unindex' "
-    "(catalytic residues to float), 'select_fixed_atoms' (key atoms). "
-    "(4) Nucleic acid binder: set 'input', 'contig', 'select_hbond_donor' "
-    "and 'select_hbond_acceptor' on nucleic acid residues. "
-    "(5) Partial diffusion: set 'input', 'partial_t' (noise level in Å, "
-    "recommended 5.0-15.0). "
-    "(6) Symmetric design: add 'symmetry': {'id': 'C3'} (C or D groups).",
-)
 
 _RFD3_NOTES = (
     # Designability vs diversity
@@ -234,15 +204,10 @@ _RFD3_NOTES = (
     "'s_jitter_origin' (float), 'allow_realignment' (bool).",
 )
 
-TOOL_REGISTRY["rfd3"] = ToolEntry(
-    image_tag="rfd3:1.0.0",
+RFD3_TOOL = Tool(
+    name="rfd3",
+    display_name="RFdiffusion3",
     category=ToolCategory.STRUCTURE_DESIGN,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=StructureDesignInput,
-    output_schema=StructureDesignOutput,
-    default_timeout=3600,
-    supports_batch=True,
     description=(
         "Generate novel protein backbone structures using RFDiffusion3. "
         "Supports unconditioned design, protein binder design, enzyme active "
@@ -251,6 +216,26 @@ TOOL_REGISTRY["rfd3"] = ToolEntry(
         "dict — each entry is a named design job with tool-native parameters."
     ),
     version="1.0.0",
-    notes=_RFD3_NOTES,
-    input_format=_RFD3_INPUT_FORMAT,
+    image_tag="rfd3:1.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="generate",
+    modes={
+        "generate": Mode(
+            name="generate",
+            display_name="Generate designs",
+            description="Generate novel backbone designs from design specifications.",
+            input_schema=RFD3Input,
+            output_schema=StructureDesignOutput,
+            default_timeout=3600,
+            supports_batch=True,
+            notes=_RFD3_NOTES,
+        )
+    },
+    keywords=("rfd3", "rfdiffusion", "structure design", "protein design", "binder", "diffusion"),
 )
+"""Catalog Tool for RFDiffusion3 — exposed for tests re-registering after
+CATALOG-clearing fixtures.
+"""
+
+register(RFD3_TOOL)
