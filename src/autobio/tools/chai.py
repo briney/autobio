@@ -90,11 +90,6 @@ class ChaiRunner(ToolRunner):
             shutil.copytree(msa_directory, msa_dest)
             msa_dir_config = "/workspace/inputs/msa"
 
-        # -- Copy template files into workspace -----------------------------
-        if input_data.templates:
-            for tmpl_path in input_data.templates:
-                shutil.copy2(tmpl_path, workspace.inputs_dir / tmpl_path.name)
-
         # -- Build config.json ----------------------------------------------
         config: dict[str, object] = {
             "fasta_path": "/workspace/inputs/input.fasta",
@@ -209,12 +204,6 @@ class ChaiRunner(ToolRunner):
             raise AutobioError(
                 "sequences must be non-empty, or provide a raw FASTA via the chai_fasta field."
             )
-
-        # Validate template files exist
-        if input_data.templates:
-            for tmpl_path in input_data.templates:
-                if not tmpl_path.exists():
-                    raise AutobioError(f"Template file does not exist: {tmpl_path}")
 
         # Validate constraint file exists (if path, not CSV content)
         constraints = input_data.constraints

@@ -250,24 +250,6 @@ class TestChaiPrepareWorkspace:
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["msa_directory"] == "/workspace/inputs/msa"
 
-    def test_templates_copied(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        """Template files are copied into workspace/inputs/ (but not wired into config)."""
-        tmpl = tmp_path / "template.cif"
-        tmpl.write_text("data_test\n_entry.id test\n")
-
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = Chai1Input(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            templates=[tmpl],
-        )
-        runner.prepare_workspace(input_data, workspace)
-
-        assert (workspace.inputs_dir / "template.cif").exists()
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert "templates" not in cfg
-        assert "template_path" not in cfg
-
     def test_raw_fasta_passthrough(self, runner: ChaiRunner, tmp_path: Path) -> None:
         """chai_fasta bypasses automatic FASTA generation."""
         custom_fasta = ">protein|name=X\nMKWVTFIS\n>ligand|name=Y\nCC(=O)O\n"
@@ -427,15 +409,6 @@ class TestChaiHostValidation:
         )
         # Should not raise
         runner.prepare_workspace(input_data, workspace)
-
-    def test_missing_template_file_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = Chai1Input(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            templates=[tmp_path / "nonexistent.cif"],
-        )
-        with pytest.raises(AutobioError, match="Template file does not exist"):
-            runner.prepare_workspace(input_data, workspace)
 
     def test_missing_constraint_file_raises(self, runner: ChaiRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")

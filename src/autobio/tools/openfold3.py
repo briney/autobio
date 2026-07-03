@@ -78,11 +78,6 @@ class OpenFold3Runner(ToolRunner):
 
         workspace.write_input_file("query.json", query_content.encode())
 
-        # -- Copy template files into workspace -----------------------------
-        if input_data.templates:
-            for tmpl_path in input_data.templates:
-                shutil.copy2(tmpl_path, workspace.inputs_dir / tmpl_path.name)
-
         # -- Copy MSA files into workspace ----------------------------------
         msa_paths = input_data.msa_paths
         if msa_paths:
@@ -239,12 +234,6 @@ class OpenFold3Runner(ToolRunner):
                 "sequences must be non-empty, or provide a raw query JSON via the query_json field."
             )
 
-        # Validate template files exist
-        if input_data.templates:
-            for tmpl_path in input_data.templates:
-                if not tmpl_path.exists():
-                    raise AutobioError(f"Template file does not exist: {tmpl_path}")
-
         # Validate MSA files exist
         msa_paths = input_data.msa_paths
         if msa_paths:
@@ -317,10 +306,10 @@ _OPENFOLD3_NOTES = (
     "is enabled.",
     # Template options
     "Template-based prediction is ENABLED BY DEFAULT (use_templates=true). "
-    "Templates are automatically retrieved when using the ColabFold server. "
-    "To provide custom template structures, use the 'templates' field on "
-    "OpenFold3Input. To disable templates entirely, set the 'use_templates' "
-    "field to false.",
+    "Templates are automatically retrieved server-side by the ColabFold "
+    "search step. Set 'use_templates' to false to disable template-based "
+    "prediction entirely. User-supplied template structure files are not "
+    "supported.",
     # PAE and confidence
     "The PAE (Predicted Aligned Error) head is ENABLED BY DEFAULT "
     "(pae_enabled=true). This produces pTM and ipTM confidence scores and "

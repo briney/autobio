@@ -272,23 +272,6 @@ class TestOpenFold3PrepareWorkspace:
         chains = query["queries"]["query_1"]["chains"]
         assert chains[0]["non_canonical_residues"] == {"3": "MHO", "5": "SEP"}
 
-    def test_templates_copied(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        tmpl = tmp_path / "template.cif"
-        tmpl.write_text("data_test\n_entry.id test\n")
-
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = OpenFold3Input(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            templates=[tmpl],
-        )
-        runner.prepare_workspace(input_data, workspace)
-
-        assert (workspace.inputs_dir / "template.cif").exists()
-
-        cfg = json.loads(workspace.config_path.read_text())
-        assert "templates" not in cfg
-        assert "template_path" not in cfg
-
     def test_msa_files_copied(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         """MSA files from msa_paths are copied and wired into the matching chain."""
         msa_file = tmp_path / "A.a3m"
@@ -589,15 +572,6 @@ class TestOpenFold3HostValidation:
         )
         # Should not raise
         runner.prepare_workspace(input_data, workspace)
-
-    def test_missing_template_file_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
-        workspace = Workspace.create(tmp_path / "ws")
-        input_data = OpenFold3Input(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            templates=[tmp_path / "nonexistent.cif"],
-        )
-        with pytest.raises(AutobioError, match="Template file does not exist"):
-            runner.prepare_workspace(input_data, workspace)
 
     def test_missing_msa_file_raises(self, runner: OpenFold3Runner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
