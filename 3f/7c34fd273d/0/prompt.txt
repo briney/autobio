@@ -1145,3 +1145,7 @@ None required before merge. The next plan item (mpnn family) can proceed using t
 **Reasoning:** Byte-compat is verified by genuine full-dict equality tests, `_apply_extra`'s collision behavior is exercised by real (non-tautological) tests, `StructureDesignInput`/`complexa` are untouched, the catalog wiring matches every plan invariant, and the docs-fix commit is confirmed pure-string/no-behavior via direct diff. No critical or important issues found.</result>
 <usage><subagent_tokens>75505</subagent_tokens><tool_uses>15</tool_uses><duration_ms>90833</duration_ms></usage>
 </task-notification>
+
+---
+
+PR merged and branch deleted. Switch back to main and go ahead with the mpnn family
