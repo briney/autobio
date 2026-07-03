@@ -566,7 +566,6 @@ class TestRegistration:
     """Tests for catalog Tool and runner registration."""
 
     def test_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
 
         assert "ligandmpnn_build_mutant" in CATALOG
@@ -613,7 +612,6 @@ class TestInfoSnapshot:
     """Snapshot the `autobio info` catalog rendering for the packer Tool."""
 
     def test_info_snapshot(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(

@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autobio.core.catalog import Mode, Tool, register
@@ -105,7 +104,7 @@ class LigandMPNNPackerRunner(ToolRunner):
         for s in data["scores"]:
             structure_path = None
             if s.get("structure_path"):
-                structure_path = _resolve_container_path(s["structure_path"], workspace)
+                structure_path = self._resolve_container_path(s["structure_path"], workspace)
 
             scores.append(
                 ScoredStructure(
@@ -148,16 +147,6 @@ class LigandMPNNPackerRunner(ToolRunner):
         for m in mutations:
             if not _MUTATION_RE.match(m):
                 raise AutobioError(f"Invalid mutation format: {m!r}. {_MUTATION_FORMAT_HELP}")
-
-
-def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
-    """Map a container-internal ``/workspace/...`` path to the host workspace."""
-    container_path = Path(container_path_str)
-    try:
-        relative = container_path.relative_to("/workspace")
-    except ValueError:
-        return container_path
-    return workspace.root / relative
 
 
 # ---------------------------------------------------------------------------

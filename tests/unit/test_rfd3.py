@@ -460,8 +460,6 @@ class TestRFD3Registration:
     """Tests for catalog Tool and runner registration."""
 
     def test_rfd3_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert "rfd3" in CATALOG
         assert set(get_tool("rfd3").modes) == {"generate"}
         assert get_tool("rfd3").default_mode == "generate"
@@ -470,8 +468,6 @@ class TestRFD3Registration:
         assert get_tool("rfd3").gpu_count == 1
 
     def test_rfd3_tool_constant_registered(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert RFD3_TOOL.name == "rfd3"
         assert get_tool("rfd3") is RFD3_TOOL
 
@@ -501,7 +497,6 @@ class TestRFD3Registration:
 
 
 def test_info_snapshot_rfd3() -> None:
-    import autobio.tools  # noqa: F401 - importing populates the catalog
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("rfd3"), OutputFormat.JSON))

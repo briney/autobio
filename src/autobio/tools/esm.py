@@ -15,7 +15,6 @@ passed through the ``extra`` dict on ``ESMEmbedInput``.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from autobio.core.catalog import Mode, Tool, register
@@ -148,16 +147,6 @@ class ESMRunner(ToolRunner):
                 f"layer must be between 0 and {num_layers} for "
                 f"{model_cfg['model_name']}, got {input_data.layer}."
             )
-
-    @staticmethod
-    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
-        """Map a container-internal ``/workspace/...`` path to the host workspace."""
-        container_path = Path(container_path_str)
-        try:
-            relative = container_path.relative_to("/workspace")
-        except ValueError:
-            return container_path
-        return workspace.root / relative
 
 
 # ---------------------------------------------------------------------------

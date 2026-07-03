@@ -88,13 +88,15 @@ class AntiFoldRunner(ToolRunner):
 
         _validate_chain_ids(input_data)
 
+        assert isinstance(input_data, (InverseFoldingInput, ScoringInput))
+
+        # Copy structure file into workspace inputs/
+        src_path = input_data.structure_path
+        dest_name = src_path.name
+        shutil.copy2(src_path, workspace.inputs_dir / dest_name)
+
         if mode == "design":
             assert isinstance(input_data, InverseFoldingInput)
-
-            # Copy structure file into workspace inputs/
-            src_path = input_data.structure_path
-            dest_name = src_path.name
-            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
 
             # Build config.json for the container
             # Note: chains_to_design and fixed_positions are intentionally NOT
@@ -105,13 +107,9 @@ class AntiFoldRunner(ToolRunner):
                 "num_sequences": input_data.num_sequences,
                 "temperature": input_data.temperature,
             }
-        else:  # "score"
+        else:
+            assert self.current_mode.name == "score", self.current_mode.name
             assert isinstance(input_data, ScoringInput)
-
-            # Copy structure file into workspace inputs/
-            src_path = input_data.structure_path
-            dest_name = src_path.name
-            shutil.copy2(src_path, workspace.inputs_dir / dest_name)
 
             # Build config.json for the container
             config = {
@@ -149,6 +147,7 @@ class AntiFoldRunner(ToolRunner):
                 raw_output_path=workspace.raw_output_dir,
             )
 
+        assert self.current_mode.name == "score", self.current_mode.name
         scores = [
             ScoredStructure(
                 total_score=s["total_score"],

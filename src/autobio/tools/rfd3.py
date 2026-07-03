@@ -15,7 +15,7 @@ import copy
 import json
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from autobio.core.catalog import Mode, Tool, register
 from autobio.core.registry import ToolCategory
@@ -63,17 +63,10 @@ class RFD3Runner(ToolRunner):
 
         # -- Rewrite "input" paths in design_specs to container paths --------
         specs = copy.deepcopy(input_data.design_specs)
-        for spec_name, spec in specs.items():
+        self._check_input_references(specs, set(filename_map))
+        for spec in specs.values():
             if "input" in spec:
-                original = Path(spec["input"])
-                fname = original.name
-                if fname not in filename_map:
-                    raise AutobioError(
-                        f"Spec {spec_name!r} references input file {spec['input']!r} "
-                        f"(filename: {fname!r}), but no matching file was found in "
-                        f"input_structures. Provided files: "
-                        f"{[p.name for p in input_data.input_structures]}"
-                    )
+                fname = Path(spec["input"]).name
                 spec["input"] = filename_map[fname]
 
         # -- Build config.json -----------------------------------------------
@@ -119,22 +112,6 @@ class RFD3Runner(ToolRunner):
         )
 
     @staticmethod
-    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
-        """Map a container-internal ``/workspace/...`` path to the host workspace.
-
-        The standardize.py script inside the container writes absolute paths
-        rooted at ``/workspace``. This method strips that prefix and resolves
-        the remainder against the host-side workspace root.
-        """
-        container_path = Path(container_path_str)
-        try:
-            relative = container_path.relative_to("/workspace")
-        except ValueError:
-            # Not a container path — return as-is
-            return container_path
-        return workspace.root / relative
-
-    @staticmethod
     def _validate_inputs(input_data: RFD3Input) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.design_specs:
@@ -155,7 +132,18 @@ class RFD3Runner(ToolRunner):
 
         # Check that every "input" reference in specs maps to a provided file
         provided_names = {p.name for p in input_data.input_structures}
-        for spec_name, spec in input_data.design_specs.items():
+        RFD3Runner._check_input_references(input_data.design_specs, provided_names)
+
+    @staticmethod
+    def _check_input_references(
+        design_specs: dict[str, dict[str, Any]], provided_names: set[str]
+    ) -> None:
+        """Raise if any ``design_specs[...]["input"]`` filename has no matching file.
+
+        Shared by ``prepare_workspace`` (rewriting paths) and ``_validate_inputs``
+        (pre-flight check) so the check and its error message exist once.
+        """
+        for spec_name, spec in design_specs.items():
             if "input" in spec:
                 fname = Path(spec["input"]).name
                 if fname not in provided_names:

@@ -694,16 +694,12 @@ class TestBoltzRegistration:
     """Tests for catalog Tool and runner registration."""
 
     def test_boltz1_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert "boltz1" in CATALOG
         assert set(get_tool("boltz1").modes) == {"predict"}
         assert get_tool("boltz1").default_mode == "predict"
         assert get_tool("boltz1").category == ToolCategory.STRUCTURE_PREDICTION
 
     def test_boltz2_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert "boltz2" in CATALOG
         assert set(get_tool("boltz2").modes) == {"predict"}
         assert get_tool("boltz2").default_mode == "predict"
@@ -750,8 +746,6 @@ class TestBoltzRegistration:
         assert "msa" in boltz2_notes.lower()
 
     def test_boltz_tool_constants_registered(self) -> None:
-        import autobio.tools  # noqa: F401 - importing populates the catalog
-
         assert BOLTZ1_TOOL.name == "boltz1"
         assert BOLTZ2_TOOL.name == "boltz2"
         assert get_tool("boltz1") is BOLTZ1_TOOL
@@ -759,7 +753,6 @@ class TestBoltzRegistration:
 
 
 def test_info_snapshot_boltz1() -> None:
-    import autobio.tools  # noqa: F401 - importing populates the catalog
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("boltz1"), OutputFormat.JSON))
@@ -771,7 +764,6 @@ def test_info_snapshot_boltz1() -> None:
 
 
 def test_info_snapshot_boltz2() -> None:
-    import autobio.tools  # noqa: F401 - importing populates the catalog
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("boltz2"), OutputFormat.JSON))

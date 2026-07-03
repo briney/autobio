@@ -201,16 +201,6 @@ class ChaiRunner(ToolRunner):
         return "\n".join(lines) + "\n"
 
     @staticmethod
-    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
-        """Map a container-internal ``/workspace/...`` path to the host workspace."""
-        container_path = Path(container_path_str)
-        try:
-            relative = container_path.relative_to("/workspace")
-        except ValueError:
-            return container_path
-        return workspace.root / relative
-
-    @staticmethod
     def _validate_inputs(input_data: Chai1Input) -> None:
         """Host-side validation — catch errors before container launch."""
         has_chai_fasta = bool(input_data.chai_fasta)

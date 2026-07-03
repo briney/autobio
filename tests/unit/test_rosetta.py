@@ -588,8 +588,6 @@ class TestRosettaRegistration:
     """Tests for the catalog Tool + runner registration."""
 
     def test_rosetta_registered_as_single_tool(self) -> None:
-        import autobio.tools  # noqa: F401 - populate registries
-
         tool = get_tool("rosetta")
         assert set(tool.modes) == {"score", "relax", "minimize", "flexddg"}
         assert tool.default_mode == "score"
@@ -599,13 +597,9 @@ class TestRosettaRegistration:
 
     @pytest.mark.parametrize("flat_name", _OLD_FLAT_NAMES)
     def test_old_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert flat_name not in TOOL_RUNNERS
 
     def test_rosetta_in_tool_runners(self) -> None:
-        import autobio.tools  # noqa: F401
-
         assert "rosetta" in TOOL_RUNNERS
         assert TOOL_RUNNERS["rosetta"] is RosettaRunner
 
@@ -651,7 +645,6 @@ class TestRosettaInfoSnapshot:
     """``autobio info rosetta`` output — per-mode notes, hints, output_schema."""
 
     def test_info_snapshot(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("rosetta"), OutputFormat.JSON))
@@ -702,8 +695,6 @@ class TestRosettaRunMetadataMode:
         sample_pdb: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import autobio.tools  # noqa: F401
-
         output_dir = tmp_path / "ws"
         std_dir = output_dir / "outputs" / "standardized"
         std_dir.mkdir(parents=True)

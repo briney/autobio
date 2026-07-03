@@ -198,15 +198,40 @@ After defining the schema, it must be connected in two places:
    from autobio.schemas.docking import DockingInput, DockingOutput, DockingPose
    ```
 
-2. Reference them in the tool's `ToolEntry` (registered at the bottom of the tool module, not in `registry.py`):
+2. Reference them in the tool's catalog `Mode` (built and passed to `register()` at the bottom of the tool module — see `src/autobio/tools/TOOL_SPEC.md` §5.1 for the full pattern):
    ```python
    # In src/autobio/tools/diffdock.py
-   TOOL_REGISTRY["diffdock"] = ToolEntry(
-       input_schema=DockingInput,
-       output_schema=DockingOutput,
-       ...
+   from autobio.core.catalog import Mode, Tool, register
+   from autobio.core.registry import ToolCategory
+
+   DIFFDOCK_TOOL = Tool(
+       name="diffdock",
+       display_name="DiffDock",
+       category=ToolCategory.STRUCTURE_PREDICTION,
+       description="Predict ligand binding poses using DiffDock.",
+       version="1.0.0",
+       image_tag="diffdock:1.0.0",
+       requires_gpu=True,
+       gpu_count=1,
+       default_mode="dock",
+       modes={
+           "dock": Mode(
+               name="dock",
+               display_name="Dock ligand",
+               description="Predict binding poses for a receptor-ligand pair.",
+               input_schema=DockingInput,
+               output_schema=DockingOutput,
+               default_timeout=600,
+               notes=(),
+           ),
+       },
+       keywords=("docking", "ligand", "diffdock"),
    )
+
+   register(DIFFDOCK_TOOL)
    ```
+
+   Each `Mode` on a `Tool` references its own `input_schema`/`output_schema` pair — a single Tool with multiple modes (e.g. `freesasa`'s `sasa`/`bsa`) can give each mode a distinct input schema while sharing (or not) an output schema. There is no separate flat registry to update; `register(TOOL)` at module import time is the only wiring step.
 
 ---
 
@@ -310,6 +335,6 @@ When a new tool in an existing category provides a metric or output that no exis
 - [ ] Optional fields use `X | None = None` pattern
 - [ ] No execution-level concerns (GPU, timeout) in schema fields
 - [ ] Models exported from `schemas/__init__.py`
-- [ ] At least one tool's `ToolEntry` references the new schemas
+- [ ] At least one tool's catalog `Mode` references the new schemas (via `register(Tool(...))`)
 - [ ] Unit tests cover serialization round-trip (model → JSON → model)
 - [ ] Container's `standardize.sh` documentation updated to reference the output schema

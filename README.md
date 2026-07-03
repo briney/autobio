@@ -73,13 +73,15 @@ The `autobio` command has six subcommands:
 | Command | Description |
 |---------|-------------|
 | `autobio list` | List available tools, optionally filtered by `--category` |
-| `autobio info <tool>` | Show tool details: description, schemas, GPU requirements |
-| `autobio run <tool>` | Execute a tool with `--config`, `--gpu`, `--timeout`, `--output-dir` |
+| `autobio info <tool>` | Show tool details: description, modes, schemas, GPU requirements |
+| `autobio run <tool>` | Execute a tool with `--config`, `--mode`, `--gpu`, `--timeout`, `--output-dir` |
 | `autobio result <dir>` | Inspect a previous run's result from its workspace directory |
 | `autobio pull [tool]` | Pull a tool's container image (or `--all` for everything) |
 | `autobio images` | List locally cached autobio container images |
 
 All commands support `--format json` for machine-readable output.
+
+Some tools expose multiple **modes** — named operations sharing the same underlying model or engine (e.g. `rosetta`'s `score` (default), `relax`, `minimize`, and `flexddg` modes). Select a non-default mode with `autobio run <tool> --mode <mode>`; omitting `--mode` runs the tool's default mode. `autobio list` shows tool names only — use `autobio info <tool>` to see every mode a tool supports and which one is the default.
 
 For the full CLI reference, see [src/autobio/cli/README.md](src/autobio/cli/README.md).
 
@@ -157,6 +159,8 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 
 ## Available tools
 
+Tools with more than one mode are listed once per non-default mode as `<tool> --mode <mode>`; a bare tool name always runs its default mode. Run `autobio info <tool>` to see the full list of modes for any tool.
+
 ### Structure prediction
 
 | Tool | GPU | Description |
@@ -181,9 +185,9 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 | Tool | GPU | Description |
 |------|-----|-------------|
 | `rfd3` | Yes | Generate novel protein backbone structures using RFDiffusion3 |
-| `complexa` | Yes | Design novel protein binders for protein targets using Proteina-Complexa |
-| `complexa_ligand` | Yes | Design protein binders for small-molecule ligand targets using Proteina-Complexa |
-| `complexa_ame` | Yes | Scaffold functional motifs into complete proteins using Proteina-Complexa AME |
+| `complexa` | Yes | Design novel protein binders for protein targets using Proteina-Complexa (default mode `protein_binder`) |
+| `complexa --mode ligand_binder` | Yes | Design protein binders for small-molecule ligand targets using Proteina-Complexa |
+| `complexa --mode ame` | Yes | Scaffold functional motifs into complete proteins using Proteina-Complexa AME |
 
 ### Embedding
 
@@ -191,35 +195,35 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 |------|-----|-------------|
 | `esm1b` | Yes | Extract protein sequence embeddings using ESM-1b (650M parameters) |
 | `esm2` | Yes | Extract protein sequence embeddings using ESM-2 (selectable 8M–15B parameters) |
-| `currab` | Yes | Extract antibody sequence embeddings using CurrAb (650M parameters). Paired and unpaired. |
-| `currab_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using CurrAb |
-| `ft_esm` | Yes | Extract antibody sequence embeddings using ft-ESM (fine-tuned ESM-2, 650M parameters) |
-| `ft_esm_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using ft-ESM |
-| `balm_paired` | Yes | Extract paired antibody sequence embeddings using BALM-paired (304M parameters) |
-| `balm_paired_pll` | Yes | Compute pseudo log-likelihood for paired antibody sequences using BALM-paired |
-| `balm_unpaired` | Yes | Extract single-chain antibody sequence embeddings using BALM-unpaired (304M parameters) |
-| `balm_unpaired_pll` | Yes | Compute pseudo log-likelihood for single-chain antibody sequences using BALM-unpaired |
-| `ablang2` | Yes | Extract antibody sequence embeddings using AbLang2 (45M parameters). Paired and unpaired. |
-| `ablang2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AbLang2 |
-| `antiberta2` | Yes | Extract antibody sequence embeddings using AntiBERTa2 (202M parameters). Paired and unpaired. |
-| `antiberta2_pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 |
+| `currab` | Yes | Extract antibody sequence embeddings using CurrAb (650M parameters). Paired and unpaired. (default mode `embedding`) |
+| `currab --mode pll` | Yes | Compute pseudo log-likelihood for antibody sequences using CurrAb |
+| `ft_esm` | Yes | Extract antibody sequence embeddings using ft-ESM (fine-tuned ESM-2, 650M parameters) (default mode `embedding`) |
+| `ft_esm --mode pll` | Yes | Compute pseudo log-likelihood for antibody sequences using ft-ESM |
+| `balm_paired` | Yes | Extract paired antibody sequence embeddings using BALM-paired (304M parameters) (default mode `embedding`) |
+| `balm_paired --mode pll` | Yes | Compute pseudo log-likelihood for paired antibody sequences using BALM-paired |
+| `balm_unpaired` | Yes | Extract single-chain antibody sequence embeddings using BALM-unpaired (304M parameters) (default mode `embedding`) |
+| `balm_unpaired --mode pll` | Yes | Compute pseudo log-likelihood for single-chain antibody sequences using BALM-unpaired |
+| `ablang2` | Yes | Extract antibody sequence embeddings using AbLang2 (45M parameters). Paired and unpaired. (default mode `embedding`) |
+| `ablang2 --mode pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AbLang2 |
+| `antiberta2` | Yes | Extract antibody sequence embeddings using AntiBERTa2 (202M parameters). Paired and unpaired. (default mode `embedding`) |
+| `antiberta2 --mode pll` | Yes | Compute pseudo log-likelihood for antibody sequences using AntiBERTa2 |
 
 ### Structure utilities
 
 | Tool | GPU | Description |
 |------|-----|-------------|
-| `evoef2_build_mutant` | No | Build mutant protein structures and repack sidechains using EvoEF2's physics-based rotamer library |
+| `evoef2` | No | Repair protein structures by rebuilding incomplete side chains using EvoEF2 (default mode `repair`) |
+| `evoef2 --mode build_mutant` | No | Build mutant protein structures and repack sidechains using EvoEF2's physics-based rotamer library |
 | `ligandmpnn_build_mutant` | Yes | Build mutant protein structures and repack sidechains using LigandMPNN's neural network sidechain packing model |
-| `evoef2_repair` | No | Repair protein structures by rebuilding incomplete side chains using EvoEF2 |
 
 ### Energy minimization
 
 | Tool | GPU | Description |
 |------|-----|-------------|
-| `rosetta_relax` | No | Relax a protein structure using Rosetta's FastRelax protocol |
-| `rosetta_minimize` | No | Minimize a protein structure using gradient-based energy minimization |
-| `openmm_amber_minimize` | Yes | Minimize a protein structure using OpenMM with the Amber force field (AlphaFold-style) |
-| `openmm_amber_relax` | Yes | Relax a protein structure using OpenMM with Amber force field and explicit solvent |
+| `rosetta --mode relax` | No | Relax a protein structure using Rosetta's FastRelax protocol |
+| `rosetta --mode minimize` | No | Minimize a protein structure using gradient-based energy minimization |
+| `openmm` | Yes | Minimize a protein structure using OpenMM with the Amber force field (AlphaFold-style) (default mode `amber_minimize`) |
+| `openmm --mode amber_relax` | Yes | Relax a protein structure using OpenMM with Amber force field and explicit solvent |
 
 ### Binding affinity
 
@@ -232,20 +236,20 @@ config = AutobioConfig.resolve(image_prefix="my-registry.io/autobio-")
 
 | Tool | GPU | Description |
 |------|-----|-------------|
-| `rosetta_score` | No | Score a protein structure using Rosetta's energy function |
-| `rosetta_flexddg` | No | Predict binding ΔΔG at protein-protein interfaces using flex-ddG |
+| `rosetta` | No | Score a protein structure using Rosetta's energy function (default mode `score`) |
+| `rosetta --mode flexddg` | No | Predict binding ΔΔG at protein-protein interfaces using flex-ddG |
 | `stabddg` | Yes | Predict binding ΔΔG from mutations using StaB-ddG (ML-based, ProteinMPNN architecture) |
 | `baddg` | Yes | Predict binding ΔΔG at protein-protein interfaces using BA-ddG (Boltzmann-aligned inverse folding) |
-| `evoef2_binding` | No | Compute protein-protein binding energy using EvoEF2's physics-based energy function |
-| `antifold_score` | Yes | Score antibody sequences against backbone structures using AntiFold conditional log-likelihoods |
-| `esm_if1_score` | Yes | Score protein sequences against backbone structures using ESM-IF1 conditional log-likelihood |
+| `evoef2 --mode binding` | No | Compute protein-protein binding energy using EvoEF2's physics-based energy function |
+| `antifold --mode score` | Yes | Score antibody sequences against backbone structures using AntiFold conditional log-likelihoods |
+| `esm_if1 --mode score` | Yes | Score protein sequences against backbone structures using ESM-IF1 conditional log-likelihood |
 | `freesasa` | No | Calculate solvent-accessible surface area (SASA, default mode) or buried surface area (BSA, `bsa` mode) using FreeSASA |
 
 ### Simulation
 
 | Tool | GPU | Description |
 |------|-----|-------------|
-| `openmm_md_simulate` | Yes | Run production molecular dynamics using OpenMM with Amber force field and explicit solvent |
+| `openmm --mode md_simulate` | Yes | Run production molecular dynamics using OpenMM with Amber force field and explicit solvent |
 
 ## How it works
 

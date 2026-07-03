@@ -14,7 +14,7 @@ from autobio.schemas.binding_affinity import (
     BindingAffinityOutput,
     BindingAffinityPrediction,
 )
-from autobio.schemas.embedding import EmbeddingInput, EmbeddingOutput, SequenceEmbedding
+from autobio.schemas.embedding import EmbeddingOutput, SequenceEmbedding
 from autobio.schemas.inverse_folding import (
     DesignedSequence,
     InverseFoldingInput,
@@ -34,13 +34,11 @@ from autobio.schemas.simulation import (
 )
 from autobio.schemas.structure_design import (
     DesignedStructure,
-    StructureDesignInput,
     StructureDesignOutput,
 )
 from autobio.schemas.structure_prediction import (
     ConfidenceMetrics,
     PredictedStructure,
-    StructurePredictionInput,
     StructurePredictionOutput,
 )
 
@@ -61,10 +59,8 @@ __all__ = [
     # structure prediction
     "ConfidenceMetrics",
     "PredictedStructure",
-    "StructurePredictionInput",
     "StructurePredictionOutput",
     # embedding
-    "EmbeddingInput",
     "EmbeddingOutput",
     "SequenceEmbedding",
     # inverse folding
@@ -86,6 +82,5 @@ __all__ = [
     "SimulationSummary",
     # structure design
     "DesignedStructure",
-    "StructureDesignInput",
     "StructureDesignOutput",
 ]

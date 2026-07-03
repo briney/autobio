@@ -554,7 +554,6 @@ def _register_freesasa() -> None:
     freesasa present must re-register it explicitly, using the module's own
     Tool object (not a reconstruction).
     """
-    import autobio.tools  # noqa: F401 - ensures the module (and its schemas) are importable
     from autobio.tools.freesasa import FREESASA_TOOL
 
     if "freesasa" not in CATALOG:

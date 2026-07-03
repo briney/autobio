@@ -44,7 +44,6 @@ def _written_config(runner: FreeSASARunner, input_data, tmp_path: Path) -> dict:
 
 
 def test_freesasa_registered_as_tool_not_flat() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.core.catalog import CATALOG
     from autobio.tools import TOOL_RUNNERS
 
@@ -56,16 +55,12 @@ def test_freesasa_registered_as_tool_not_flat() -> None:
 
 
 def test_get_runner_freesasa_resolves_catalog_tool() -> None:
-    import autobio.tools  # noqa: F401
-
     with patch("autobio.tools.base.ContainerManager"), patch("autobio.tools.base.GPUManager"):
         runner = get_runner("freesasa", AutobioConfig.resolve())
     assert runner.tool is not None and runner.tool.name == "freesasa"
 
 
 def test_get_runner_removed_flat_name_raises() -> None:
-    import autobio.tools  # noqa: F401
-
     with pytest.raises(KeyError, match="freesasa_bsa"):
         get_runner("freesasa_bsa", AutobioConfig.resolve())
 
@@ -133,7 +128,6 @@ def test_extra_unknown_key_passed_through(_pdb: Path, tmp_path: Path) -> None:
 
 
 def test_info_snapshot_freesasa() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("freesasa"), OutputFormat.JSON))

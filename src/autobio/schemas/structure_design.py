@@ -11,35 +11,6 @@ from autobio.schemas.base import BaseInput, BaseOutput
 from autobio.schemas.hints import Tier, Widget, ui
 
 
-class StructureDesignInput(BaseInput):
-    """Input schema for generative structure design tools (e.g., RFDiffusion3).
-
-    Design specifications are provided as a dict of named specs, each containing
-    tool-native configuration.  Input structure files are listed separately so the
-    runner can copy them into the container workspace and rewrite paths.
-    """
-
-    input_structures: list[Path] = Field(
-        default_factory=list,
-        description=(
-            "PDB or mmCIF files referenced by entries in design_specs. "
-            "Each file is copied into the container workspace; 'input' values "
-            "in design_specs are rewritten to container-internal paths."
-        ),
-    )
-    design_specs: dict[str, dict[str, Any]] = Field(
-        description=(
-            "Named design specifications passed to the tool. Each key is a "
-            "user-chosen name; each value is a dict of tool-native parameters "
-            "(e.g., 'input', 'contig', 'length', 'select_hotspots', etc.)."
-        ),
-    )
-    n_batches: int = Field(
-        default=1,
-        description="Number of independent design batches per specification.",
-    )
-
-
 class RFD3Input(BaseInput):
     """Input for RFDiffusion3 generative structure design (single ``generate`` mode)."""
 

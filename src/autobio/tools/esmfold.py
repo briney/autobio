@@ -13,7 +13,6 @@ Key limitations:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from autobio.core.catalog import Mode, Tool, register
@@ -141,16 +140,6 @@ class ESMFoldRunner(ToolRunner):
                 "ESMFold is deterministic and always produces exactly one "
                 f"structure. num_models must be 1, got {input_data.num_models}."
             )
-
-    @staticmethod
-    def _resolve_container_path(container_path_str: str, workspace: Workspace) -> Path:
-        """Map a container-internal ``/workspace/...`` path to the host workspace."""
-        container_path = Path(container_path_str)
-        try:
-            relative = container_path.relative_to("/workspace")
-        except ValueError:
-            return container_path
-        return workspace.root / relative
 
 
 # ---------------------------------------------------------------------------

@@ -394,7 +394,6 @@ class TestProdigyRegistration:
     """Tests for tool and runner registration in the catalog."""
 
     def test_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
 
         assert "prodigy" in CATALOG
@@ -434,7 +433,6 @@ class TestProdigyRegistration:
         assert r.tool_name == "prodigy"
 
     def test_tool_constant_registered(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.tools.prodigy import PRODIGY_TOOL
 
         assert PRODIGY_TOOL.name == "prodigy"
@@ -442,7 +440,6 @@ class TestProdigyRegistration:
 
 
 def test_info_snapshot_prodigy() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("prodigy"), OutputFormat.JSON))

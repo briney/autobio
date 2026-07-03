@@ -420,7 +420,6 @@ class TestMPNNRegistration:
     """Tests for catalog Tool and runner registration."""
 
     def test_proteinmpnn_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
 
         assert "proteinmpnn" in CATALOG
@@ -432,7 +431,6 @@ class TestMPNNRegistration:
         assert tool.modes["design"].output_schema is InverseFoldingOutput
 
     def test_ligandmpnn_registered_as_catalog_tool(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
 
         assert "ligandmpnn" in CATALOG
@@ -475,7 +473,6 @@ class TestMPNNInfoSnapshot:
     """Snapshot the `autobio info` catalog rendering for both mpnn Tools."""
 
     def test_info_snapshot_proteinmpnn(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("proteinmpnn"), OutputFormat.JSON))
@@ -488,7 +485,6 @@ class TestMPNNInfoSnapshot:
         assert parsed["modes"][0]["notes"]
 
     def test_info_snapshot_ligandmpnn_includes_ligand_note(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("ligandmpnn"), OutputFormat.JSON))

@@ -753,8 +753,6 @@ class TestAntibodyLMRegistration:
 
     @pytest.mark.parametrize("model_name", _MODEL_NAMES)
     def test_registered_as_catalog_tool(self, model_name: str) -> None:
-        import autobio.tools  # noqa: F401 - populate registries
-
         tool = get_tool(model_name)
         assert sorted(tool.modes) == ["embedding", "pll"]
         assert tool.default_mode == "embedding"
@@ -765,15 +763,11 @@ class TestAntibodyLMRegistration:
 
     @pytest.mark.parametrize("model_name", _MODEL_NAMES)
     def test_tool_categories_embedding_only(self, model_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         tool = get_tool(model_name)
         assert tool_categories(tool) == (ToolCategory.EMBEDDING,)
 
     @pytest.mark.parametrize("model_name", _MODEL_NAMES)
     def test_listed_under_embedding(self, model_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert model_name in list_tools(category=ToolCategory.EMBEDDING)
 
     @pytest.mark.parametrize(
@@ -801,20 +795,15 @@ class TestAntibodyLMRegistration:
 
     @pytest.mark.parametrize("model_name", _MODEL_NAMES)
     def test_base_names_in_tool_runners(self, model_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert model_name in TOOL_RUNNERS
         assert TOOL_RUNNERS[model_name] is AntibodyLMRunner
 
     @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
     def test_old_pll_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
-
         assert flat_name not in TOOL_RUNNERS
 
     @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
     def test_old_pll_flat_names_absent_from_catalog(self, flat_name: str) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.core.catalog import CATALOG
 
         assert flat_name not in CATALOG
@@ -857,7 +846,6 @@ class TestAntibodyLMInfoSnapshot:
     """``autobio info currab`` output — per-mode notes, output_schema, category."""
 
     def test_info_snapshot(self) -> None:
-        import autobio.tools  # noqa: F401
         from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
         parsed = json.loads(format_tool_info_catalog(get_tool("currab"), OutputFormat.JSON))
@@ -888,8 +876,6 @@ class TestAntibodyLMRunMetadataMode:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import autobio.tools  # noqa: F401
-
         output_dir = tmp_path / "ws"
         std_dir = output_dir / "outputs" / "standardized"
         std_dir.mkdir(parents=True)
@@ -920,8 +906,6 @@ class TestAntibodyLMRunMetadataMode:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import autobio.tools  # noqa: F401
-
         output_dir = tmp_path / "ws"
         std_dir = output_dir / "outputs" / "standardized"
         std_dir.mkdir(parents=True)

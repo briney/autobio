@@ -36,7 +36,6 @@ def _written_config(runner: ESMRunner, input_data, tmp_path: Path) -> dict:
 
 
 def test_esm_registered_as_single_mode_tools() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.core.catalog import CATALOG
 
     assert "esm1b" in CATALOG and "esm2" in CATALOG
@@ -197,7 +196,6 @@ def test_extra_shadowing_typed_field_rejected(tmp_path: Path) -> None:
 
 
 def test_info_snapshot_esm2() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
 
     parsed = json.loads(format_tool_info_catalog(get_tool("esm2"), OutputFormat.JSON))
@@ -215,7 +213,6 @@ def test_info_snapshot_esm2() -> None:
 
 
 def test_esm_tool_constants_registered() -> None:
-    import autobio.tools  # noqa: F401
     from autobio.tools.esm import ESM1B_TOOL, ESM2_TOOL
 
     assert ESM1B_TOOL.name == "esm1b"

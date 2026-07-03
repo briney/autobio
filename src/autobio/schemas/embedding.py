@@ -12,24 +12,6 @@ from autobio.schemas.hints import Tier, Widget, ui
 from autobio.schemas.sequences import GenericSequenceSet  # noqa: TC001 - needed at runtime
 
 
-class EmbeddingInput(BaseInput):
-    """Input schema for sequence embedding tools (e.g., ESM-2, ProtTrans)."""
-
-    sequences: dict[str, str] = Field(
-        description="Mapping of sequence ID to amino acid sequence (e.g., {'seq1': 'MKLL...'})."
-    )
-    layer: int | None = Field(
-        default=None,
-        description="Model layer from which to extract embeddings. None uses the final layer.",
-    )
-    pooling: str | None = Field(
-        default=None,
-        description=(
-            "Pooling strategy for per-residue embeddings (e.g., 'mean', 'cls', 'per_residue')."
-        ),
-    )
-
-
 class ESMEmbedInput(BaseInput):
     """Input for ESM embedding (esm1b): sequences + layer/pooling."""
 

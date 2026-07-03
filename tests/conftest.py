@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+import autobio.tools  # noqa: F401 - populate the CATALOG for the whole test session
 from autobio.core.config import AutobioConfig
 from autobio.core.workspace import Workspace
 
