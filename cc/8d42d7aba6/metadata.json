@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "cc8d42d7aba6",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4g-evoef2-complexa",
+  "checkpoints_count": 6,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/cc/8d42d7aba6/0/metadata.json",
+      "transcript": "/cc/8d42d7aba6/0/full.jsonl",
+      "compact_transcript": "/cc/8d42d7aba6/0/transcript.jsonl",
+      "content_hash": "/cc/8d42d7aba6/0/content_hash.txt",
+      "prompt": "/cc/8d42d7aba6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15066,
+    "cache_creation_tokens": 857917,
+    "cache_read_tokens": 138179741,
+    "output_tokens": 510716,
+    "api_call_count": 292
+  }
+}
