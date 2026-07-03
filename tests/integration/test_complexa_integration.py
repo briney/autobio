@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.structure_design import StructureDesignInput, StructureDesignOutput
+from autobio.schemas.structure_design import ComplexaInput, StructureDesignOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -84,7 +84,7 @@ class TestProteinBinderGenerate:
         self, rcsb_target_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Basic end-to-end generate run with a single spec."""
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[rcsb_target_pdb],
             design_specs={
                 "crambin_binder": {
@@ -98,12 +98,15 @@ class TestProteinBinderGenerate:
             extra=_GENERATE_EXTRA,
         )
         runner = get_runner("complexa", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(
+            input_data, gpu="auto", output_dir=tmp_path / "ws", mode="protein_binder"
+        )
 
         assert isinstance(output, StructureDesignOutput)
         assert len(output.designs) >= 1
         assert output.spec_summary["crambin_binder"] >= 1
         assert output.metadata.tool_name == "complexa"
+        assert output.metadata.mode == "protein_binder"
         assert output.metadata.wall_time_seconds > 0
 
         # Each design should have a valid PDB path
@@ -123,7 +126,7 @@ class TestProteinBinderGenerate:
         self, rcsb_target_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Explicit mode='generate' in extra dict behaves identically to default."""
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[rcsb_target_pdb],
             design_specs={
                 "explicit_gen": {
@@ -137,7 +140,9 @@ class TestProteinBinderGenerate:
             extra={**_GENERATE_EXTRA, "mode": "generate"},
         )
         runner = get_runner("complexa", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(
+            input_data, gpu="auto", output_dir=tmp_path / "ws", mode="protein_binder"
+        )
 
         assert isinstance(output, StructureDesignOutput)
         assert len(output.designs) >= 1
@@ -158,7 +163,7 @@ class TestMultiSpecGenerate:
         self, rcsb_target_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Two specs against the same target produce designs for each."""
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[rcsb_target_pdb],
             design_specs={
                 "short_binder": {
@@ -178,7 +183,9 @@ class TestMultiSpecGenerate:
             extra=_GENERATE_EXTRA,
         )
         runner = get_runner("complexa", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(
+            input_data, gpu="auto", output_dir=tmp_path / "ws", mode="protein_binder"
+        )
 
         assert isinstance(output, StructureDesignOutput)
         # Both specs should produce output
@@ -194,10 +201,10 @@ class TestMultiSpecGenerate:
 
 
 class TestLigandBinderGenerate:
-    """Ligand binder variant using 3PTB (trypsin + benzamidine).
+    """Ligand binder mode using 3PTB (trypsin + benzamidine).
 
-    This exercises the ``complexa_ligand`` checkpoint and
-    ``search_ligand_binder_local_pipeline`` config. Benzamidine (BEN) in
+    This exercises the ``ligand_binder`` mode's ``complexa_ligand`` checkpoint
+    and ``search_ligand_binder_local_pipeline`` config. Benzamidine (BEN) in
     3PTB is a HETATM on chain A. The ``ligand`` field is the 3-letter
     residue name of the ligand in the PDB.
     """
@@ -205,7 +212,7 @@ class TestLigandBinderGenerate:
     def test_ligand_binder_design(
         self, rcsb_ligand_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[rcsb_ligand_pdb],
             design_specs={
                 "trypsin_binder": {
@@ -219,12 +226,15 @@ class TestLigandBinderGenerate:
             n_batches=1,
             extra=_GENERATE_EXTRA,
         )
-        runner = get_runner("complexa_ligand", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("complexa", autobio_config)
+        output = runner.run(
+            input_data, gpu="auto", output_dir=tmp_path / "ws", mode="ligand_binder"
+        )
 
         assert isinstance(output, StructureDesignOutput)
         assert len(output.designs) >= 1
-        assert output.metadata.tool_name == "complexa_ligand"
+        assert output.metadata.tool_name == "complexa"
+        assert output.metadata.mode == "ligand_binder"
 
         for d in output.designs:
             assert d.spec_name == "trypsin_binder"
@@ -239,9 +249,9 @@ class TestLigandBinderGenerate:
 
 
 class TestAMEGenerate:
-    """AME (motif scaffolding) variant using crambin as a motif.
+    """AME (motif scaffolding) mode using crambin as a motif.
 
-    This exercises the ``complexa_ame`` checkpoint and
+    This exercises the ``ame`` mode's ``complexa_ame`` checkpoint and
     ``search_ame_local_pipeline`` config. Crambin residues 5-15 (chain A)
     are used as the motif, with per-residue atom specs in ``contig_atoms``.
     """
@@ -249,7 +259,7 @@ class TestAMEGenerate:
     def test_ame_motif_scaffolding(
         self, rcsb_target_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[rcsb_target_pdb],
             design_specs={
                 "crambin_motif": {
@@ -263,12 +273,13 @@ class TestAMEGenerate:
             n_batches=1,
             extra=_GENERATE_EXTRA,
         )
-        runner = get_runner("complexa_ame", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        runner = get_runner("complexa", autobio_config)
+        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws", mode="ame")
 
         assert isinstance(output, StructureDesignOutput)
         assert len(output.designs) >= 1
-        assert output.metadata.tool_name == "complexa_ame"
+        assert output.metadata.tool_name == "complexa"
+        assert output.metadata.mode == "ame"
 
         for d in output.designs:
             assert d.spec_name == "crambin_motif"
@@ -294,7 +305,7 @@ class TestDesignPipeline:
         self, rcsb_target_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
         """Full pipeline: generate, filter, evaluate, analyze."""
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[rcsb_target_pdb],
             design_specs={
                 "crambin_binder": {
@@ -314,12 +325,15 @@ class TestDesignPipeline:
             },
         )
         runner = get_runner("complexa", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(
+            input_data, gpu="auto", output_dir=tmp_path / "ws", mode="protein_binder"
+        )
 
         assert isinstance(output, StructureDesignOutput)
         assert len(output.designs) >= 1
         assert output.spec_summary["crambin_binder"] >= 1
         assert output.metadata.tool_name == "complexa"
+        assert output.metadata.mode == "protein_binder"
         assert output.metadata.wall_time_seconds > 0
 
         # Structure files should exist
@@ -356,7 +370,7 @@ class TestOutputMetadata:
     def test_diffusion_metadata_present(
         self, rcsb_target_pdb: Path, autobio_config: AutobioConfig, tmp_path: Path
     ) -> None:
-        input_data = StructureDesignInput(
+        input_data = ComplexaInput(
             input_structures=[rcsb_target_pdb],
             design_specs={
                 "metadata_test": {
@@ -370,7 +384,9 @@ class TestOutputMetadata:
             extra=_GENERATE_EXTRA,
         )
         runner = get_runner("complexa", autobio_config)
-        output = runner.run(input_data, gpu="auto", output_dir=tmp_path / "ws")
+        output = runner.run(
+            input_data, gpu="auto", output_dir=tmp_path / "ws", mode="protein_binder"
+        )
 
         assert len(output.designs) >= 1
         d = output.designs[0]

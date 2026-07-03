@@ -1,18 +1,30 @@
-"""Proteina-Complexa binder design tool runners.
+"""Proteina-Complexa binder design tool runner.
 
-All three Proteina-Complexa variants — protein binder, ligand binder, and AME
-(motif scaffolding) — share a single Docker image and runner class.  The
-``tool_name`` (``"complexa"``, ``"complexa_ligand"``, or ``"complexa_ame"``)
-determines which checkpoint and pipeline config are used.
+A single catalog Tool, ``complexa``, exposing three Modes sharing the
+``ComplexaRunner`` runner class:
+
+- ``protein_binder`` (default) — Design binders for a protein target.
+- ``ligand_binder`` — Design binders for a small-molecule ligand target.
+- ``ame`` — Scaffold a functional motif into a complete protein (Atomistic
+  Motif Extension).
+
+All three modes share a single Docker image; the mode determines which
+checkpoint and pipeline config are used (``_MODE_CONFIG``).
 
 Design specifications are provided via the ``design_specs`` dict on
-``StructureDesignInput``.  Each entry describes one target: a PDB file, chain/
+``ComplexaInput``.  Each entry describes one target: a PDB file, chain/
 residue specification, hotspot residues, and binder length constraints.  Input
 structure files are listed in ``input_structures`` so the runner can copy them
 into the workspace and rewrite paths.
 
 Generation-level parameters (``batch_size``, ``search_algorithm``, ``seed``,
 etc.) are passed through the ``extra`` dict.
+
+Naming note: the catalog ``Mode`` concept (``protein_binder``/``ligand_binder``/
+``ame`` — selected via ``ToolRunner.run(..., mode=...)`` -> ``self.current_mode``)
+is unrelated to Complexa's own pipeline-depth switch, ``config["mode"]``
+(``generate``/``design``). The latter flows through ``input_data.extra["mode"]``
+and is consumed only container-side; no host code branches on it.
 """
 
 from __future__ import annotations
@@ -23,12 +35,13 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.structure_design import (
+    ComplexaInput,
     DesignedStructure,
-    StructureDesignInput,
     StructureDesignOutput,
 )
 from autobio.tools.base import ToolRunner
@@ -37,56 +50,28 @@ if TYPE_CHECKING:
     from autobio.core.workspace import Workspace
 
 # ---------------------------------------------------------------------------
-# Model configuration — maps tool name to variant-specific settings
+# Model configuration — maps mode name to checkpoint/pipeline settings
 # ---------------------------------------------------------------------------
 
 _WEIGHTS_DIR = "/app/proteina-complexa/ckpts"
 
-_VARIANT_CONFIG: dict[str, dict[str, str]] = {
-    "complexa": {
-        "variant": "protein_binder",
+_MODE_CONFIG: dict[str, dict[str, str]] = {
+    "protein_binder": {
         "pipeline_config": "search_binder_local_pipeline",
         "ckpt_name": "complexa.ckpt",
         "ae_ckpt_name": "complexa_ae.ckpt",
     },
-    "complexa_ligand": {
-        "variant": "ligand_binder",
+    "ligand_binder": {
         "pipeline_config": "search_ligand_binder_local_pipeline",
         "ckpt_name": "complexa_ligand.ckpt",
         "ae_ckpt_name": "complexa_ligand_ae.ckpt",
     },
-    "complexa_ame": {
-        "variant": "ame",
+    "ame": {
         "pipeline_config": "search_ame_local_pipeline",
         "ckpt_name": "complexa_ame.ckpt",
         "ae_ckpt_name": "complexa_ame_ae.ckpt",
     },
 }
-
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset[str]()
-
-# Per-spec keys that have known semantics in the runner.
-_VALID_SPEC_KEYS = frozenset(
-    {
-        "input",
-        "target_input",
-        "hotspot_residues",
-        "binder_length",
-        "binder_center",
-        "pdb_id",
-        # Ligand binder fields
-        "ligand_chain",  # backward compat alias for 'ligand'
-        "ligand",  # 3-letter residue name of ligand (e.g., "BEN", "OQO")
-        "ligand_only",  # design around ligand only (default True)
-        "smiles",  # SMILES string for ligand
-        "use_bonds_from_file",  # use bonds from PDB file (default True)
-        # AME fields
-        "motif_residues",
-        "contig_atoms",  # per-residue atom spec for motif scaffolding
-    }
-)
 
 # ---------------------------------------------------------------------------
 # Runner
@@ -106,7 +91,10 @@ class ComplexaRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structures into the workspace."""
-        assert isinstance(input_data, StructureDesignInput)
+        assert isinstance(input_data, ComplexaInput)
+        assert self.current_mode is not None
+        mode = self.current_mode.name
+        mode_cfg = _MODE_CONFIG[mode]
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
@@ -133,25 +121,19 @@ class ComplexaRunner(ToolRunner):
                     )
                 spec["input"] = filename_map[fname]
 
-        # -- Resolve variant config from tool name ---------------------------
-        variant_cfg = _VARIANT_CONFIG[self.tool_name]
-
         # -- Build config.json -----------------------------------------------
         config: dict[str, Any] = {
-            "variant": variant_cfg["variant"],
-            "pipeline_config": variant_cfg["pipeline_config"],
-            "ckpt_name": variant_cfg["ckpt_name"],
-            "ae_ckpt_name": variant_cfg["ae_ckpt_name"],
+            "variant": mode,
+            "pipeline_config": mode_cfg["pipeline_config"],
+            "ckpt_name": mode_cfg["ckpt_name"],
+            "ae_ckpt_name": mode_cfg["ae_ckpt_name"],
             "weights_dir": _WEIGHTS_DIR,
             "design_specs": specs,
             "n_batches": input_data.n_batches,
             "out_dir": "/workspace/outputs/raw",
         }
 
-        # Flat-merge extra dict for generation-level args
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -197,7 +179,7 @@ class ComplexaRunner(ToolRunner):
         return workspace.root / relative
 
     @staticmethod
-    def _validate_inputs(input_data: StructureDesignInput) -> None:
+    def _validate_inputs(input_data: ComplexaInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.design_specs:
             raise AutobioError("design_specs must contain at least one specification.")
@@ -229,36 +211,8 @@ class ComplexaRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entries — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
-
-# --- Shared notes and input format documentation ---
-
-_COMPLEXA_INPUT_FORMAT = (
-    # Per-spec fields
-    "Each entry in design_specs describes one binder design target. Required "
-    "fields: 'input' (path to target PDB, must be listed in input_structures), "
-    "'target_input' (chain and residue range, e.g., 'A1-115'). Recommended: "
-    "'hotspot_residues' (list of target residues to contact, e.g., "
-    "['A37', 'A39', 'A49', 'A98']), 'binder_length' ([min, max] residue "
-    "count, e.g., [64, 155]). Pass 'mode': 'design' in the extra dict to "
-    "run the full pipeline with evaluation (AF2, RF3, MPNN). Default mode "
-    "is 'generate' (generation only).",
-    # Hotspot format
-    "Hotspot residues are specified as a list of strings, each being a chain "
-    "letter followed by a residue number: ['A37', 'A39', 'A49']. These guide "
-    "the model to design binders that contact specific target residues. "
-    "Providing hotspots significantly improves binder quality.",
-    # Target input format
-    "The 'target_input' field specifies which chain and residues of the target "
-    "PDB to use. Format: '<chain><start>-<end>' (e.g., 'A1-115'). This "
-    "defines the binding surface that the designed binder should target.",
-    # Binder length
-    "The 'binder_length' field is a [min, max] list specifying the range of "
-    "designed binder lengths in residues. The model samples uniformly from "
-    "this range. Typical range: [50, 150] for mini-protein binders, "
-    "[20, 40] for peptide binders.",
-)
 
 _COMPLEXA_NOTES = (
     # Design mode
@@ -304,23 +258,6 @@ _COMPLEXA_NOTES = (
     "optimization. In design mode, this evaluation is done automatically.",
 )
 
-_COMPLEXA_LIGAND_INPUT_FORMAT = (
-    # Per-spec fields
-    "Each entry in design_specs describes one ligand-binding protein design "
-    "target. Required fields: 'input' (path to protein-ligand complex PDB, "
-    "must be listed in input_structures), 'target_input' (chain and residue "
-    "range of the protein, e.g., 'A1-200'). Recommended: 'hotspot_residues' "
-    "(residues near the ligand binding site), 'binder_length' ([min, max]), "
-    "'ligand_chain' (chain ID of the ligand in the PDB).",
-    # Ligand handling
-    "The target PDB must contain both the protein and ligand. The model "
-    "designs a binder that contacts the protein near the ligand binding site. "
-    "Specify 'ligand_chain' to indicate which chain is the ligand (e.g., 'B').",
-    # Same hotspot and length format as protein binder
-    _COMPLEXA_INPUT_FORMAT[1],  # hotspot format
-    _COMPLEXA_INPUT_FORMAT[3],  # binder length
-)
-
 _COMPLEXA_LIGAND_NOTES = (
     _COMPLEXA_NOTES[0],  # design mode
     _COMPLEXA_NOTES[1],  # search algorithms
@@ -332,23 +269,6 @@ _COMPLEXA_LIGAND_NOTES = (
     "from the PLINDER database.",
     _COMPLEXA_NOTES[5],  # multi-spec efficiency
     _COMPLEXA_NOTES[6],  # downstream workflow
-)
-
-_COMPLEXA_AME_INPUT_FORMAT = (
-    # Per-spec fields
-    "Each entry in design_specs describes one motif scaffolding target. "
-    "Required fields: 'input' (path to motif PDB, must be listed in "
-    "input_structures), 'target_input' (chain and residue range of the motif "
-    "to scaffold). Recommended: 'binder_length' ([min, max] for the scaffold "
-    "protein), 'motif_residues' (specific residues to preserve).",
-    # AME description
-    "AME (Atomistic Motif Extension) designs a scaffold protein around a "
-    "functional motif. The motif structure is provided as a PDB, and the "
-    "model generates a complete protein that incorporates the motif with "
-    "correct geometry. Useful for enzyme active site design and functional "
-    "domain scaffolding.",
-    _COMPLEXA_INPUT_FORMAT[2],  # target input format
-    _COMPLEXA_INPUT_FORMAT[3],  # binder length
 )
 
 _COMPLEXA_AME_NOTES = (
@@ -365,68 +285,54 @@ _COMPLEXA_AME_NOTES = (
     _COMPLEXA_NOTES[6],  # downstream workflow
 )
 
-TOOL_REGISTRY["complexa"] = ToolEntry(
-    image_tag="complexa:2.0.0",
+COMPLEXA_TOOL = Tool(
+    name="complexa",
+    display_name="Proteina-Complexa",
     category=ToolCategory.STRUCTURE_DESIGN,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=StructureDesignInput,
-    output_schema=StructureDesignOutput,
-    default_timeout=43200,
-    supports_batch=True,
     description=(
-        "Design novel protein binders for protein targets using "
-        "Proteina-Complexa. Generates binder sequences and all-atom 3D "
-        "structures simultaneously via flow-matching generative modeling. "
-        "Supports generate-only mode (default) and full design pipeline "
-        "mode with AF2/RF3/MPNN evaluation. Provide target structure, "
-        "hotspot residues, and binder length constraints via design_specs."
+        "Design novel protein binders and scaffolds with Proteina-Complexa (flow-matching "
+        "sequence+structure generation). Modes: protein_binder, ligand_binder, ame (atomistic "
+        "motif extension). Provide targets/hotspots/length constraints via design_specs."
     ),
     version="2.0.0",
-    notes=_COMPLEXA_NOTES,
-    input_format=_COMPLEXA_INPUT_FORMAT,
+    image_tag="complexa:2.0.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="protein_binder",
+    modes={
+        "protein_binder": Mode(
+            name="protein_binder",
+            display_name="Protein binder",
+            description="Design binders for a protein target.",
+            input_schema=ComplexaInput,
+            output_schema=StructureDesignOutput,
+            default_timeout=43200,
+            supports_batch=True,
+            notes=_COMPLEXA_NOTES,
+        ),
+        "ligand_binder": Mode(
+            name="ligand_binder",
+            display_name="Ligand binder",
+            description="Design binders for a small-molecule ligand target.",
+            input_schema=ComplexaInput,
+            output_schema=StructureDesignOutput,
+            default_timeout=43200,
+            supports_batch=True,
+            notes=_COMPLEXA_LIGAND_NOTES,
+        ),
+        "ame": Mode(
+            name="ame",
+            display_name="AME (motif scaffolding)",
+            description="Scaffold a functional motif into a complete protein.",
+            input_schema=ComplexaInput,
+            output_schema=StructureDesignOutput,
+            default_timeout=43200,
+            supports_batch=True,
+            notes=_COMPLEXA_AME_NOTES,
+        ),
+    },
+    keywords=("complexa", "proteina", "binder design", "scaffold", "ligand", "motif", "ame"),
 )
+"""Catalog Tool for Proteina-Complexa (protein_binder/ligand_binder/ame modes)."""
 
-TOOL_REGISTRY["complexa_ligand"] = ToolEntry(
-    image_tag="complexa:2.0.0",
-    category=ToolCategory.STRUCTURE_DESIGN,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=StructureDesignInput,
-    output_schema=StructureDesignOutput,
-    default_timeout=43200,
-    supports_batch=True,
-    description=(
-        "Design novel protein binders for small-molecule ligand targets using "
-        "Proteina-Complexa. Generates binder sequences and all-atom 3D "
-        "structures for proteins that bind near a specified ligand. Supports "
-        "generate-only mode (default) and full design pipeline mode with "
-        "evaluation. Provide a protein-ligand complex PDB with hotspot "
-        "residues and binder length constraints via design_specs."
-    ),
-    version="2.0.0",
-    notes=_COMPLEXA_LIGAND_NOTES,
-    input_format=_COMPLEXA_LIGAND_INPUT_FORMAT,
-)
-
-TOOL_REGISTRY["complexa_ame"] = ToolEntry(
-    image_tag="complexa:2.0.0",
-    category=ToolCategory.STRUCTURE_DESIGN,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=StructureDesignInput,
-    output_schema=StructureDesignOutput,
-    default_timeout=43200,
-    supports_batch=True,
-    description=(
-        "Scaffold functional motifs into complete proteins using "
-        "Proteina-Complexa AME (Atomistic Motif Extension). Designs a "
-        "scaffold protein around a provided structural motif, preserving "
-        "the motif geometry. Supports generate-only mode (default) and "
-        "full design pipeline mode with evaluation. Useful for enzyme "
-        "active site design and functional domain scaffolding."
-    ),
-    version="2.0.0",
-    notes=_COMPLEXA_AME_NOTES,
-    input_format=_COMPLEXA_AME_INPUT_FORMAT,
-)
+register(COMPLEXA_TOOL)

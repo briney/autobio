@@ -1,17 +1,15 @@
-"""EvoEF2 tool runners — structure repair, binding energy, and mutant building.
+"""EvoEF2 tool — structure repair, binding energy, and mutant building.
 
-All EvoEF2 tools share a single ``EvoEF2Runner`` class that dispatches by
-``tool_name`` using the ``_VARIANT_CONFIG`` dict.  All variants share a single
-Docker image since EvoEF2 is one binary with a ``--command=`` flag.
+A single catalog Tool, ``evoef2``, exposing three Modes sharing the
+``EvoEF2Runner`` runner class:
 
-EvoEF2 is a physics-based energy function (compiled C++) — **CPU-only**,
-no GPU required, no model weights.
+- ``repair`` (default) — Rebuild incomplete side chains, optimize hydrogens.
+- ``binding`` — Compute protein-protein binding energy (auto-repair by default).
+- ``build_mutant`` — Build mutant structures from a mutation specification.
 
-Supported tools:
-
-- ``evoef2_repair`` — Repair incomplete side chains and optimize hydrogens.
-- ``evoef2_binding`` — Compute protein–protein binding energy (auto-repair by default).
-- ``evoef2_build_mutant`` — Build mutant structures from a mutation specification.
+All three modes share a single Docker image since EvoEF2 is one binary with a
+``--command=`` flag. EvoEF2 is a physics-based energy function (compiled
+C++) — **CPU-only**, no GPU required, no model weights.
 """
 
 from __future__ import annotations
@@ -22,10 +20,18 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
-from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
+from autobio.schemas.scoring import (
+    EvoEF2BaseInput,
+    EvoEF2BindingInput,
+    EvoEF2BuildMutantInput,
+    EvoEF2RepairInput,
+    ScoredStructure,
+    ScoringOutput,
+)
 from autobio.tools.base import ToolRunner
 
 if TYPE_CHECKING:
@@ -38,33 +44,14 @@ if TYPE_CHECKING:
 _EVOEF2_BIN = "/app/evoef2/EvoEF2"
 
 # ---------------------------------------------------------------------------
-# Variant configuration — maps tool name to protocol-specific settings
+# Mode configuration — maps mode name to the EvoEF2 --command= value
 # ---------------------------------------------------------------------------
 
-_VARIANT_CONFIG: dict[str, dict[str, Any]] = {
-    "evoef2_repair": {
-        "command": "RepairStructure",
-        "produces_structure": True,
-        "requires_mutations": False,
-        "has_auto_repair": False,
-    },
-    "evoef2_binding": {
-        "command": "ComputeBinding",
-        "produces_structure": False,
-        "requires_mutations": False,
-        "has_auto_repair": True,
-    },
-    "evoef2_build_mutant": {
-        "command": "BuildMutant",
-        "produces_structure": True,
-        "requires_mutations": True,
-        "has_auto_repair": False,
-    },
+_MODE_COMMAND: dict[str, str] = {
+    "repair": "RepairStructure",
+    "binding": "ComputeBinding",
+    "build_mutant": "BuildMutant",
 }
-
-# Keys in ``extra`` that are consumed by the runner and should NOT be
-# flat-merged into config.json.
-_CONSUMED_EXTRA_KEYS = frozenset({"mutations", "repair", "split_chains"})
 
 # Mutation format: single-letter WT AA + chain ID + residue number + single-letter new AA
 # e.g., "EA63Q" means chain E, Ala-63 -> Gln
@@ -82,11 +69,11 @@ _MUTATION_FORMAT_HELP = (
 
 
 class EvoEF2Runner(ToolRunner):
-    """Runner for EvoEF2 computational biology tools.
+    """Runner for the EvoEF2 repair/binding/build_mutant modes.
 
     ``prepare_workspace`` validates inputs on the host side, copies the input
-    structure into the workspace, generates mutation files for BuildMutant, and
-    writes ``config.json``.
+    structure into the workspace, generates mutation files for build_mutant,
+    and writes ``config.json``.
 
     ``parse_output`` reads the standardised ``result_data.json`` produced by
     the container's ``standardize.py`` script.
@@ -94,13 +81,12 @@ class EvoEF2Runner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        assert isinstance(input_data, ScoringInput)
+        assert isinstance(input_data, EvoEF2BaseInput)
+        assert self.current_mode is not None
+        mode = self.current_mode.name
 
         # -- Host-side validation (fail fast before container launch) --------
         self._validate_inputs(input_data)
-
-        # -- Resolve variant config -----------------------------------------
-        variant_cfg = _VARIANT_CONFIG[self.tool_name]
 
         # -- Copy input structure into workspace ----------------------------
         src_path = input_data.structure_path
@@ -110,30 +96,27 @@ class EvoEF2Runner(ToolRunner):
 
         # -- Build config.json ----------------------------------------------
         config: dict[str, Any] = {
-            "command": variant_cfg["command"],
+            "command": _MODE_COMMAND[mode],
             "structure_path": container_structure_path,
             "evoef2_bin": _EVOEF2_BIN,
             "out_dir": "/workspace/outputs/raw",
         }
 
         # Binding: auto-repair flag and chain split
-        if variant_cfg["has_auto_repair"]:
-            config["repair"] = input_data.extra.get("repair", True)
-            split_chains = input_data.extra.get("split_chains")
-            if split_chains:
-                config["split_chains"] = split_chains
+        if mode == "binding":
+            assert isinstance(input_data, EvoEF2BindingInput)
+            config["repair"] = input_data.repair
+            if input_data.split_chains:
+                config["split_chains"] = input_data.split_chains
 
         # BuildMutant: write mutation file
-        if variant_cfg["requires_mutations"]:
-            mutations: list[str] = input_data.extra["mutations"]
-            config["mutations"] = mutations
-            self._write_mutation_file(mutations, workspace)
+        if mode == "build_mutant":
+            assert isinstance(input_data, EvoEF2BuildMutantInput)
+            config["mutations"] = input_data.mutations
+            self._write_mutation_file(input_data.mutations, workspace)
             config["mutant_file"] = "/workspace/inputs/individual_list.txt"
 
-        # Flat-merge extra dict (excluding consumed keys)
-        for key, value in input_data.extra.items():
-            if key not in _CONSUMED_EXTRA_KEYS:
-                config[key] = value
+        self._apply_extra(config, input_data)
 
         workspace.write_config(config)
 
@@ -179,7 +162,7 @@ class EvoEF2Runner(ToolRunner):
             return container_path
         return workspace.root / relative
 
-    def _validate_inputs(self, input_data: ScoringInput) -> None:
+    def _validate_inputs(self, input_data: EvoEF2BaseInput) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.structure_path.exists():
             raise AutobioError(f"Input structure file does not exist: {input_data.structure_path}")
@@ -192,31 +175,25 @@ class EvoEF2Runner(ToolRunner):
                 "Convert mmCIF/other formats to PDB before using EvoEF2 tools."
             )
 
-        variant_cfg = _VARIANT_CONFIG[self.tool_name]
+        assert self.current_mode is not None
+        mode = self.current_mode.name
 
         # BuildMutant requires mutations
-        if variant_cfg["requires_mutations"]:
-            mutations = input_data.extra.get("mutations")
-            if not mutations:
+        if mode == "build_mutant":
+            assert isinstance(input_data, EvoEF2BuildMutantInput)
+            if not input_data.mutations:
                 raise AutobioError(
-                    f"Tool {self.tool_name!r} requires 'mutations' in the extra dict. "
-                    f"{_MUTATION_FORMAT_HELP}"
+                    f"EvoEF2 build_mutant requires at least one mutation. {_MUTATION_FORMAT_HELP}"
                 )
-            if not isinstance(mutations, list) or not all(isinstance(m, str) for m in mutations):
-                raise AutobioError(
-                    f"'mutations' must be a list of strings, got {type(mutations).__name__}. "
-                    f"{_MUTATION_FORMAT_HELP}"
-                )
-            for m in mutations:
+            for m in input_data.mutations:
                 if not _MUTATION_RE.match(m):
                     raise AutobioError(f"Invalid mutation format: {m!r}. {_MUTATION_FORMAT_HELP}")
 
         # Validate split_chains format for binding if provided
-        if self.tool_name == "evoef2_binding":
-            split_chains = input_data.extra.get("split_chains")
-            if split_chains is not None and (
-                not isinstance(split_chains, str) or split_chains.count(",") != 1
-            ):
+        if mode == "binding":
+            assert isinstance(input_data, EvoEF2BindingInput)
+            split_chains = input_data.split_chains
+            if split_chains is not None and split_chains.count(",") != 1:
                 raise AutobioError(
                     "The 'split_chains' parameter must be a string with exactly one "
                     "comma separating two chain groups (e.g., 'A,BC' or 'AB,CD')."
@@ -234,7 +211,7 @@ class EvoEF2Runner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entries — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _REPAIR_NOTES = (
@@ -245,100 +222,72 @@ _REPAIR_NOTES = (
     "Output includes the repaired PDB structure and the total energy of the repaired structure.",
 )
 
-_REPAIR_INPUT_FORMAT = (
-    "Provide a PDB file via structure_path. EvoEF2 only supports PDB "
-    "format — mmCIF files must be converted first.",
-)
-
 _BINDING_NOTES = (
     "Computes the binding energy between protein chains in a complex. "
     "By default, structures are auto-repaired before scoring "
-    "(extra['repair'] = True). Set extra['repair'] = False to skip.",
+    "(the repair field defaults to True). Set repair = False to skip.",
     "The binding energy is computed as: E(complex) - E(chain_group_1) - "
     "E(chain_group_2). A more negative value indicates stronger binding.",
-    "Use extra['split_chains'] to specify which chains form each binding "
+    "Use the split_chains field to specify which chains form each binding "
     "partner (e.g., 'A,BC' means chain A vs. chains B+C). If omitted, "
     "EvoEF2 uses its default chain grouping.",
     "Output includes total binding energy and a per-term energy breakdown "
     "(van der Waals, electrostatics, desolvation, hydrogen bonds, etc.).",
 )
 
-_BINDING_INPUT_FORMAT = (
-    "Provide a multi-chain PDB complex via structure_path. Optional "
-    "parameters in extra dict: 'repair' (bool, default True), "
-    "'split_chains' (str, e.g., 'A,BC').",
-)
-
 _BUILD_MUTANT_NOTES = (
     "Builds mutant protein structures by introducing specified amino acid "
     "substitutions and optimizing the local environment. Produces a "
     "model PDB file.",
-    "Mutations are specified as a list of strings in extra['mutations']. "
+    "Mutations are specified as a list of strings in the mutations field. "
     "Format: 'EA63Q' means chain E, Ala-63 -> Gln. Multiple mutations "
     "are applied simultaneously.",
 )
 
-_BUILD_MUTANT_INPUT_FORMAT = (
-    "Provide a PDB file via structure_path. Required: extra['mutations'] "
-    "as a list of strings (e.g., ['EA63Q', 'KB42A']).",
-)
-
-TOOL_REGISTRY["evoef2_repair"] = ToolEntry(
-    image_tag="evoef2:1.0.0",
+EVOEF2_TOOL = Tool(
+    name="evoef2",
+    display_name="EvoEF2",
     category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
     description=(
-        "Repair a protein structure by rebuilding incomplete side chains "
-        "and optimizing hydrogen positions using EvoEF2's physics-based "
-        "rotamer library. Essential preprocessing for crystal structures "
-        "with missing atoms before scoring or binding energy calculations."
+        "EvoEF2 physics-based protein structure repair, binding-energy scoring, and "
+        "mutant building. Modes: repair, binding, build_mutant."
     ),
     version="1.0.0",
-    notes=_REPAIR_NOTES,
-    input_format=_REPAIR_INPUT_FORMAT,
-)
-
-TOOL_REGISTRY["evoef2_binding"] = ToolEntry(
     image_tag="evoef2:1.0.0",
-    category=ToolCategory.SCORING,
     requires_gpu=False,
     gpu_count=0,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
-    description=(
-        "Compute protein–protein binding energy using EvoEF2's physics-based "
-        "energy function. Decomposes binding energy into van der Waals, "
-        "electrostatic, desolvation, and hydrogen bond contributions. "
-        "Auto-repairs structures by default before scoring."
-    ),
-    version="1.0.0",
-    notes=_BINDING_NOTES,
-    input_format=_BINDING_INPUT_FORMAT,
+    default_mode="repair",
+    modes={
+        "repair": Mode(
+            name="repair",
+            display_name="Repair",
+            description="Rebuild incomplete side chains and optimize hydrogen positions.",
+            input_schema=EvoEF2RepairInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            notes=_REPAIR_NOTES,
+        ),
+        "binding": Mode(
+            name="binding",
+            display_name="Binding energy",
+            description="Compute protein-protein binding energy (auto-repairs by default).",
+            input_schema=EvoEF2BindingInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            notes=_BINDING_NOTES,
+        ),
+        "build_mutant": Mode(
+            name="build_mutant",
+            display_name="Build mutant",
+            description="Introduce amino-acid substitutions and optimize the local environment.",
+            input_schema=EvoEF2BuildMutantInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            notes=_BUILD_MUTANT_NOTES,
+        ),
+    },
+    keywords=("evoef2", "scoring", "repair", "binding energy", "mutant", "ddg"),
 )
+"""Catalog Tool for EvoEF2 (repair/binding/build_mutant modes)."""
 
-TOOL_REGISTRY["evoef2_build_mutant"] = ToolEntry(
-    image_tag="evoef2:1.0.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=False,
-    gpu_count=0,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
-    description=(
-        "Build mutant protein structures by introducing amino acid "
-        "substitutions and optimizing the local environment with EvoEF2's "
-        "rotamer library. Produces model PDB files suitable for downstream "
-        "binding energy or stability calculations."
-    ),
-    version="1.0.0",
-    notes=_BUILD_MUTANT_NOTES,
-    input_format=_BUILD_MUTANT_INPUT_FORMAT,
-)
+register(EVOEF2_TOOL)
