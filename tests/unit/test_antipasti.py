@@ -1,4 +1,4 @@
-"""Tests for AntipastiRunner — prepare_workspace, parse_output, and registration."""
+"""Tests for the migrated antipasti Tool (mode: predict)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool
 from autobio.core.config import AutobioConfig
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.binding_affinity import (
-    BindingAffinityInput,
-    BindingAffinityOutput,
-)
+from autobio.schemas.binding_affinity import AntipastiInput, BindingAffinityOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
 from autobio.tools.antipasti import AntipastiRunner
 
@@ -33,14 +31,20 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> AntipastiRunner:
-    """Create an AntipastiRunner with mocked deps."""
+def _make_runner() -> AntipastiRunner:
+    """Create an AntipastiRunner with mocked deps, current_mode set to 'predict'."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return AntipastiRunner("antipasti", config)
+        runner = AntipastiRunner("antipasti", AutobioConfig.resolve())
+    runner.current_mode = get_tool("antipasti").modes["predict"]
+    return runner
+
+
+@pytest.fixture()
+def runner() -> AntipastiRunner:
+    return _make_runner()
 
 
 @pytest.fixture()
@@ -71,7 +75,7 @@ class TestAntipastiPrepareWorkspace:
     def test_basic_config(self, runner: AntipastiRunner, tmp_path: Path, sample_pdb: Path) -> None:
         """Config contains correct fields for ANTIPASTI."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -87,12 +91,40 @@ class TestAntipastiPrepareWorkspace:
         assert cfg["output_dir"] == "/workspace/outputs/raw"
         assert cfg["antipasti_dir"] == "/app/antipasti"
 
+    def test_full_config_byte_compat(
+        self, runner: AntipastiRunner, tmp_path: Path, sample_pdb: Path
+    ) -> None:
+        """Full config.json equality — byte-compat contract, incl. hardcoded constants."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntipastiInput(
+            structure_path=sample_pdb,
+            heavy_chain="H",
+            light_chain="L",
+            antigen_chains=["A"],
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "pdb_path": "/workspace/inputs/complex.pdb",
+            "heavy_chain": "H",
+            "light_chain": "L",
+            "antigen_chains": ["A"],
+            "checkpoint_path": (
+                "/app/antipasti/checkpoints/full_ags_all_modes/"
+                "model_epochs_1044_modes_all_pool_1_filters_4_size_4.pt"
+            ),
+            "output_dir": "/workspace/outputs/raw",
+            "antipasti_dir": "/app/antipasti",
+            "modes": "all",
+        }
+
     def test_structure_file_copied(
         self, runner: AntipastiRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
         """Input structure is copied to inputs/ directory."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -109,7 +141,7 @@ class TestAntipastiPrepareWorkspace:
     ) -> None:
         """Chain IDs are passed through to config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="A",
             light_chain="B",
@@ -125,7 +157,7 @@ class TestAntipastiPrepareWorkspace:
     def test_default_modes(self, runner: AntipastiRunner, tmp_path: Path, sample_pdb: Path) -> None:
         """Default modes value is 'all'."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -136,17 +168,17 @@ class TestAntipastiPrepareWorkspace:
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["modes"] == "all"
 
-    def test_extra_override_modes(
+    def test_modes_int_override(
         self, runner: AntipastiRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Extra dict can override modes."""
+        """modes can be set to an integer count of normal modes."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
             antigen_chains=["A"],
-            extra={"modes": 100},
+            modes=100,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -158,7 +190,7 @@ class TestAntipastiPrepareWorkspace:
     ) -> None:
         """Config references baked-in checkpoint."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -175,7 +207,7 @@ class TestAntipastiPrepareWorkspace:
     ) -> None:
         """Non-consumed extra dict keys appear at top level of config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -187,25 +219,20 @@ class TestAntipastiPrepareWorkspace:
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["custom_flag"] == "value"
 
-    def test_consumed_keys_not_leaked(
+    def test_extra_shadowing_typed_field_rejected(
         self, runner: AntipastiRunner, tmp_path: Path, sample_pdb: Path
     ) -> None:
-        """Consumed keys are placed explicitly, not duplicated at top level."""
+        """extra must not shadow the typed 'modes' field."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
             antigen_chains=["A"],
-            extra={"modes": 100, "batch_size": 32},
+            extra={"modes": 100},
         )
-        runner.prepare_workspace(input_data, workspace)
-
-        cfg = json.loads(workspace.config_path.read_text())
-        # modes should appear once with overridden value
-        assert cfg["modes"] == 100
-        # batch_size should be merged
-        assert cfg["batch_size"] == 32
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +247,7 @@ class TestAntipastiValidation:
         """Missing structure file raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
         fake_path = tmp_path / "nonexistent.pdb"
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=fake_path,
             heavy_chain="H",
             light_chain="L",
@@ -234,7 +261,7 @@ class TestAntipastiValidation:
     ) -> None:
         """Empty heavy chain raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="",
             light_chain="L",
@@ -248,7 +275,7 @@ class TestAntipastiValidation:
     ) -> None:
         """Empty light chain raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="",
@@ -262,7 +289,7 @@ class TestAntipastiValidation:
     ) -> None:
         """Empty antigen chains list raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -276,7 +303,7 @@ class TestAntipastiValidation:
     ) -> None:
         """Empty string in antigen chains raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="L",
@@ -290,7 +317,7 @@ class TestAntipastiValidation:
     ) -> None:
         """Duplicate chain IDs across heavy/light/antigen raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="H",
             light_chain="H",
@@ -304,7 +331,7 @@ class TestAntipastiValidation:
     ) -> None:
         """Duplicate chain ID between antigen and heavy raises AutobioError."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = BindingAffinityInput(
+        input_data = AntipastiInput(
             structure_path=sample_pdb,
             heavy_chain="A",
             light_chain="B",
@@ -405,33 +432,40 @@ class TestAntipastiParseOutput:
 
 
 class TestAntipastiRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for tool and runner registration in the catalog."""
 
-    def test_in_tool_registry(self) -> None:
-        assert "antipasti" in TOOL_REGISTRY
+    def test_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.core.catalog import CATALOG
+        from autobio.core.registry import TOOL_REGISTRY
+
+        assert "antipasti" in CATALOG
+        assert set(get_tool("antipasti").modes) == {"predict"}
+        assert get_tool("antipasti").default_mode == "predict"
+        assert "antipasti" not in TOOL_REGISTRY
 
     def test_in_tool_runners(self) -> None:
         assert "antipasti" in TOOL_RUNNERS
         assert TOOL_RUNNERS["antipasti"] is AntipastiRunner
 
     def test_scoring_category(self) -> None:
-        assert TOOL_REGISTRY["antipasti"].category == ToolCategory.SCORING
+        assert get_tool("antipasti").category == ToolCategory.SCORING
 
     def test_no_gpu_required(self) -> None:
-        entry = TOOL_REGISTRY["antipasti"]
-        assert entry.requires_gpu is False
-        assert entry.gpu_count == 0
+        tool = get_tool("antipasti")
+        assert tool.requires_gpu is False
+        assert tool.gpu_count == 0
 
     def test_schema_types(self) -> None:
-        entry = TOOL_REGISTRY["antipasti"]
-        assert entry.input_schema is BindingAffinityInput
-        assert entry.output_schema is BindingAffinityOutput
+        mode = get_tool("antipasti").modes["predict"]
+        assert mode.input_schema is AntipastiInput
+        assert mode.output_schema is BindingAffinityOutput
 
     def test_image_tag(self) -> None:
-        assert TOOL_REGISTRY["antipasti"].image_tag == "antipasti:1.0.0"
+        assert get_tool("antipasti").image_tag == "antipasti:1.0.0"
 
     def test_timeout(self) -> None:
-        assert TOOL_REGISTRY["antipasti"].default_timeout == 1800
+        assert get_tool("antipasti").modes["predict"].default_timeout == 1800
 
     def test_get_runner_returns_antipasti_runner(self, config: AutobioConfig) -> None:
         with (
@@ -441,3 +475,22 @@ class TestAntipastiRegistration:
             r = get_runner("antipasti", config)
         assert isinstance(r, AntipastiRunner)
         assert r.tool_name == "antipasti"
+
+    def test_tool_constant_registered(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.tools.antipasti import ANTIPASTI_TOOL
+
+        assert ANTIPASTI_TOOL.name == "antipasti"
+        assert get_tool("antipasti") is ANTIPASTI_TOOL
+
+
+def test_info_snapshot_antipasti() -> None:
+    import autobio.tools  # noqa: F401
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("antipasti"), OutputFormat.JSON))
+    assert [m["name"] for m in parsed["modes"]] == ["predict"]
+    predict = parsed["modes"][0]
+    struct = predict["input_schema"]["properties"]["structure_path"]
+    assert struct["x-autobio"]["widget"] == "file"
+    assert "output_schema" in predict
