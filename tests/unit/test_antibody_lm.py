@@ -1,13 +1,15 @@
-"""Tests for AntibodyLMRunner — workspace, output parsing, validation, registration."""
+"""Tests for the migrated antibody-LM Tools (modes: embedding, pll)."""
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import get_tool, list_tools, tool_categories
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
@@ -20,9 +22,32 @@ from autobio.tools.antibody_lm import AntibodyLMRunner
 if TYPE_CHECKING:
     from pathlib import Path
 
+_MODEL_NAMES = ("currab", "ft_esm", "balm_paired", "balm_unpaired", "ablang2", "antiberta2")
+
+_IMAGE_TAGS = {
+    "currab": "currab:1.0.0",
+    "ft_esm": "ft-esm:1.0.0",
+    "balm_paired": "balm-paired:1.0.0",
+    "balm_unpaired": "balm-unpaired:1.0.0",
+    "ablang2": "ablang2:1.0.0",
+    "antiberta2": "antiberta2:1.0.0",
+}
+
+# The 6 legacy "*_pll" flat tool names — fully removed by the migration. The 6
+# base model names (currab, ft_esm, ...) persist as catalog Tool names, so they
+# are checked separately (absent from TOOL_REGISTRY, present in CATALOG/TOOL_RUNNERS).
+_OLD_PLL_FLAT_NAMES = (
+    "currab_pll",
+    "ft_esm_pll",
+    "balm_paired_pll",
+    "balm_unpaired_pll",
+    "ablang2_pll",
+    "antiberta2_pll",
+)
+
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
@@ -31,12 +56,17 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-def _make_runner(tool_name: str, config: AutobioConfig) -> AntibodyLMRunner:
+def _make_runner(
+    tool_name: str, config: AutobioConfig, mode: str = "embedding"
+) -> AntibodyLMRunner:
+    """Create an AntibodyLMRunner with mocked deps, current_mode pinned to *mode*."""
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return AntibodyLMRunner(tool_name, config)
+        runner = AntibodyLMRunner(tool_name, config)
+    runner.current_mode = get_tool(tool_name).modes[mode]
+    return runner
 
 
 @pytest.fixture()
@@ -46,7 +76,7 @@ def currab_runner(config: AutobioConfig) -> AntibodyLMRunner:
 
 @pytest.fixture()
 def currab_pll_runner(config: AutobioConfig) -> AntibodyLMRunner:
-    return _make_runner("currab_pll", config)
+    return _make_runner("currab", config, "pll")
 
 
 @pytest.fixture()
@@ -66,7 +96,7 @@ def ablang2_runner(config: AutobioConfig) -> AntibodyLMRunner:
 
 @pytest.fixture()
 def ablang2_pll_runner(config: AutobioConfig) -> AntibodyLMRunner:
-    return _make_runner("ablang2_pll", config)
+    return _make_runner("ablang2", config, "pll")
 
 
 @pytest.fixture()
@@ -76,7 +106,7 @@ def antiberta2_runner(config: AutobioConfig) -> AntibodyLMRunner:
 
 @pytest.fixture()
 def antiberta2_pll_runner(config: AutobioConfig) -> AntibodyLMRunner:
-    return _make_runner("antiberta2_pll", config)
+    return _make_runner("antiberta2", config, "pll")
 
 
 # Sample sequences — Trastuzumab VH/VL fragments
@@ -142,9 +172,7 @@ class TestAntibodyLMPrepareWorkspace:
         runner = _make_runner(tool_name, config)
         workspace = Workspace.create(tmp_path / "ws")
         # balm_paired needs both chains; balm_unpaired needs one
-        if tool_name == "balm_paired":
-            seqs = [AntibodySequence(id="ab1", heavy_chain=_VH, light_chain=_VL)]
-        elif tool_name == "balm_unpaired":
+        if tool_name == "balm_unpaired":
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH)]
         else:
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH, light_chain=_VL)]
@@ -192,8 +220,6 @@ class TestAntibodyLMPrepareWorkspace:
         workspace = Workspace.create(tmp_path / "ws")
         if tool_name == "balm_paired":
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH, light_chain=_VL)]
-        elif tool_name == "balm_unpaired":
-            seqs = [AntibodySequence(id="ab1", heavy_chain=_VH)]
         else:
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH)]
         runner.prepare_workspace(AntibodyInput(sequences=seqs), workspace)
@@ -231,10 +257,11 @@ class TestAntibodyLMPrepareWorkspace:
         assert cfg["per_position"] is False
 
     def test_per_position_opt_in(self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path) -> None:
+        """per_position is a typed AntibodyInput field (not passed via extra)."""
         workspace = Workspace.create(tmp_path / "ws")
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
-            extra={"per_position": True},
+            per_position=True,
         )
         currab_pll_runner.prepare_workspace(input_data, workspace)
 
@@ -253,21 +280,165 @@ class TestAntibodyLMPrepareWorkspace:
         assert cfg["batch_size"] == 16
         assert cfg["seed"] == 42
 
-    def test_consumed_keys_excluded(
-        self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
+
+# ---------------------------------------------------------------------------
+# TestAntibodyLMApplyExtraRejections — _apply_extra hardening
+# ---------------------------------------------------------------------------
+
+
+class TestAntibodyLMApplyExtraRejections:
+    """``extra`` keys that collide with typed fields or config keys are rejected.
+
+    This is intentional hardening over the pre-migration behavior, which
+    silently flat-merged ``extra`` and let it clobber earlier config keys.
+    """
+
+    def test_extra_model_name_collision_raises(
+        self, currab_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
-        """Consumed extra key 'per_position' does not appear twice in config."""
         workspace = Workspace.create(tmp_path / "ws")
         input_data = AntibodyInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
-            extra={"per_position": True, "seed": 42},
+            extra={"model_name": "some-other-model"},
+        )
+        with pytest.raises(AutobioError, match="collide"):
+            currab_runner.prepare_workspace(input_data, workspace)
+
+    def test_extra_layer_shadow_raises(
+        self, currab_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
+            extra={"layer": 5},
+        )
+        with pytest.raises(AutobioError, match="collide"):
+            currab_runner.prepare_workspace(input_data, workspace)
+
+    def test_extra_per_position_shadow_raises(
+        self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
+            extra={"per_position": True},
+        )
+        with pytest.raises(AutobioError, match="collide"):
+            currab_pll_runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestAntibodyLMByteCompatConfig — full-dict config.json equality, per mode
+# ---------------------------------------------------------------------------
+
+
+class TestAntibodyLMByteCompatConfig:
+    """Full-dict ``config.json`` equality tests, pinning key order per mode.
+
+    Key order is taken verbatim from ``.superpowers/sdd/recon/antibody_lm.md``.
+    """
+
+    def test_embedding_full_config_defaults(
+        self, currab_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        currab_runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "model_name": "brineylab/CurrAb",
+            "model_family": "esm",
+            "chain_separator": "single_cls",
+            "input_file": "/workspace/inputs/sequences.json",
+            "output_dir": "/workspace/outputs/raw",
+            "mode": "embedding",
+            "layer": None,
+            "pooling": "mean",
+            "per_position": False,
+            "hf_cache": "/app/antibody-lm/hf_cache",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_pll_full_config_defaults(
+        self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        currab_pll_runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "model_name": "brineylab/CurrAb",
+            "model_family": "esm",
+            "chain_separator": "single_cls",
+            "input_file": "/workspace/inputs/sequences.json",
+            "output_dir": "/workspace/outputs/raw",
+            "mode": "pll",
+            "layer": None,
+            "pooling": "mean",
+            "per_position": False,
+            "hf_cache": "/app/antibody-lm/hf_cache",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_pll_full_config_with_per_position(
+        self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
+            layer=10,
+            pooling="cls",
+            per_position=True,
         )
         currab_pll_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
-        # per_position appears as a top-level field, not duplicated from extra merge
-        assert cfg["per_position"] is True
-        assert cfg["seed"] == 42
+        expected = {
+            "model_name": "brineylab/CurrAb",
+            "model_family": "esm",
+            "chain_separator": "single_cls",
+            "input_file": "/workspace/inputs/sequences.json",
+            "output_dir": "/workspace/outputs/raw",
+            "mode": "pll",
+            "layer": 10,
+            "pooling": "cls",
+            "per_position": True,
+            "hf_cache": "/app/antibody-lm/hf_cache",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
+
+    def test_embedding_full_config_with_flat_extra(
+        self, currab_runner: AntibodyLMRunner, tmp_path: Path
+    ) -> None:
+        """A non-consumed extra key flat-merges after the fixed keys."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = AntibodyInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
+            extra={"custom_flag": "value"},
+        )
+        currab_runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        expected = {
+            "model_name": "brineylab/CurrAb",
+            "model_family": "esm",
+            "chain_separator": "single_cls",
+            "input_file": "/workspace/inputs/sequences.json",
+            "output_dir": "/workspace/outputs/raw",
+            "mode": "embedding",
+            "layer": None,
+            "pooling": "mean",
+            "per_position": False,
+            "hf_cache": "/app/antibody-lm/hf_cache",
+            "custom_flag": "value",
+        }
+        assert cfg == expected
+        assert list(cfg.keys()) == list(expected.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -576,72 +747,89 @@ class TestAntibodyLMParseOutput:
 # TestAntibodyLMRegistration
 # ---------------------------------------------------------------------------
 
-_ALL_TOOLS = [
-    "currab",
-    "currab_pll",
-    "ft_esm",
-    "ft_esm_pll",
-    "balm_paired",
-    "balm_paired_pll",
-    "balm_unpaired",
-    "balm_unpaired_pll",
-    "ablang2",
-    "ablang2_pll",
-    "antiberta2",
-    "antiberta2_pll",
-]
-
-_EMBEDDING_TOOLS = ["currab", "ft_esm", "balm_paired", "balm_unpaired", "ablang2", "antiberta2"]
-_PLL_TOOLS = [
-    "currab_pll",
-    "ft_esm_pll",
-    "balm_paired_pll",
-    "balm_unpaired_pll",
-    "ablang2_pll",
-    "antiberta2_pll",
-]
-
 
 class TestAntibodyLMRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for the catalog Tool + runner registration."""
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOLS)
-    def test_in_registry(self, tool_name: str) -> None:
-        assert tool_name in TOOL_REGISTRY
-        assert TOOL_REGISTRY[tool_name].category == ToolCategory.EMBEDDING
+    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
+    def test_registered_as_catalog_tool(self, model_name: str) -> None:
+        import autobio.tools  # noqa: F401 - populate registries
 
-    @pytest.mark.parametrize("tool_name", _EMBEDDING_TOOLS)
-    def test_embedding_schema(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.input_schema is AntibodyInput
-        assert entry.output_schema is EmbeddingOutput
+        tool = get_tool(model_name)
+        assert sorted(tool.modes) == ["embedding", "pll"]
+        assert tool.default_mode == "embedding"
+        assert tool.category == ToolCategory.EMBEDDING
+        assert tool.requires_gpu is True
+        assert tool.gpu_count == 1
+        assert tool.image_tag == _IMAGE_TAGS[model_name]
 
-    @pytest.mark.parametrize("tool_name", _PLL_TOOLS)
-    def test_pll_schema(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert entry.input_schema is AntibodyInput
-        assert entry.output_schema is AntibodyPLLOutput
+    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
+    def test_tool_categories_embedding_only(self, model_name: str) -> None:
+        import autobio.tools  # noqa: F401
 
-    def test_currab_tools_share_image(self) -> None:
-        assert TOOL_REGISTRY["currab"].image_tag == TOOL_REGISTRY["currab_pll"].image_tag
+        tool = get_tool(model_name)
+        assert tool_categories(tool) == (ToolCategory.EMBEDDING,)
 
-    def test_distinct_image_tags(self) -> None:
-        """Each model has its own container image tag."""
-        tags = {TOOL_REGISTRY[t].image_tag for t in _EMBEDDING_TOOLS}
-        assert len(tags) == 6
+    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
+    def test_listed_under_embedding(self, model_name: str) -> None:
+        import autobio.tools  # noqa: F401
 
-    @pytest.mark.parametrize("tool_name", _EMBEDDING_TOOLS)
-    def test_embedding_timeout(self, tool_name: str) -> None:
-        assert TOOL_REGISTRY[tool_name].default_timeout == 600
+        assert model_name in list_tools(category=ToolCategory.EMBEDDING)
 
-    @pytest.mark.parametrize("tool_name", _PLL_TOOLS)
-    def test_pll_timeout(self, tool_name: str) -> None:
-        assert TOOL_REGISTRY[tool_name].default_timeout == 1800
+    @pytest.mark.parametrize(
+        ("mode_name", "output_schema", "timeout"),
+        [
+            ("embedding", EmbeddingOutput, 600),
+            ("pll", AntibodyPLLOutput, 1800),
+        ],
+    )
+    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
+    def test_mode_schemas_and_timeouts(
+        self,
+        model_name: str,
+        mode_name: str,
+        output_schema: type,
+        timeout: int,
+    ) -> None:
+        mode = get_tool(model_name).modes[mode_name]
+        assert mode.input_schema is AntibodyInput
+        assert mode.output_schema is output_schema
+        assert mode.default_timeout == timeout
+        assert mode.supports_batch is True
+        # Modes don't override the Tool's image — both modes share one image.
+        assert mode.image_tag is None
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOLS)
-    def test_tool_runners_registered(self, tool_name: str) -> None:
-        assert tool_name in TOOL_RUNNERS
-        assert TOOL_RUNNERS[tool_name] is AntibodyLMRunner
+    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
+    def test_old_base_names_absent_from_tool_registry(self, model_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert model_name not in TOOL_REGISTRY
+
+    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
+    def test_base_names_in_tool_runners(self, model_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert model_name in TOOL_RUNNERS
+        assert TOOL_RUNNERS[model_name] is AntibodyLMRunner
+
+    @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
+    def test_old_pll_flat_names_absent_from_tool_registry(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_REGISTRY
+
+    @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
+    def test_old_pll_flat_names_absent_from_tool_runners(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+
+        assert flat_name not in TOOL_RUNNERS
+
+    @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
+    def test_old_pll_flat_names_absent_from_catalog(self, flat_name: str) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.core.catalog import CATALOG
+
+        assert flat_name not in CATALOG
 
     def test_get_runner_returns_antibody_lm_runner(self, config: AutobioConfig) -> None:
         with (
@@ -652,11 +840,120 @@ class TestAntibodyLMRegistration:
         assert isinstance(r, AntibodyLMRunner)
         assert r.tool_name == "currab"
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOLS)
-    def test_notes_populated(self, tool_name: str) -> None:
-        entry = TOOL_REGISTRY[tool_name]
-        assert len(entry.notes) > 0
+    @pytest.mark.parametrize("flat_name", _OLD_PLL_FLAT_NAMES)
+    def test_get_runner_removed_pll_flat_name_raises(
+        self, flat_name: str, config: AutobioConfig
+    ) -> None:
+        with pytest.raises(KeyError, match=flat_name):
+            get_runner(flat_name, config)
 
-    @pytest.mark.parametrize("tool_name", _ALL_TOOLS)
-    def test_requires_gpu(self, tool_name: str) -> None:
-        assert TOOL_REGISTRY[tool_name].requires_gpu is True
+    @pytest.mark.parametrize("model_name", _MODEL_NAMES)
+    def test_notes_populated(self, model_name: str) -> None:
+        tool = get_tool(model_name)
+        assert len(tool.notes) > 0
+        assert len(tool.modes["embedding"].notes) > 0
+        assert len(tool.modes["pll"].notes) > 0
+
+    def test_distinct_image_tags(self) -> None:
+        """Each model has its own container image tag."""
+        tags = {get_tool(n).image_tag for n in _MODEL_NAMES}
+        assert len(tags) == len(_MODEL_NAMES)
+
+
+# ---------------------------------------------------------------------------
+# TestAntibodyLMInfoSnapshot
+# ---------------------------------------------------------------------------
+
+
+class TestAntibodyLMInfoSnapshot:
+    """``autobio info currab`` output — per-mode notes, output_schema, category."""
+
+    def test_info_snapshot(self) -> None:
+        import autobio.tools  # noqa: F401
+        from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+        parsed = json.loads(format_tool_info_catalog(get_tool("currab"), OutputFormat.JSON))
+        assert [m["name"] for m in parsed["modes"]] == ["embedding", "pll"]
+
+        embedding_mode, pll_mode = parsed["modes"]
+
+        assert len(embedding_mode["notes"]) > 0
+        assert "output_schema" in embedding_mode
+        assert embedding_mode["category"] == "embedding"
+
+        assert len(pll_mode["notes"]) > 0
+        assert "output_schema" in pll_mode
+        assert pll_mode["category"] == "embedding"
+
+
+# ---------------------------------------------------------------------------
+# TestAntibodyLMRunMetadataMode — full run() lifecycle threads mode into metadata
+# ---------------------------------------------------------------------------
+
+
+class TestAntibodyLMRunMetadataMode:
+    """``run(...).metadata.mode`` reflects the selected mode for each mode."""
+
+    def test_run_metadata_mode_embedding(
+        self,
+        config: AutobioConfig,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import autobio.tools  # noqa: F401
+
+        output_dir = tmp_path / "ws"
+        std_dir = output_dir / "outputs" / "standardized"
+        std_dir.mkdir(parents=True)
+        (std_dir / "result_data.json").write_text(json.dumps(_SINGLE_EMBEDDING_RESULT))
+
+        monkeypatch.setattr(
+            "autobio.core.workspace.Workspace.read_result",
+            lambda self: SimpleNamespace(
+                status="success", phase="run", exit_code=0, error_message=None
+            ),
+        )
+
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = AntibodyLMRunner("currab", config)
+
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        out = r.run(input_data, gpu="none", output_dir=output_dir, mode="embedding")
+        assert out.metadata.mode == "embedding"
+        assert out.metadata.tool_name == "currab"
+        assert isinstance(out, EmbeddingOutput)
+
+    def test_run_metadata_mode_pll(
+        self,
+        config: AutobioConfig,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import autobio.tools  # noqa: F401
+
+        output_dir = tmp_path / "ws"
+        std_dir = output_dir / "outputs" / "standardized"
+        std_dir.mkdir(parents=True)
+        (std_dir / "result_data.json").write_text(json.dumps(_PLL_RESULT))
+
+        monkeypatch.setattr(
+            "autobio.core.workspace.Workspace.read_result",
+            lambda self: SimpleNamespace(
+                status="success", phase="run", exit_code=0, error_message=None
+            ),
+        )
+
+        with (
+            patch("autobio.tools.base.ContainerManager"),
+            patch("autobio.tools.base.GPUManager"),
+        ):
+            r = AntibodyLMRunner("currab", config)
+
+        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        out = r.run(input_data, gpu="none", output_dir=output_dir, mode="pll")
+        assert out.metadata.mode == "pll"
+        assert out.metadata.tool_name == "currab"
+        assert isinstance(out, AntibodyPLLOutput)
