@@ -8,16 +8,14 @@ from unittest.mock import patch
 
 import pytest
 
+from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import ESMFoldInput, StructurePredictionOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
-from autobio.tools.esmfold import ESMFoldRunner
+from autobio.tools.esmfold import ESMFOLD_TOOL, ESMFoldRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,12 +33,19 @@ def config() -> AutobioConfig:
 
 @pytest.fixture()
 def runner(config: AutobioConfig) -> ESMFoldRunner:
-    """Create an ESMFoldRunner with mocked ContainerManager and GPUManager."""
+    """Create an ESMFoldRunner with mocked ContainerManager and GPUManager.
+
+    ``current_mode`` is set directly (rather than via ``run()``) so that
+    ``prepare_workspace`` — which calls ``_apply_extra`` — can be exercised
+    in isolation.
+    """
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return ESMFoldRunner("esmfold", config)
+        runner = ESMFoldRunner("esmfold", config)
+    runner.current_mode = get_tool("esmfold").modes["predict"]
+    return runner
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +59,7 @@ class TestESMFoldPrepareWorkspace:
     def test_fasta_written(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         """Input sequence is written as a FASTA file."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = ESMFoldInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         fasta_path = workspace.inputs_dir / "sequences.fasta"
@@ -63,10 +68,22 @@ class TestESMFoldPrepareWorkspace:
         assert ">A" in content
         assert "MVLSPADKTNVKAAWGKVGA" in content
 
+    def test_fasta_text_input_normalizes(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
+        """FASTA text is normalized to a dict via GenericSequenceSet."""
+        input_data = ESMFoldInput(sequences=">A\nMKT\n")
+        assert input_data.sequences == {"A": "MKT"}
+
+        workspace = Workspace.create(tmp_path / "ws")
+        runner.prepare_workspace(input_data, workspace)
+
+        content = (workspace.inputs_dir / "sequences.fasta").read_text()
+        assert ">A" in content
+        assert "MKT" in content
+
     def test_config_defaults(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         """Minimal input produces correct config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = ESMFoldInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -75,10 +92,24 @@ class TestESMFoldPrepareWorkspace:
         assert cfg["output_dir"] == "/workspace/outputs/raw"
         assert cfg["hf_cache"] == "/app/esmfold/hf_cache"
 
+    def test_config_full_dict_equality(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
+        """The full config.json dict is byte-compat with the pre-migration output."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ESMFoldInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "model_name": "facebook/esmfold_v1",
+            "input_fasta": "/workspace/inputs/sequences.fasta",
+            "output_dir": "/workspace/outputs/raw",
+            "hf_cache": "/app/esmfold/hf_cache",
+        }
+
     def test_extra_merged(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         """Extra dict keys appear in config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = ESMFoldInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             extra={"chunk_size": 128},
         )
@@ -86,6 +117,18 @@ class TestESMFoldPrepareWorkspace:
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["chunk_size"] == 128
+
+    def test_extra_shadowing_typed_field_rejected(
+        self, runner: ESMFoldRunner, tmp_path: Path
+    ) -> None:
+        """Extra keys that collide with typed input fields are rejected."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = ESMFoldInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"num_models": 1},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
 
 
 # ---------------------------------------------------------------------------
@@ -98,16 +141,14 @@ class TestESMFoldHostValidation:
 
     def test_empty_sequences_raises(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={})
+        input_data = ESMFoldInput(sequences={})
         with pytest.raises(AutobioError, match="sequences must be non-empty"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_multi_chain_raises(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         """ESMFold rejects multi-chain input with a clear message."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
-            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "GVSEKL"}
-        )
+        input_data = ESMFoldInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "GVSEKL"})
         with pytest.raises(AutobioError, match="single-chain only"):
             runner.prepare_workspace(input_data, workspace)
 
@@ -116,7 +157,7 @@ class TestESMFoldHostValidation:
         tmpl = tmp_path / "template.pdb"
         tmpl.write_text("ATOM      1  CA  ALA A   1       0.0  0.0  0.0\n")
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = ESMFoldInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             templates=[tmpl],
         )
@@ -126,7 +167,7 @@ class TestESMFoldHostValidation:
     def test_num_models_gt1_raises(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         """ESMFold rejects num_models > 1."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = ESMFoldInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             num_models=5,
         )
@@ -135,14 +176,14 @@ class TestESMFoldHostValidation:
 
     def test_invalid_sequence_raises(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLS123INVALID"})
+        input_data = ESMFoldInput(sequences={"A": "MVLS123INVALID"})
         with pytest.raises(AutobioError, match="Invalid protein sequence"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_single_chain_accepted(self, runner: ESMFoldRunner, tmp_path: Path) -> None:
         """Single chain with num_models=1 is accepted."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = ESMFoldInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             num_models=1,
         )
@@ -248,18 +289,19 @@ class TestESMFoldParseOutput:
 
 
 class TestESMFoldRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for catalog Tool and runner registration."""
 
-    def test_esmfold_in_registry(self) -> None:
-        assert "esmfold" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["esmfold"]
-        assert entry.category == ToolCategory.STRUCTURE_PREDICTION
-        assert entry.input_schema is StructurePredictionInput
-        assert entry.output_schema is StructurePredictionOutput
-        assert entry.requires_gpu is True
+    def test_esmfold_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert "esmfold" in CATALOG
+        assert set(get_tool("esmfold").modes) == {"predict"}
+        assert get_tool("esmfold").default_mode == "predict"
+        assert get_tool("esmfold").category == ToolCategory.STRUCTURE_PREDICTION
+        assert "esmfold" not in TOOL_REGISTRY
 
     def test_supports_batch_false(self) -> None:
-        assert TOOL_REGISTRY["esmfold"].supports_batch is False
+        assert get_tool("esmfold").modes["predict"].supports_batch is False
 
     def test_tool_runner_registered(self) -> None:
         assert "esmfold" in TOOL_RUNNERS
@@ -276,12 +318,25 @@ class TestESMFoldRegistration:
 
     def test_notes_populated(self) -> None:
         """Notes contain key ESMFold limitations."""
-        notes = " ".join(TOOL_REGISTRY["esmfold"].notes)
+        notes = " ".join(get_tool("esmfold").modes["predict"].notes)
         assert "single-chain" in notes.lower()
         assert "deterministic" in notes.lower()
         assert "templates" in notes.lower()
 
-    def test_input_format_populated(self) -> None:
-        fmt = " ".join(TOOL_REGISTRY["esmfold"].input_format)
-        assert "single" in fmt.lower()
-        assert "amino acid" in fmt.lower()
+    def test_esmfold_tool_constant_registered(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert ESMFOLD_TOOL.name == "esmfold"
+        assert get_tool("esmfold") is ESMFOLD_TOOL
+
+
+def test_info_snapshot_esmfold() -> None:
+    import autobio.tools  # noqa: F401 - importing populates the catalog
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("esmfold"), OutputFormat.JSON))
+    assert parsed["modes"][0]["name"] == "predict"
+    props = parsed["modes"][0]["input_schema"]["properties"]
+    assert props["sequences"]["x-autobio"]["widget"] == "sequence"
+    assert props["sequences"]["x-autobio"]["flavor"] == "generic"
+    assert "output_schema" in parsed["modes"][0]

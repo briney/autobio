@@ -14,10 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from autobio.core.config import AutobioConfig
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import ESMFoldInput, StructurePredictionOutput
 from autobio.tools import get_runner
 
 if TYPE_CHECKING:
@@ -50,7 +47,7 @@ class TestESMFoldSingleChain:
 
     def test_full_pipeline(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Run ESMFold end-to-end and verify output structure."""
-        input_data = StructurePredictionInput(
+        input_data = ESMFoldInput(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
         )
@@ -69,7 +66,7 @@ class TestESMFoldSingleChain:
 
     def test_confidence_scores(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Verify pLDDT and pTM are populated."""
-        input_data = StructurePredictionInput(
+        input_data = ESMFoldInput(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
         )
@@ -88,7 +85,7 @@ class TestESMFoldSingleChain:
 
     def test_summary_confidence(self, autobio_config: AutobioConfig, tmp_path: Path) -> None:
         """Summary confidence metrics match the single structure."""
-        input_data = StructurePredictionInput(
+        input_data = ESMFoldInput(
             sequences={"A": _CRAMBIN_SEQ},
             num_models=1,
         )

@@ -9,16 +9,14 @@ from unittest.mock import patch
 import pytest
 import yaml
 
+from autobio.core.catalog import CATALOG, get_tool
 from autobio.core.config import AutobioConfig
 from autobio.core.registry import TOOL_REGISTRY, ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.structure_prediction import (
-    StructurePredictionInput,
-    StructurePredictionOutput,
-)
+from autobio.schemas.structure_prediction import BoltzInput, StructurePredictionOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
-from autobio.tools.boltz import BoltzRunner
+from autobio.tools.boltz import BOLTZ1_TOOL, BOLTZ2_TOOL, BoltzRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,24 +32,32 @@ def config() -> AutobioConfig:
     return AutobioConfig.resolve()
 
 
-@pytest.fixture()
-def runner(config: AutobioConfig) -> BoltzRunner:
-    """Create a BoltzRunner (boltz2) with mocked ContainerManager and GPUManager."""
+def _make_runner(tool_name: str, config: AutobioConfig) -> BoltzRunner:
+    """Create a BoltzRunner with mocked ContainerManager/GPUManager and current_mode set.
+
+    ``current_mode`` is set directly (rather than via ``run()``) so that
+    ``prepare_workspace`` — which calls ``_apply_extra`` — can be exercised
+    in isolation.
+    """
     with (
         patch("autobio.tools.base.ContainerManager"),
         patch("autobio.tools.base.GPUManager"),
     ):
-        return BoltzRunner("boltz2", config)
+        runner = BoltzRunner(tool_name, config)
+    runner.current_mode = get_tool(tool_name).modes["predict"]
+    return runner
+
+
+@pytest.fixture()
+def runner(config: AutobioConfig) -> BoltzRunner:
+    """Create a BoltzRunner (boltz2) with mocked ContainerManager and GPUManager."""
+    return _make_runner("boltz2", config)
 
 
 @pytest.fixture()
 def boltz1_runner(config: AutobioConfig) -> BoltzRunner:
     """Create a BoltzRunner for boltz1."""
-    with (
-        patch("autobio.tools.base.ContainerManager"),
-        patch("autobio.tools.base.GPUManager"),
-    ):
-        return BoltzRunner("boltz1", config)
+    return _make_runner("boltz1", config)
 
 
 # ---------------------------------------------------------------------------
@@ -77,13 +83,9 @@ class TestBoltzPrepareWorkspace:
         tmp_path: Path,
     ) -> None:
         """Config contains correct model flag per tool name."""
-        with (
-            patch("autobio.tools.base.ContainerManager"),
-            patch("autobio.tools.base.GPUManager"),
-        ):
-            r = BoltzRunner(tool_name, config)
+        r = _make_runner(tool_name, config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         r.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -92,7 +94,7 @@ class TestBoltzPrepareWorkspace:
     def test_yaml_generated_from_sequences(self, runner: BoltzRunner, tmp_path: Path) -> None:
         """Sequences dict is translated into a Boltz YAML input file."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MKWVTFIS", "B": "GVSEKL"})
+        input_data = BoltzInput(sequences={"A": "MKWVTFIS", "B": "GVSEKL"})
         runner.prepare_workspace(input_data, workspace)
 
         yaml_path = workspace.inputs_dir / "input.yaml"
@@ -112,7 +114,7 @@ class TestBoltzPrepareWorkspace:
         self, runner: BoltzRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"}, num_models=5)
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"}, num_models=5)
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -123,7 +125,7 @@ class TestBoltzPrepareWorkspace:
     ) -> None:
         """When num_models=1 (default), diffusion_samples is not in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -132,18 +134,18 @@ class TestBoltzPrepareWorkspace:
     def test_use_msa_server_default_true(self, runner: BoltzRunner, tmp_path: Path) -> None:
         """use_msa_server defaults to True in config."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["use_msa_server"] is True
 
     def test_use_msa_server_can_be_disabled(self, runner: BoltzRunner, tmp_path: Path) -> None:
-        """extra['use_msa_server'] = False overrides the default."""
+        """The top-level use_msa_server field overrides the default."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"use_msa_server": False},
+            use_msa_server=False,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -156,7 +158,7 @@ class TestBoltzPrepareWorkspace:
         tmpl.write_text("data_test\n_entry.id test\n")
 
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             templates=[tmpl],
         )
@@ -173,9 +175,9 @@ class TestBoltzPrepareWorkspace:
     def test_entity_types_override(self, runner: BoltzRunner, tmp_path: Path) -> None:
         """Non-protein entity types are correctly tagged in the YAML."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "ATCGATCG"},
-            extra={"entity_types": {"B": "dna"}},
+            entity_types={"B": "dna"},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -190,9 +192,9 @@ class TestBoltzPrepareWorkspace:
     def test_ligand_smiles_entity(self, runner: BoltzRunner, tmp_path: Path) -> None:
         """Ligand entities with SMILES are correctly constructed."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
-            extra={"entity_types": {"L": {"smiles": "CC(=O)NC1=CC=C(O)C=C1"}}},
+            entity_types={"L": {"smiles": "CC(=O)NC1=CC=C(O)C=C1"}},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -208,9 +210,9 @@ class TestBoltzPrepareWorkspace:
     def test_ligand_ccd_entity(self, runner: BoltzRunner, tmp_path: Path) -> None:
         """Ligand entities with CCD codes are correctly constructed."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
-            extra={"entity_types": {"L": {"ccd": "ATP"}}},
+            entity_types={"L": {"ccd": "ATP"}},
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -223,7 +225,7 @@ class TestBoltzPrepareWorkspace:
         assert ligand_entry["ccd"] == "ATP"
 
     def test_raw_yaml_passthrough(self, runner: BoltzRunner, tmp_path: Path) -> None:
-        """extra['boltz_yaml'] bypasses automatic YAML generation."""
+        """boltz_yaml bypasses automatic YAML generation."""
         custom_yaml = {
             "version": 1,
             "sequences": [
@@ -232,9 +234,9 @@ class TestBoltzPrepareWorkspace:
             "constraints": [{"bond": {"atom1": ["X", 1, "CA"], "atom2": ["X", 5, "CA"]}}],
         }
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={},
-            extra={"boltz_yaml": custom_yaml},
+            boltz_yaml=custom_yaml,
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -244,15 +246,15 @@ class TestBoltzPrepareWorkspace:
         assert "constraints" in yaml_data
 
     def test_extra_dict_merged(self, runner: BoltzRunner, tmp_path: Path) -> None:
-        """CLI-level extra keys appear in config.json, consumed keys do not."""
+        """CLI-level extra keys appear in config.json."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            entity_types={"A": "protein"},
             extra={
                 "sampling_steps": 100,
                 "seed": 42,
                 "step_scale": 1.5,
-                "entity_types": {"A": "protein"},  # consumed — should NOT appear
             },
         )
         runner.prepare_workspace(input_data, workspace)
@@ -261,12 +263,31 @@ class TestBoltzPrepareWorkspace:
         assert cfg["sampling_steps"] == 100
         assert cfg["seed"] == 42
         assert cfg["step_scale"] == 1.5
+        # entity_types is a typed field, not a config.json key at all
         assert "entity_types" not in cfg
+
+    def test_boltz2_affinity_extras_merged(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        """Boltz-2-only affinity CLI knobs flat-merge through extra like any other."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={
+                "sampling_steps_affinity": 100,
+                "diffusion_samples_affinity": 3,
+                "method": "crystal",
+            },
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg["sampling_steps_affinity"] == 100
+        assert cfg["diffusion_samples_affinity"] == 3
+        assert cfg["method"] == "crystal"
 
     def test_defaults_applied(self, runner: BoltzRunner, tmp_path: Path) -> None:
         """Minimal input produces sensible defaults."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -278,7 +299,7 @@ class TestBoltzPrepareWorkspace:
 
     def test_cache_dir_in_config(self, runner: BoltzRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
         runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -290,9 +311,9 @@ class TestBoltzPrepareWorkspace:
         msa_file.write_text(">A\nMVLSPADKTNVKAAWGKVGA\n")
 
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"msa_paths": [str(msa_file)]},
+            msa_paths=[str(msa_file)],
         )
         runner.prepare_workspace(input_data, workspace)
 
@@ -305,18 +326,87 @@ class TestBoltzPrepareWorkspace:
         assert protein_entry["msa"] == "/workspace/inputs/A.a3m"
 
     def test_constraints_in_yaml(self, runner: BoltzRunner, tmp_path: Path) -> None:
-        """Constraints from extra appear in the generated YAML."""
+        """Constraints from the typed field appear in the generated YAML."""
         workspace = Workspace.create(tmp_path / "ws")
         constraints = [{"pocket": {"binder": "A", "contacts": [["B", 10]]}}]
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA", "B": "GVSEKL"},
-            extra={"constraints": constraints},
+            constraints=constraints,
         )
         runner.prepare_workspace(input_data, workspace)
 
         yaml_data = yaml.safe_load((workspace.inputs_dir / "input.yaml").read_text())
         assert "constraints" in yaml_data
         assert yaml_data["constraints"] == constraints
+
+    def test_config_full_dict_equality_num_models_1(
+        self, runner: BoltzRunner, tmp_path: Path
+    ) -> None:
+        """Full config.json dict is byte-compat with the pre-migration output (num_models=1)."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "model": "boltz2",
+            "input_path": "/workspace/inputs/input.yaml",
+            "output_dir": "/workspace/outputs/raw",
+            "cache_dir": "/app/boltz/cache",
+            "use_msa_server": True,
+        }
+
+    def test_config_full_dict_equality_with_overrides(
+        self, runner: BoltzRunner, tmp_path: Path
+    ) -> None:
+        """Full config.json dict with num_models>1, use_msa_server=False, and extra CLI knobs."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            num_models=3,
+            use_msa_server=False,
+            extra={"sampling_steps": 100, "seed": 42},
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        cfg = json.loads(workspace.config_path.read_text())
+        assert cfg == {
+            "model": "boltz2",
+            "input_path": "/workspace/inputs/input.yaml",
+            "output_dir": "/workspace/outputs/raw",
+            "cache_dir": "/app/boltz/cache",
+            "use_msa_server": False,
+            "diffusion_samples": 3,
+            "sampling_steps": 100,
+            "seed": 42,
+        }
+
+    def test_generated_yaml_equality_protein_ligand(
+        self, runner: BoltzRunner, tmp_path: Path
+    ) -> None:
+        """The generated input.yaml is unchanged for a representative protein+ligand input."""
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA", "L": ""},
+            entity_types={"L": {"smiles": "CC(=O)NC1=CC=C(O)C=C1"}},
+            constraints=[{"pocket": {"binder": "L", "contacts": [["A", 10]]}}],
+        )
+        runner.prepare_workspace(input_data, workspace)
+
+        yaml_content = (workspace.inputs_dir / "input.yaml").read_text()
+        expected = yaml.dump(
+            {
+                "version": 1,
+                "sequences": [
+                    {"protein": {"id": "A", "sequence": "MVLSPADKTNVKAAWGKVGA"}},
+                    {"ligand": {"id": "L", "smiles": "CC(=O)NC1=CC=C(O)C=C1"}},
+                ],
+                "constraints": [{"pocket": {"binder": "L", "contacts": [["A", 10]]}}],
+            },
+            default_flow_style=False,
+            sort_keys=False,
+        )
+        assert yaml_content == expected
 
 
 # ---------------------------------------------------------------------------
@@ -329,23 +419,27 @@ class TestBoltzHostValidation:
 
     def test_empty_sequences_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(sequences={})
-        with pytest.raises(AutobioError, match="sequences must be non-empty"):
+        input_data = BoltzInput(sequences={})
+        with pytest.raises(
+            AutobioError,
+            match="sequences must be non-empty, or provide a raw Boltz YAML via the boltz_yaml "
+            "field",
+        ):
             runner.prepare_workspace(input_data, workspace)
 
     def test_empty_sequences_ok_with_boltz_yaml(self, runner: BoltzRunner, tmp_path: Path) -> None:
         """Empty sequences is allowed when boltz_yaml is provided."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={},
-            extra={"boltz_yaml": {"version": 1, "sequences": []}},
+            boltz_yaml={"version": 1, "sequences": []},
         )
         # Should not raise
         runner.prepare_workspace(input_data, workspace)
 
     def test_missing_template_file_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
             templates=[tmp_path / "nonexistent.cif"],
         )
@@ -354,29 +448,74 @@ class TestBoltzHostValidation:
 
     def test_missing_msa_file_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"msa_paths": [str(tmp_path / "nonexistent.a3m")]},
+            msa_paths=[str(tmp_path / "nonexistent.a3m")],
         )
         with pytest.raises(AutobioError, match="MSA file does not exist"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_entity_types_unknown_chain_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"Z": "dna"}},
+            entity_types={"Z": "dna"},
         )
         with pytest.raises(AutobioError, match="unknown chain IDs"):
             runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_entity_type_dict_raises(self, runner: BoltzRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = StructurePredictionInput(
+        input_data = BoltzInput(
             sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
-            extra={"entity_types": {"A": {"invalid_key": "value"}}},
+            entity_types={"A": {"invalid_key": "value"}},
         )
         with pytest.raises(AutobioError, match="Unknown entity type dict"):
+            runner.prepare_workspace(input_data, workspace)
+
+
+# ---------------------------------------------------------------------------
+# TestBoltzExtraShadowRejection
+# ---------------------------------------------------------------------------
+
+
+class TestBoltzExtraShadowRejection:
+    """Promoted keys must no longer be accepted via extra — _apply_extra rejects them."""
+
+    def test_entity_types_via_extra_rejected(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"entity_types": {"A": "protein"}},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_use_msa_server_via_extra_rejected(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"use_msa_server": False},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_boltz_yaml_via_extra_rejected(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"boltz_yaml": {"version": 1, "sequences": []}},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
+            runner.prepare_workspace(input_data, workspace)
+
+    def test_msa_paths_via_extra_rejected(self, runner: BoltzRunner, tmp_path: Path) -> None:
+        workspace = Workspace.create(tmp_path / "ws")
+        input_data = BoltzInput(
+            sequences={"A": "MVLSPADKTNVKAAWGKVGA"},
+            extra={"msa_paths": ["A.a3m"]},
+        )
+        with pytest.raises(AutobioError, match="collide with typed input fields"):
             runner.prepare_workspace(input_data, workspace)
 
 
@@ -552,27 +691,34 @@ class TestBoltzParseOutput:
 
 
 class TestBoltzRegistration:
-    """Tests for tool and runner registration."""
+    """Tests for catalog Tool and runner registration."""
 
-    def test_boltz1_in_registry(self) -> None:
-        assert "boltz1" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["boltz1"]
-        assert entry.category == ToolCategory.STRUCTURE_PREDICTION
-        assert entry.input_schema is StructurePredictionInput
-        assert entry.output_schema is StructurePredictionOutput
-        assert entry.requires_gpu is True
+    def test_boltz1_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
 
-    def test_boltz2_in_registry(self) -> None:
-        assert "boltz2" in TOOL_REGISTRY
-        entry = TOOL_REGISTRY["boltz2"]
-        assert entry.category == ToolCategory.STRUCTURE_PREDICTION
-        assert "affinity" in entry.description.lower()
+        assert "boltz1" in CATALOG
+        assert set(get_tool("boltz1").modes) == {"predict"}
+        assert get_tool("boltz1").default_mode == "predict"
+        assert get_tool("boltz1").category == ToolCategory.STRUCTURE_PREDICTION
+        assert "boltz1" not in TOOL_REGISTRY
+
+    def test_boltz2_registered_as_catalog_tool(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert "boltz2" in CATALOG
+        assert set(get_tool("boltz2").modes) == {"predict"}
+        assert get_tool("boltz2").default_mode == "predict"
+        assert get_tool("boltz2").category == ToolCategory.STRUCTURE_PREDICTION
+        assert "boltz2" not in TOOL_REGISTRY
+        assert "affinity" in get_tool("boltz2").description.lower()
 
     def test_both_share_image_tag(self) -> None:
-        assert TOOL_REGISTRY["boltz1"].image_tag == TOOL_REGISTRY["boltz2"].image_tag
+        assert get_tool("boltz1").image_tag == get_tool("boltz2").image_tag
 
     def test_boltz2_longer_timeout(self) -> None:
-        assert TOOL_REGISTRY["boltz2"].default_timeout > TOOL_REGISTRY["boltz1"].default_timeout
+        boltz1_timeout = get_tool("boltz1").modes["predict"].default_timeout
+        boltz2_timeout = get_tool("boltz2").modes["predict"].default_timeout
+        assert boltz2_timeout > boltz1_timeout
 
     def test_tool_runners_registered(self) -> None:
         assert "boltz1" in TOOL_RUNNERS
@@ -589,15 +735,49 @@ class TestBoltzRegistration:
         assert isinstance(r, BoltzRunner)
         assert r.tool_name == "boltz2"
 
+    def test_config_model_boltz1_vs_boltz2(self, config: AutobioConfig, tmp_path: Path) -> None:
+        """get_runner('boltz1'/'boltz2') writes the matching config['model']."""
+        input_data = BoltzInput(sequences={"A": "MVLSPADKTNVKAAWGKVGA"})
+        for tool_name in ("boltz1", "boltz2"):
+            r = _make_runner(tool_name, config)
+            workspace = Workspace.create(tmp_path / f"ws-{tool_name}")
+            r.prepare_workspace(input_data, workspace)
+            cfg = json.loads(workspace.config_path.read_text())
+            assert cfg["model"] == tool_name
+
     def test_notes_populated(self) -> None:
         """Notes contain key operational topics for agent guidance."""
-        boltz2_notes = " ".join(TOOL_REGISTRY["boltz2"].notes)
+        boltz2_notes = " ".join(get_tool("boltz2").modes["predict"].notes)
         assert "affinity" in boltz2_notes.lower()
         assert "msa" in boltz2_notes.lower()
 
-    def test_input_format_populated(self) -> None:
-        """Input format contains entity construction and native format info."""
-        fmt = " ".join(TOOL_REGISTRY["boltz2"].input_format)
-        assert "entity_types" in fmt
-        assert "boltz_yaml" in fmt
-        assert "yaml" in fmt.lower()
+    def test_boltz_tool_constants_registered(self) -> None:
+        import autobio.tools  # noqa: F401 - importing populates the catalog
+
+        assert BOLTZ1_TOOL.name == "boltz1"
+        assert BOLTZ2_TOOL.name == "boltz2"
+        assert get_tool("boltz1") is BOLTZ1_TOOL
+        assert get_tool("boltz2") is BOLTZ2_TOOL
+
+
+def test_info_snapshot_boltz1() -> None:
+    import autobio.tools  # noqa: F401 - importing populates the catalog
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("boltz1"), OutputFormat.JSON))
+    assert parsed["modes"][0]["name"] == "predict"
+    props = parsed["modes"][0]["input_schema"]["properties"]
+    assert props["use_msa_server"]["x-autobio"]["widget"] == "toggle"
+    assert props["entity_types"]["x-autobio"]["tier"] == "advanced"
+    assert "output_schema" in parsed["modes"][0]
+
+
+def test_info_snapshot_boltz2() -> None:
+    import autobio.tools  # noqa: F401 - importing populates the catalog
+    from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
+
+    parsed = json.loads(format_tool_info_catalog(get_tool("boltz2"), OutputFormat.JSON))
+    assert parsed["modes"][0]["name"] == "predict"
+    props = parsed["modes"][0]["input_schema"]["properties"]
+    assert props["boltz_yaml"]["x-autobio"]["tier"] == "advanced"
+    assert "output_schema" in parsed["modes"][0]
