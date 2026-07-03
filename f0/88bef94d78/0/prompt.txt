@@ -2834,3 +2834,83 @@ The root `CLAUDE.md` "Adding a New Tool" summary (lines 70, 86) still says *"Reg
 Reasoning: The core deliverable — README.md's tool/mode tables, the `--mode` CLI docs, and SCHEMA_SPEC.md's `register(Tool(...))` example — is accurate, thorough, and independently verified against `catalog.py`, `base.py`, `tools/__init__.py`, and the real `esmfold.py`/`freesasa.py`/`mpnn.py` source. All stale flat names are gone, no `TOOL_REGISTRY`/`ToolEntry` remain, the diff boundary is clean (only the 4 target files touched), and the test/lint/type suite is unaffected (pytest 0 failures, ruff clean, mypy clean). However, the Critical finding — TOOL_SPEC.md documenting a non-existent `Mode.input_format` field and a non-existent "Input Format" CLI section as if they were live API — is exactly the kind of API-inaccuracy this task was chartered to eliminate, and it's a quick, well-scoped fix (delete the paragraph or clearly mark it as unimplemented/aspirational) before this can be called fully done.</result>
 <usage><subagent_tokens>138890</subagent_tokens><tool_uses>56</tool_uses><duration_ms>387817</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a4b14c3898533c0af</task-id>
+<tool-use-id>toolu_014X4d3SUSM4yV1ZrdzsToDQ</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a4b14c3898533c0af.output</output-file>
+<status>completed</status>
+<summary>Agent "Whole-branch final review teardown-cleanup" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have completed a thorough whole-branch review. All verification commands pass and every cross-cutting concern checks out. Here is my final assessment.
+
+---
+
+## Final Review: PR #21 (Tools→Modes teardown — cleanups + docs), `f5e0f16..8228b22`
+
+### Strengths
+
+- **Genuinely behavior-preserving.** Full non-docker/gpu suite passes (`pytest` exit 0, ~1300 tests), `ruff check` clean, `mypy` clean (57 files). No `config.json`/generated-file logic changed in any runner.
+- **Task 2 (`_resolve_container_path` hoist) is correct.** The 12 deleted copies were logically identical to the new base-class staticmethod (`base.py:303`); the `ligandmpnn_packer.py` call site was correctly switched from the module-level function to `self._resolve_container_path(...)` (diff line 2302). `Path` moved from `TYPE_CHECKING` to a runtime import in `base.py`; dead `Path` imports removed from the runners that no longer need them, and ruff confirms none are now unused.
+- **Task 3c (rfd3/complexa ref-check dedup) is not just a dedup — it fixes a latent inconsistency, safely.** The two pre-branch copies used *different* "Provided files:" formatting: the in-loop copy in `prepare_workspace` used an unsorted `[p.name for p in ...]`, while `_validate_inputs` used `sorted(provided_names)`. Because `prepare_workspace` calls `self._validate_inputs(...)` first (rfd3.py:55, complexa.py:100), the unsorted copy was **unreachable dead code** — the reachable error message was always the `sorted(...)` one. The consolidated `_check_input_references` helper uses `sorted(provided_names)`, so the *reachable* message is byte-identical, and `set(filename_map)` equals the old `provided_names` set. Error text preserved exactly.
+- **Task 3a (esm_if1/antifold staging hoist) is byte-compat.** The copy block moved above the mode branch unchanged; config dicts (keys/values/order) are identical; the added `assert self.current_mode.name == "score"` guards are the only additions to the score paths; antifold's `_validate_chain_ids(...)` stays before the branch.
+- **Docs are accurate — the highest-value check.** Every tool/mode name in `README.md` and `cli/README.md` cross-checks against the catalog (all 28 tools verified); no stale flat names remain. The `TOOL_SPEC.md` `input_format` inaccuracy is gone and now correctly states "the `Mode` dataclass has no separate `input_format` field" (confirmed: `Mode` fields contain no `input_format`). The dispatch-constant names are all correct against real code (`_MODE_CONFIG` in rosetta/complexa, `_VARIANT_CONFIG` in openmm, `_MODE_COMMAND` in evoef2). The `_apply_extra` prose matches the real implementation (`base.py:188`) exactly. The `SCHEMA_SPEC.md` DIFFDOCK example is a valid `register(Tool(...))` — I constructed it successfully. `CLAUDE.md` no longer references `TOOL_REGISTRY`/`ToolEntry`.
+- **Dead code truly dead.** `grep` for the 3 removed Input schemas returns zero; Output siblings + `ESMEmbedInput`/`ESM2Input` remain importable; `_ROSETTA_BIN` removed while `_ROSETTA_DB` is kept.
+- **Test hygiene sound.** `conftest.py` adds the single side-effect `import autobio.tools`; no generic `import autobio.tools  # noqa` remains in `tests/unit/`; exactly the 2 intended aliased imports (`esm_if1_module`, `antifold_module`) are kept; catalog is populated for the whole suite (proven green).
+- **Boundary clean.** `git diff --name-only` shows no `containers/`, no `docs/WORKPLAN|DESIGN|REFACTOR.md`, no `CREDIT_SYSTEM.md`; the only `docs/superpowers/**` change is the newly-added plan for this PR. Working tree/HEAD unmodified (still `8228b22`).
+
+### Issues
+
+**Critical:** None.
+**Important:** None.
+**Minor:** None. (The plan's Task-4 commit-message phrasing "133 per-method imports" doesn't match the actual ~96 removed, but the real commit `38c6aa4` says "drop redundant per-test tool imports" with no numeric claim, so nothing in the branch is inaccurate.)
+
+### Assessment
+
+The branch composes into a clean, catalog-only, de-duplicated, accurately-documented state. Every binding constraint is satisfied, the excluded templates/msa bug was correctly left untouched, and all independent verification commands pass.
+
+**Ready to merge?** **Yes**
+**Reasoning:** All five tasks plus the fix commit are behavior-preserving with tests/ruff/mypy green; docs are verifiably accurate against the real catalog and code (including the specifically-called-out `input_format` and dispatch-constant fixes), and no out-of-scope files were touched.</result>
+<usage><subagent_tokens>117977</subagent_tokens><tool_uses>18</tool_uses><duration_ms>229413</duration_ms></usage>
+</task-notification>
+
+---
+
+PR merged and branch deleted. go ahead with the template/msa bug fix
+
+---
+
+<task-notification>
+<task-id>a9a2358af76fe4904</task-id>
+<tool-use-id>toolu_011xTf7Bwdg77iuJQ6Jm1mKG</tool-use-id>
+<output-file>/tmp/claude-1001/-home-briney-git-autobio/bd522b89-efe2-4c84-9179-69456ba55dac/tasks/a9a2358af76fe4904.output</output-file>
+<status>completed</status>
+<summary>Agent "Recon templates/msa wiring gap" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed the file is git-ignored as expected.
+
+## Summary
+
+I traced the boltz (working), openfold3, and chai template/MSA plumbing end-to-end, including pulling actual vendored source (`openfold-3`, `chai_lab==0.6.1`) out of the already-built local Docker images (`autobio-openfold3:1.0.0`, `ghcr.io/briney/autobio-chai:1.0.0`) to determine ground truth about what the underlying ML tools actually support — not just what autobio's wrapper code does.
+
+Fact sheet written to: `/home/briney/git/autobio/.superpowers/sdd/recon/templates_msa.md` (git-ignored per `.superpowers/sdd/.gitignore`).
+
+Key findings, most important first:
+
+- **boltz (reference)**: `_build_boltz_yaml` in `src/autobio/tools/boltz.py` writes templates as a top-level YAML `templates: [{cif: ...}]` list and MSAs as a per-chain `msa:` key inside the native Boltz YAML — the upstream `boltz` CLI (`containers/boltz/run.sh`) reads that YAML natively. No synthesis needed; autobio just copies files and rewrites paths.
+
+- **openfold3 `msa_paths` — feasible fix.** The real `InferenceQuerySet.Chain` model (found in the container image) has `main_msa_file_paths`/`paired_msa_file_paths` fields that genuinely accept user `.a3m`/`.npz`/`.sto` files per chain. `src/autobio/tools/openfold3.py`'s `_build_query_json` (lines ~161-227) never reads `input_data.msa_paths` at all — this is a straightforward wiring gap, fixable the same way boltz does it (chain-ID-prefixed filenames → per-chain field).
+
+- **openfold3 `templates` and chai `templates` — NOT simply wireable.** Both underlying tools only accept a template-search *hits/alignment file* (`.a3m`/`.sto`/`.m8`, containing real sequence-alignment data against PDB-ID-identified structures), not a raw user-supplied structure file. This is confirmed directly from vendored source: OpenFold3's `TemplatePreprocessorSettings` + `Chain.template_alignment_file_path`/`template_entry_chain_ids`, and Chai-1's `run_inference(template_hits_path=...)` → `parse_m8_to_template_hits(..., template_cif_folder=...)`. Producing this file requires actually running a homology/alignment pipeline — real new engineering, not a config-key fix. `containers/chai/run_chai.py` also never reads a template config key at all, despite `chai_lab` exposing `template_hits_path`.
+
+- Both `OpenFold3Input.templates`/`.msa_paths` and `Chai1Input.templates` are copied into the workspace and validated (file-exists checks) but never referenced by `_build_query_json`/config — confirmed by `tests/unit/test_openfold3.py::test_templates_copied` and `tests/unit/test_chai.py::test_templates_copied`, which explicitly assert `"templates" not in cfg`, i.e. the bug is currently encoded as expected test behavior.
+
+- Byte-compat risk: `test_config_full_dict_equality_minimal`/`_with_overrides` in both `test_openfold3.py` (lines 411-457) and `test_chai.py` (lines 327-380) do exact `assert cfg == {...}` — any fix must be audited against these and likely needs new cases added for the `msa_paths`-provided scenario.
+
+- No integration test in the repo (`test_openfold3_integration.py`, `test_chai_integration.py`, `test_boltz_integration.py`) touches templates or MSA paths at all — a pre-existing coverage gap worth flagging for the fix's test plan.
+
+Recommended framing for the controller: fix `openfold3.msa_paths` by wiring it (mirrors boltz); treat `openfold3.templates` and `chai.templates` as a separate, harder decision — either scope real alignment/m8-synthesis work, or deprecate/remove those two fields, since "wiring" them to the container config is not actually possible without that extra pipeline.</result>
+<usage><subagent_tokens>131828</subagent_tokens><tool_uses>55</tool_uses><duration_ms>340423</duration_ms></usage>
+</task-notification>
