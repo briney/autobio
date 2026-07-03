@@ -105,6 +105,59 @@ class BAddGInput(BaseInput):
     )
 
 
+class StaBddGInput(BaseInput):
+    """Input for StaB-ddG binding-ddG prediction (single ``predict`` mode)."""
+
+    structure_path: Path = Field(
+        description="Path to the protein complex PDB structure.",
+        json_schema_extra=ui(widget=Widget.FILE, tier=Tier.PRIMARY, order=0),
+    )
+    mutations: list[str] = Field(
+        description=(
+            "Mutations to score, StaB-ddG format [WT_AA][ChainID][Resnum][Mut_AA] "
+            "(e.g. ['YH103H', 'QD30V'])."
+        ),
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=1),
+    )
+    chains: str = Field(
+        description="Binding interface as 'binder1_binder2' (e.g. 'ABC_DE').",
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.PRIMARY, order=2),
+    )
+    mc_samples: int = Field(
+        default=20,
+        ge=1,
+        description="Monte-Carlo samples for variance reduction.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
+    )
+    noise_level: float = Field(
+        default=0.1,
+        description="Backbone perturbation noise level.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, step=0.05, order=11),
+    )
+    batch_size: int = Field(
+        default=10000,
+        ge=1,
+        description="Batch size for scoring.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=12),
+    )
+    trials: int = Field(
+        default=1,
+        ge=1,
+        description="Number of independent prediction trials.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=13),
+    )
+    seed: int = Field(
+        default=0,
+        description="Random seed.",
+        json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=14),
+    )
+    device: str = Field(
+        default="auto",
+        description="Compute device ('auto', 'cpu', or 'cuda').",
+        json_schema_extra=ui(widget=Widget.TEXT, tier=Tier.ADVANCED, order=15),
+    )
+
+
 class ScoredStructure(BaseModel):
     """Scoring results for a single structure."""
 
