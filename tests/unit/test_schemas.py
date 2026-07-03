@@ -10,7 +10,8 @@ import pytest
 from pydantic import ValidationError
 
 from autobio.schemas.antibody import (
-    AntibodyInput,
+    AntibodyEmbeddingInput,
+    AntibodyPLLInput,
     AntibodyPLLOutput,
     AntibodySequence,
     SequencePLL,
@@ -215,15 +216,15 @@ class TestAntibodySequence:
         assert restored == seq
 
 
-class TestAntibodyInput:
+class TestAntibodyEmbeddingInput:
     def test_required_sequences(self) -> None:
-        inp = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")])
+        inp = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")])
         assert len(inp.sequences) == 1
         assert inp.layer is None
         assert inp.pooling is None
 
     def test_optional_fields(self) -> None:
-        inp = AntibodyInput(
+        inp = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")],
             layer=10,
             pooling="mean",
@@ -231,42 +232,42 @@ class TestAntibodyInput:
         assert inp.layer == 10
         assert inp.pooling == "mean"
 
+    def test_no_per_position_field(self) -> None:
+        assert "per_position" not in AntibodyEmbeddingInput.model_fields
+
     def test_extra_passthrough(self) -> None:
-        inp = AntibodyInput(
+        inp = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")],
             extra={"seed": 42, "batch_size": 8},
         )
         assert inp.extra["seed"] == 42
         assert inp.extra["batch_size"] == 8
 
+    def test_accepts_fasta_text(self) -> None:
+        fasta = ">ab1|heavy\nEVQLVESGG\n>ab1|light\nDIQMTQSPS\n"
+        inp = AntibodyEmbeddingInput(sequences=fasta)
+        assert len(inp.sequences) == 1
+        assert inp.sequences[0].id == "ab1"
+        assert inp.sequences[0].heavy_chain == "EVQLVESGG"
+        assert inp.sequences[0].light_chain == "DIQMTQSPS"
+
+
+class TestAntibodyPLLInput:
+    def test_required_sequences(self) -> None:
+        inp = AntibodyPLLInput(sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")])
+        assert len(inp.sequences) == 1
+        assert inp.per_position is False
+
     def test_per_position_typed_field(self) -> None:
-        inp = AntibodyInput(
+        inp = AntibodyPLLInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLV")],
             per_position=True,
         )
         assert inp.per_position is True
 
-    def test_round_trip(self) -> None:
-        inp = AntibodyInput(
-            sequences=[
-                AntibodySequence(id="ab1", heavy_chain="EVQLV", light_chain="DIQMT"),
-                AntibodySequence(id="ab2", heavy_chain="QVQLV"),
-            ],
-            layer=20,
-            pooling="per_residue",
-        )
-        dumped = inp.model_dump()
-        restored = AntibodyInput.model_validate(dumped)
-        assert len(restored.sequences) == 2
-        assert restored.layer == 20
-
-    def test_accepts_fasta_text(self) -> None:
-        fasta = ">ab1|heavy\nEVQLVESGG\n>ab1|light\nDIQMTQSPS\n"
-        inp = AntibodyInput(sequences=fasta)
-        assert len(inp.sequences) == 1
-        assert inp.sequences[0].id == "ab1"
-        assert inp.sequences[0].heavy_chain == "EVQLVESGG"
-        assert inp.sequences[0].light_chain == "DIQMTQSPS"
+    def test_no_layer_or_pooling_fields(self) -> None:
+        assert "layer" not in AntibodyPLLInput.model_fields
+        assert "pooling" not in AntibodyPLLInput.model_fields
 
 
 class TestSequencePLL:
@@ -587,7 +588,7 @@ class TestStructureDesignOutput:
         (InverseFoldingInput, {"structure_path": Path("/x.pdb")}),
         (ScoringInput, {"structure_path": Path("/x.pdb")}),
         (
-            AntibodyInput,
+            AntibodyEmbeddingInput,
             {"sequences": [AntibodySequence(id="ab1", heavy_chain="EVQLV")]},
         ),
     ],

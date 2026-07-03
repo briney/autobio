@@ -2,9 +2,10 @@
 
 Shared by CurrAb, BALM-paired, BALM-unpaired, ft-ESM, AbLang2, and
 AntiBERTa2.  Each model is one catalog Tool with two modes (embedding and
-pseudo log-likelihood), all using ``AntibodyInput`` as input.  The embedding
-mode reuses ``EmbeddingOutput`` from :mod:`autobio.schemas.embedding`; the PLL
-mode returns ``AntibodyPLLOutput``.
+pseudo log-likelihood).  The embedding mode uses ``AntibodyEmbeddingInput``
+and the PLL mode uses ``AntibodyPLLInput`` (both extend ``AntibodyBaseInput``).
+The embedding mode reuses ``EmbeddingOutput`` from
+:mod:`autobio.schemas.embedding`; the PLL mode returns ``AntibodyPLLOutput``.
 """
 
 from __future__ import annotations
@@ -17,20 +18,17 @@ from autobio.schemas.hints import Tier, Widget, ui
 from autobio.schemas.sequences import AntibodySequenceSet  # noqa: TC001 - runtime field type
 
 __all__ = [
-    "AntibodyInput",
+    "AntibodyBaseInput",
+    "AntibodyEmbeddingInput",
+    "AntibodyPLLInput",
     "AntibodyPLLOutput",
     "AntibodySequence",
     "SequencePLL",
 ]
 
 
-class AntibodyInput(BaseInput):
-    """Input schema for antibody language model tools.
-
-    Used by all antibody LM tools (CurrAb, BALM-paired, BALM-unpaired,
-    ft-ESM, AbLang2, AntiBERTa2) for both embedding extraction and pseudo
-    log-likelihood.
-    """
+class AntibodyBaseInput(BaseInput):
+    """Shared antibody-LM input: the sequence set (plus inherited ``extra``)."""
 
     sequences: AntibodySequenceSet = Field(
         description=(
@@ -39,20 +37,19 @@ class AntibodyInput(BaseInput):
         ),
         json_schema_extra=ui(widget=Widget.SEQUENCE, flavor="antibody", tier=Tier.PRIMARY, order=0),
     )
+
+
+class AntibodyEmbeddingInput(AntibodyBaseInput):
+    """Input for the ``embedding`` mode."""
+
     layer: int | None = Field(
         default=None,
-        description=(
-            "Model layer from which to extract embeddings. "
-            "None uses the final layer. Only used in embedding mode."
-        ),
+        description="Model layer from which to extract embeddings. None uses the final layer.",
         json_schema_extra=ui(widget=Widget.NUMBER, tier=Tier.ADVANCED, order=10),
     )
     pooling: str | None = Field(
         default=None,
-        description=(
-            "Pooling strategy for per-residue embeddings "
-            "('mean', 'cls', 'per_residue'). Only used in embedding mode."
-        ),
+        description=("Pooling strategy for per-residue embeddings ('mean', 'cls', 'per_residue')."),
         json_schema_extra=ui(
             widget=Widget.SELECT,
             tier=Tier.PRIMARY,
@@ -60,9 +57,14 @@ class AntibodyInput(BaseInput):
             enum_labels={"mean": "Mean pool", "cls": "CLS token", "per_residue": "Per-residue"},
         ),
     )
+
+
+class AntibodyPLLInput(AntibodyBaseInput):
+    """Input for the ``pll`` (pseudo log-likelihood) mode."""
+
     per_position: bool = Field(
         default=False,
-        description="Return per-position PLL scores (pll mode only). Slower.",
+        description="Return per-position PLL scores. Slower.",
         json_schema_extra=ui(widget=Widget.TOGGLE, tier=Tier.ADVANCED, order=11),
     )
 

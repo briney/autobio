@@ -14,7 +14,12 @@ from autobio.core.config import AutobioConfig
 from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.core.workspace import Workspace
-from autobio.schemas.antibody import AntibodyInput, AntibodyPLLOutput, AntibodySequence
+from autobio.schemas.antibody import (
+    AntibodyEmbeddingInput,
+    AntibodyPLLInput,
+    AntibodyPLLOutput,
+    AntibodySequence,
+)
 from autobio.schemas.embedding import EmbeddingOutput
 from autobio.tools import TOOL_RUNNERS, get_runner
 from autobio.tools.antibody_lm import AntibodyLMRunner
@@ -125,7 +130,7 @@ class TestAntibodyLMPrepareWorkspace:
     def test_paired_json_input(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         """Paired sequences are written as JSON with both chains."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH, light_chain=_VL)]
         )
         currab_runner.prepare_workspace(input_data, workspace)
@@ -139,7 +144,7 @@ class TestAntibodyLMPrepareWorkspace:
 
     def test_heavy_only_json(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_runner.prepare_workspace(input_data, workspace)
 
         data = json.loads((workspace.inputs_dir / "sequences.json").read_text())
@@ -148,7 +153,7 @@ class TestAntibodyLMPrepareWorkspace:
 
     def test_light_only_json(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", light_chain=_VL)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", light_chain=_VL)])
         currab_runner.prepare_workspace(input_data, workspace)
 
         data = json.loads((workspace.inputs_dir / "sequences.json").read_text())
@@ -176,14 +181,14 @@ class TestAntibodyLMPrepareWorkspace:
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH)]
         else:
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH, light_chain=_VL)]
-        runner.prepare_workspace(AntibodyInput(sequences=seqs), workspace)
+        runner.prepare_workspace(AntibodyEmbeddingInput(sequences=seqs), workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["model_name"] == expected_model
 
     def test_mode_embedding(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -191,7 +196,7 @@ class TestAntibodyLMPrepareWorkspace:
 
     def test_mode_pll(self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyPLLInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_pll_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -222,7 +227,7 @@ class TestAntibodyLMPrepareWorkspace:
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH, light_chain=_VL)]
         else:
             seqs = [AntibodySequence(id="ab1", heavy_chain=_VH)]
-        runner.prepare_workspace(AntibodyInput(sequences=seqs), workspace)
+        runner.prepare_workspace(AntibodyEmbeddingInput(sequences=seqs), workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["model_family"] == expected_family
@@ -230,7 +235,7 @@ class TestAntibodyLMPrepareWorkspace:
 
     def test_layer_in_config(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=20
         )
         currab_runner.prepare_workspace(input_data, workspace)
@@ -240,7 +245,7 @@ class TestAntibodyLMPrepareWorkspace:
 
     def test_pooling_default_mean(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -250,16 +255,16 @@ class TestAntibodyLMPrepareWorkspace:
         self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyPLLInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_pll_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["per_position"] is False
 
     def test_per_position_opt_in(self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path) -> None:
-        """per_position is a typed AntibodyInput field (not passed via extra)."""
+        """per_position is a typed AntibodyPLLInput field (not passed via extra)."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
             per_position=True,
         )
@@ -270,7 +275,7 @@ class TestAntibodyLMPrepareWorkspace:
 
     def test_extra_dict_merged(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
             extra={"batch_size": 16, "seed": 42},
         )
@@ -297,7 +302,7 @@ class TestAntibodyLMApplyExtraRejections:
         self, currab_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
             extra={"model_name": "some-other-model"},
         )
@@ -308,7 +313,7 @@ class TestAntibodyLMApplyExtraRejections:
         self, currab_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
             extra={"layer": 5},
         )
@@ -319,7 +324,7 @@ class TestAntibodyLMApplyExtraRejections:
         self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
             extra={"per_position": True},
         )
@@ -342,7 +347,7 @@ class TestAntibodyLMByteCompatConfig:
         self, currab_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -365,7 +370,7 @@ class TestAntibodyLMByteCompatConfig:
         self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyPLLInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_pll_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -388,10 +393,8 @@ class TestAntibodyLMByteCompatConfig:
         self, currab_pll_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyPLLInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
-            layer=10,
-            pooling="cls",
             per_position=True,
         )
         currab_pll_runner.prepare_workspace(input_data, workspace)
@@ -404,8 +407,8 @@ class TestAntibodyLMByteCompatConfig:
             "input_file": "/workspace/inputs/sequences.json",
             "output_dir": "/workspace/outputs/raw",
             "mode": "pll",
-            "layer": 10,
-            "pooling": "cls",
+            "layer": None,
+            "pooling": "mean",
             "per_position": True,
             "hf_cache": "/app/antibody-lm/hf_cache",
         }
@@ -417,7 +420,7 @@ class TestAntibodyLMByteCompatConfig:
     ) -> None:
         """A non-consumed extra key flat-merges after the fixed keys."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)],
             extra={"custom_flag": "value"},
         )
@@ -451,7 +454,7 @@ class TestAntibodyLMHostValidation:
 
     def test_empty_sequences_raises(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[])
+        input_data = AntibodyEmbeddingInput(sequences=[])
         with pytest.raises(AutobioError, match="sequences must be non-empty"):
             currab_runner.prepare_workspace(input_data, workspace)
 
@@ -464,7 +467,9 @@ class TestAntibodyLMHostValidation:
         self, currab_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="MVLS123BAD")])
+        input_data = AntibodyEmbeddingInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="MVLS123BAD")]
+        )
         with pytest.raises(AutobioError, match="heavy_chain.*invalid characters"):
             currab_runner.prepare_workspace(input_data, workspace)
 
@@ -472,7 +477,9 @@ class TestAntibodyLMHostValidation:
         self, currab_runner: AntibodyLMRunner, tmp_path: Path
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", light_chain="DI@MT!")])
+        input_data = AntibodyEmbeddingInput(
+            sequences=[AntibodySequence(id="ab1", light_chain="DI@MT!")]
+        )
         with pytest.raises(AutobioError, match="light_chain.*invalid characters"):
             currab_runner.prepare_workspace(input_data, workspace)
 
@@ -481,7 +488,9 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         workspace = Workspace.create(tmp_path / "ws")
         # CurrAb max is 320 tokens
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="A" * 321)])
+        input_data = AntibodyEmbeddingInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="A" * 321)]
+        )
         with pytest.raises(AutobioError, match="exceeds maximum"):
             currab_runner.prepare_workspace(input_data, workspace)
 
@@ -490,7 +499,7 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         """BALM-unpaired rejects paired (both chains) input."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH, light_chain=_VL)]
         )
         with pytest.raises(AutobioError, match="does not support paired"):
@@ -501,13 +510,13 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         """BALM-paired rejects single-chain input."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         with pytest.raises(AutobioError, match="requires both"):
             balm_paired_runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_layer_raises(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=50
         )
         with pytest.raises(AutobioError, match="layer must be between 0 and 33"):
@@ -517,7 +526,7 @@ class TestAntibodyLMHostValidation:
         """BALM has 24 layers, so layer=30 should fail."""
         runner = _make_runner("balm_unpaired", config)
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=30
         )
         with pytest.raises(AutobioError, match="layer must be between 0 and 24"):
@@ -525,7 +534,7 @@ class TestAntibodyLMHostValidation:
 
     def test_invalid_pooling_raises(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], pooling="max"
         )
         with pytest.raises(AutobioError, match="pooling must be one of"):
@@ -534,7 +543,9 @@ class TestAntibodyLMHostValidation:
     def test_valid_layer_zero(self, currab_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         """Layer 0 (input embedding) is valid."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=0)
+        input_data = AntibodyEmbeddingInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=0
+        )
         currab_runner.prepare_workspace(input_data, workspace)
         cfg = json.loads(workspace.config_path.read_text())
         assert cfg["layer"] == 0
@@ -544,13 +555,15 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         """Ambiguous residue codes (B, X, Z, etc.) are accepted."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLXBZ")])
+        input_data = AntibodyEmbeddingInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="EVQLXBZ")]
+        )
         currab_runner.prepare_workspace(input_data, workspace)
 
     def test_invalid_layer_ablang2(self, ablang2_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         """AbLang2 has 12 layers — layer=20 should fail."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=20
         )
         with pytest.raises(AutobioError, match="layer must be between 0 and 12"):
@@ -561,7 +574,7 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         """AntiBERTa2 has 16 layers — layer=20 should fail."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(
+        input_data = AntibodyEmbeddingInput(
             sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)], layer=20
         )
         with pytest.raises(AutobioError, match="layer must be between 0 and 16"):
@@ -572,14 +585,16 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         """AntiBERTa2 max is 250 tokens — 260 residues should fail."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain="A" * 260)])
+        input_data = AntibodyEmbeddingInput(
+            sequences=[AntibodySequence(id="ab1", heavy_chain="A" * 260)]
+        )
         with pytest.raises(AutobioError, match="exceeds maximum"):
             antiberta2_runner.prepare_workspace(input_data, workspace)
 
     def test_cache_path_ablang2(self, ablang2_runner: AntibodyLMRunner, tmp_path: Path) -> None:
         """AbLang2 config.json should contain its custom cache path."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         ablang2_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -590,7 +605,7 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         """AntiBERTa2 config.json should contain its custom cache path."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         antiberta2_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -601,7 +616,7 @@ class TestAntibodyLMHostValidation:
     ) -> None:
         """Existing models should still use the original HF cache path."""
         workspace = Workspace.create(tmp_path / "ws")
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         currab_runner.prepare_workspace(input_data, workspace)
 
         cfg = json.loads(workspace.config_path.read_text())
@@ -771,10 +786,10 @@ class TestAntibodyLMRegistration:
         assert model_name in list_tools(category=ToolCategory.EMBEDDING)
 
     @pytest.mark.parametrize(
-        ("mode_name", "output_schema", "timeout"),
+        ("mode_name", "input_schema", "output_schema", "timeout"),
         [
-            ("embedding", EmbeddingOutput, 600),
-            ("pll", AntibodyPLLOutput, 1800),
+            ("embedding", AntibodyEmbeddingInput, EmbeddingOutput, 600),
+            ("pll", AntibodyPLLInput, AntibodyPLLOutput, 1800),
         ],
     )
     @pytest.mark.parametrize("model_name", _MODEL_NAMES)
@@ -782,11 +797,12 @@ class TestAntibodyLMRegistration:
         self,
         model_name: str,
         mode_name: str,
+        input_schema: type,
         output_schema: type,
         timeout: int,
     ) -> None:
         mode = get_tool(model_name).modes[mode_name]
-        assert mode.input_schema is AntibodyInput
+        assert mode.input_schema is input_schema
         assert mode.output_schema is output_schema
         assert mode.default_timeout == timeout
         assert mode.supports_batch is True
@@ -861,6 +877,12 @@ class TestAntibodyLMInfoSnapshot:
         assert "output_schema" in pll_mode
         assert pll_mode["category"] == "embedding"
 
+        embedding_props = embedding_mode["input_schema"]["properties"]
+        pll_props = pll_mode["input_schema"]["properties"]
+        assert "per_position" not in embedding_props
+        assert "layer" not in pll_props
+        assert "pooling" not in pll_props
+
 
 # ---------------------------------------------------------------------------
 # TestAntibodyLMRunMetadataMode — full run() lifecycle threads mode into metadata
@@ -894,7 +916,7 @@ class TestAntibodyLMRunMetadataMode:
         ):
             r = AntibodyLMRunner("currab", config)
 
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyEmbeddingInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         out = r.run(input_data, gpu="none", output_dir=output_dir, mode="embedding")
         assert out.metadata.mode == "embedding"
         assert out.metadata.tool_name == "currab"
@@ -924,7 +946,7 @@ class TestAntibodyLMRunMetadataMode:
         ):
             r = AntibodyLMRunner("currab", config)
 
-        input_data = AntibodyInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
+        input_data = AntibodyPLLInput(sequences=[AntibodySequence(id="ab1", heavy_chain=_VH)])
         out = r.run(input_data, gpu="none", output_dir=output_dir, mode="pll")
         assert out.metadata.mode == "pll"
         assert out.metadata.tool_name == "currab"

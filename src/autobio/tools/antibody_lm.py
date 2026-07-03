@@ -8,7 +8,7 @@ runner class (``AntibodyLMRunner``), dispatching model spec on
 ``self.tool_name`` and mode on ``self.current_mode.name``.
 
 Additional tool-specific parameters (``batch_size``, ``seed``, etc.) are
-passed through the ``extra`` dict on ``AntibodyInput``.
+passed through the ``extra`` dict on the mode's input schema.
 """
 
 from __future__ import annotations
@@ -20,7 +20,13 @@ from typing import TYPE_CHECKING, Any
 from autobio.core.catalog import Mode, Tool, register
 from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
-from autobio.schemas.antibody import AntibodyInput, AntibodyPLLOutput, SequencePLL
+from autobio.schemas.antibody import (
+    AntibodyBaseInput,
+    AntibodyEmbeddingInput,
+    AntibodyPLLInput,
+    AntibodyPLLOutput,
+    SequencePLL,
+)
 from autobio.schemas.base import BaseInput  # noqa: TC001 - needed at runtime for isinstance
 from autobio.schemas.embedding import EmbeddingOutput, SequenceEmbedding
 from autobio.tools.base import ToolRunner
@@ -139,7 +145,7 @@ class AntibodyLMRunner(ToolRunner):
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and input sequences into the workspace."""
-        assert isinstance(input_data, AntibodyInput)
+        assert isinstance(input_data, AntibodyBaseInput)
         assert self.current_mode is not None
 
         spec = _MODEL_CONFIG[self.tool_name]
@@ -168,9 +174,9 @@ class AntibodyLMRunner(ToolRunner):
             "input_file": "/workspace/inputs/sequences.json",
             "output_dir": "/workspace/outputs/raw",
             "mode": mode,
-            "layer": input_data.layer,
-            "pooling": input_data.pooling or "mean",
-            "per_position": input_data.per_position,
+            "layer": getattr(input_data, "layer", None),
+            "pooling": getattr(input_data, "pooling", None) or "mean",
+            "per_position": getattr(input_data, "per_position", False),
             "hf_cache": spec.cache_path,
         }
 
@@ -241,7 +247,7 @@ class AntibodyLMRunner(ToolRunner):
         )
 
     @staticmethod
-    def _validate_inputs(input_data: AntibodyInput, spec: _ModelSpec) -> None:
+    def _validate_inputs(input_data: AntibodyBaseInput, spec: _ModelSpec) -> None:
         """Host-side validation — catch errors before container launch."""
         if not input_data.sequences:
             raise AutobioError("sequences must be non-empty.")
@@ -282,18 +288,17 @@ class AntibodyLMRunner(ToolRunner):
                     f"maximum of {spec.max_tokens} tokens for {spec.model_name}."
                 )
 
-        # Validate layer
-        if input_data.layer is not None and not (0 <= input_data.layer <= spec.num_layers):
-            raise AutobioError(
-                f"layer must be between 0 and {spec.num_layers} for "
-                f"{spec.model_name}, got {input_data.layer}."
-            )
-
-        # Validate pooling
-        if input_data.pooling is not None and input_data.pooling not in _VALID_POOLING:
-            raise AutobioError(
-                f"pooling must be one of {sorted(_VALID_POOLING)}, got {input_data.pooling!r}."
-            )
+        # Embedding-only fields (absent on the PLL input schema).
+        if isinstance(input_data, AntibodyEmbeddingInput):
+            if input_data.layer is not None and not (0 <= input_data.layer <= spec.num_layers):
+                raise AutobioError(
+                    f"layer must be between 0 and {spec.num_layers} for "
+                    f"{spec.model_name}, got {input_data.layer}."
+                )
+            if input_data.pooling is not None and input_data.pooling not in _VALID_POOLING:
+                raise AutobioError(
+                    f"pooling must be one of {sorted(_VALID_POOLING)}, got {input_data.pooling!r}."
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +359,7 @@ def _register_antibody_lm(
                     name="embedding",
                     display_name="Embed sequences",
                     description=embed_description,
-                    input_schema=AntibodyInput,
+                    input_schema=AntibodyEmbeddingInput,
                     output_schema=EmbeddingOutput,
                     default_timeout=600,
                     supports_batch=True,
@@ -364,7 +369,7 @@ def _register_antibody_lm(
                     name="pll",
                     display_name="Pseudo log-likelihood",
                     description=pll_description,
-                    input_schema=AntibodyInput,
+                    input_schema=AntibodyPLLInput,
                     output_schema=AntibodyPLLOutput,
                     default_timeout=1800,
                     supports_batch=True,
