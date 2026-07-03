@@ -1,17 +1,17 @@
-"""OpenMM tool runners — energy minimization, relaxation, and MD simulation.
+"""OpenMM tool — energy minimization, relaxation, and MD simulation.
 
-All OpenMM tools share a single ``OpenMMRunner`` class that dispatches by
-``tool_name`` using the ``_VARIANT_CONFIG`` dict.  Each tool maps to a
-different Docker image (thin layer on top of the shared
-``autobio-openmm-base`` image).
+A single catalog Tool, ``openmm``, exposes three Modes sharing the
+``OpenMMRunner`` runner class, dispatching by ``self.current_mode.name``
+using the ``_VARIANT_CONFIG`` dict. Each mode maps to a different Docker
+image (thin layer on top of the shared ``autobio-openmm-base`` image).
 
-Supported tools:
+Modes:
 
-- ``openmm_amber_minimize`` — Amber force field energy minimization with
+- ``amber_minimize`` (default) — Amber force field energy minimization with
   iterative violation checking (AlphaFold-style).
-- ``openmm_amber_relax`` — Full relaxation with explicit solvent (default),
+- ``amber_relax`` — Full relaxation with explicit solvent (default),
   including solvation, heating, NVT/NPT equilibration, and short production.
-- ``openmm_md_simulate`` — Production molecular dynamics simulation with
+- ``md_simulate`` — Production molecular dynamics simulation with
   trajectory and energy time series output.
 """
 
@@ -22,7 +22,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from autobio.core.registry import TOOL_REGISTRY, ToolCategory, ToolEntry
+from autobio.core.catalog import Mode, Tool, register
+from autobio.core.registry import ToolCategory
 from autobio.core.result import AutobioError
 from autobio.schemas.base import BaseInput, BaseOutput  # noqa: TC001 - needed at runtime
 from autobio.schemas.scoring import ScoredStructure, ScoringInput, ScoringOutput
@@ -42,7 +43,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _VARIANT_CONFIG: dict[str, dict[str, Any]] = {
-    "openmm_amber_minimize": {
+    "amber_minimize": {
         "protocol": "amber_minimize",
         "produces_structure": True,
         "default_force_field": "amber14-all.xml",
@@ -53,7 +54,7 @@ _VARIANT_CONFIG: dict[str, dict[str, Any]] = {
         "default_implicit_solvent": True,
         "default_max_outer_iterations": 20,
     },
-    "openmm_amber_relax": {
+    "amber_relax": {
         "protocol": "amber_relax",
         "produces_structure": True,
         "default_force_field": "amber14-all.xml",
@@ -74,7 +75,7 @@ _VARIANT_CONFIG: dict[str, dict[str, Any]] = {
         "default_npt_steps": 50000,
         "default_production_steps": 25000,
     },
-    "openmm_md_simulate": {
+    "md_simulate": {
         "protocol": "md_simulate",
         "produces_structure": True,
         "produces_trajectory": True,
@@ -156,17 +157,18 @@ _ALLOWED_TRAJECTORY_FORMATS = frozenset({"dcd", "xtc", "pdb"})
 
 
 class OpenMMRunner(ToolRunner):
-    """Runner for OpenMM molecular simulation tools.
+    """Runner for the OpenMM amber_minimize/amber_relax/md_simulate modes.
 
-    Dispatches by ``tool_name`` to support minimize, relax, and MD simulate
-    variants. Scoring-type tools (minimize, relax) use
-    :class:`ScoringInput`/:class:`ScoringOutput`. The MD simulation tool uses
+    Dispatches by ``self.current_mode.name`` to support minimize, relax, and
+    MD simulate modes. Scoring-type modes (minimize, relax) use
+    :class:`ScoringInput`/:class:`ScoringOutput`. The MD simulation mode uses
     :class:`SimulationInput`/:class:`SimulationOutput`.
     """
 
     def prepare_workspace(self, input_data: BaseInput, workspace: Workspace) -> None:
         """Write config.json and copy input structure into the workspace."""
-        variant_cfg = _VARIANT_CONFIG[self.tool_name]
+        assert self.current_mode is not None
+        variant_cfg = _VARIANT_CONFIG[self.current_mode.name]
 
         if variant_cfg.get("produces_trajectory"):
             assert isinstance(input_data, SimulationInput)
@@ -179,7 +181,8 @@ class OpenMMRunner(ToolRunner):
 
     def parse_output(self, workspace: Workspace) -> BaseOutput:
         """Read standardised outputs and return the appropriate output model."""
-        variant_cfg = _VARIANT_CONFIG[self.tool_name]
+        assert self.current_mode is not None
+        variant_cfg = _VARIANT_CONFIG[self.current_mode.name]
 
         if variant_cfg.get("produces_trajectory"):
             return self._parse_simulation_output(workspace)
@@ -430,7 +433,7 @@ class OpenMMRunner(ToolRunner):
 
 
 # ---------------------------------------------------------------------------
-# Registry entries — populated when this module is imported
+# Catalog registration — populated when this module is imported
 # ---------------------------------------------------------------------------
 
 _AMBER_MINIMIZE_NOTES = (
@@ -462,27 +465,7 @@ _AMBER_MINIMIZE_INPUT_FORMAT = (
     "ligands are not supported in the current Amber force field workflow.",
 )
 
-TOOL_REGISTRY["openmm_amber_minimize"] = ToolEntry(
-    image_tag="openmm-amber-minimize:1.1.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=600,
-    supports_batch=False,
-    description=(
-        "Minimize a protein structure using OpenMM with the Amber force "
-        "field and iterative violation checking (AlphaFold-style). "
-        "Resolves steric clashes and refines geometry through repeated "
-        "minimization rounds, excluding violating residues from restraints "
-        "at each iteration. Reports final energy in kJ/mol with a "
-        "per-force-type breakdown. Produces a refined PDB structure."
-    ),
-    version="1.1.0",
-    notes=_AMBER_MINIMIZE_NOTES,
-    input_format=_AMBER_MINIMIZE_INPUT_FORMAT,
-)
+_MINIMIZE_MODE_NOTES = _AMBER_MINIMIZE_NOTES + _AMBER_MINIMIZE_INPUT_FORMAT
 
 # ---------------------------------------------------------------------------
 
@@ -518,26 +501,7 @@ _AMBER_RELAX_INPUT_FORMAT = (
     "supported in the current Amber force field workflow.",
 )
 
-TOOL_REGISTRY["openmm_amber_relax"] = ToolEntry(
-    image_tag="openmm-amber-relax:1.1.0",
-    category=ToolCategory.SCORING,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=ScoringInput,
-    output_schema=ScoringOutput,
-    default_timeout=3600,
-    supports_batch=False,
-    description=(
-        "Fully relax a protein structure using OpenMM with the Amber force "
-        "field and explicit solvent. Builds a solvated system with counter-"
-        "ions, minimizes energy, heats gradually, equilibrates under NVT and "
-        "NPT ensembles, and runs a short production simulation. Returns a "
-        "refined, solvent-stripped protein structure with energy in kJ/mol."
-    ),
-    version="1.1.0",
-    notes=_AMBER_RELAX_NOTES,
-    input_format=_AMBER_RELAX_INPUT_FORMAT,
-)
+_RELAX_MODE_NOTES = _AMBER_RELAX_NOTES + _AMBER_RELAX_INPUT_FORMAT
 
 # ---------------------------------------------------------------------------
 
@@ -571,23 +535,79 @@ _MD_SIMULATE_INPUT_FORMAT = (
     "residues or ligands are not supported.",
 )
 
-TOOL_REGISTRY["openmm_md_simulate"] = ToolEntry(
-    image_tag="openmm-md-simulate:1.1.0",
-    category=ToolCategory.SIMULATION,
-    requires_gpu=True,
-    gpu_count=1,
-    input_schema=SimulationInput,
-    output_schema=SimulationOutput,
-    default_timeout=86400,
-    supports_batch=False,
+_SIMULATE_MODE_NOTES = _MD_SIMULATE_NOTES + _MD_SIMULATE_INPUT_FORMAT
+
+OPENMM_TOOL = Tool(
+    name="openmm",
+    display_name="OpenMM",
+    category=ToolCategory.SCORING,
     description=(
-        "Run production molecular dynamics using OpenMM with the Amber "
-        "force field and explicit solvent. Builds a solvated system, "
-        "equilibrates, and runs production MD. Produces a DCD trajectory, "
-        "energy time series with temperature and pressure data, and a "
-        "final protein-only PDB structure."
+        "OpenMM molecular mechanics engine (Amber force field). Modes: "
+        "amber_minimize (AlphaFold-style energy minimization), amber_relax "
+        "(full relaxation with explicit solvent), and md_simulate (production "
+        "molecular dynamics with trajectory output)."
     ),
     version="1.1.0",
-    notes=_MD_SIMULATE_NOTES,
-    input_format=_MD_SIMULATE_INPUT_FORMAT,
+    image_tag="openmm-amber-minimize:1.1.0",
+    requires_gpu=True,
+    gpu_count=1,
+    default_mode="amber_minimize",
+    modes={
+        "amber_minimize": Mode(
+            name="amber_minimize",
+            display_name="Amber minimize",
+            description=(
+                "Amber force-field energy minimization with iterative violation "
+                "checking (AlphaFold-style). Produces a refined PDB and energy in kJ/mol."
+            ),
+            input_schema=ScoringInput,
+            output_schema=ScoringOutput,
+            default_timeout=600,
+            image_tag="openmm-amber-minimize:1.1.0",
+            notes=_MINIMIZE_MODE_NOTES,
+        ),
+        "amber_relax": Mode(
+            name="amber_relax",
+            display_name="Amber relax",
+            description=(
+                "Full relaxation with explicit solvent (default): solvation, "
+                "minimization, heating, NVT/NPT equilibration, and short production. "
+                "Returns a refined, solvent-stripped structure with energy in kJ/mol."
+            ),
+            input_schema=ScoringInput,
+            output_schema=ScoringOutput,
+            default_timeout=3600,
+            image_tag="openmm-amber-relax:1.1.0",
+            notes=_RELAX_MODE_NOTES,
+        ),
+        "md_simulate": Mode(
+            name="md_simulate",
+            display_name="MD simulate",
+            description=(
+                "Production molecular dynamics with the Amber force field and "
+                "explicit solvent. Produces a trajectory (DCD/XTC/PDB), energy "
+                "time series, and a final protein-only PDB."
+            ),
+            input_schema=SimulationInput,
+            output_schema=SimulationOutput,
+            default_timeout=86400,
+            image_tag="openmm-md-simulate:1.1.0",
+            category=ToolCategory.SIMULATION,
+            notes=_SIMULATE_MODE_NOTES,
+        ),
+    },
+    keywords=(
+        "openmm",
+        "molecular dynamics",
+        "md",
+        "minimize",
+        "relax",
+        "simulation",
+        "amber",
+        "force field",
+        "energy",
+    ),
 )
+"""Catalog Tool for OpenMM (amber_minimize + amber_relax + md_simulate modes)."""
+
+register(OPENMM_TOOL)
