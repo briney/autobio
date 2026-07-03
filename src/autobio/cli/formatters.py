@@ -219,21 +219,20 @@ def format_tool_info_catalog(tool: Tool, fmt: OutputFormat = OutputFormat.TABLE)
     Returns:
         Formatted string.
     """
-    modes = [
-        {
-            "name": mode.name,
-            "display_name": mode.display_name,
-            "description": mode.description,
-            "category": (mode.category or tool.category).value,
-            "default_timeout": mode.default_timeout,
-            "supports_batch": mode.supports_batch,
-            "input_schema": mode.input_schema.model_json_schema(),
-            "output_schema": mode.output_schema.model_json_schema(),
-        }
-        for mode in tool.modes.values()
-    ]
-
     if fmt == OutputFormat.JSON:
+        modes = [
+            {
+                "name": mode.name,
+                "display_name": mode.display_name,
+                "description": mode.description,
+                "category": (mode.category or tool.category).value,
+                "default_timeout": mode.default_timeout,
+                "supports_batch": mode.supports_batch,
+                "input_schema": mode.input_schema.model_json_schema(),
+                "output_schema": mode.output_schema.model_json_schema(),
+            }
+            for mode in tool.modes.values()
+        ]
         data = {
             "name": tool.name,
             "display_name": tool.display_name,
@@ -264,11 +263,12 @@ def format_tool_info_catalog(tool: Tool, fmt: OutputFormat = OutputFormat.TABLE)
     if tool.keywords:
         table.add_row("Keywords", ", ".join(tool.keywords))
     table.add_row("Default Mode", tool.default_mode)
-    for mode in modes:
+    for mode in tool.modes.values():
+        category = (mode.category or tool.category).value
         table.add_row(
-            f"Mode: {mode['name']}",
-            f"{mode['display_name']} — {mode['description']} "
-            f"(category={mode['category']}, timeout={mode['default_timeout']}s)",
+            f"Mode: {mode.name}",
+            f"{mode.display_name} — {mode.description} "
+            f"(category={category}, timeout={mode.default_timeout}s)",
         )
     return _render_table(table)
 

@@ -188,6 +188,16 @@ def test_parse_output_multiple_embeddings(tmp_path: Path) -> None:
         ws.cleanup()
 
 
+def test_extra_shadowing_typed_field_rejected(tmp_path: Path) -> None:
+    from autobio.schemas.embedding import ESMEmbedInput
+
+    runner = _make_runner("esm1b")
+    with pytest.raises(AutobioError, match="shadow typed input fields"):
+        _written_config(
+            runner, ESMEmbedInput(sequences={"s1": "MKT"}, extra={"layer": 5}), tmp_path
+        )
+
+
 def test_info_snapshot_esm2() -> None:
     import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog
@@ -204,3 +214,13 @@ def test_info_snapshot_esm2() -> None:
     assert props["checkpoint"]["x-autobio"]["widget"] == "select"
     assert props["checkpoint"]["default"] == "650M"
     assert "output_schema" in parsed["modes"][0]
+
+
+def test_esm_tool_constants_registered() -> None:
+    import autobio.tools  # noqa: F401
+    from autobio.tools.esm import ESM1B_TOOL, ESM2_TOOL
+
+    assert ESM1B_TOOL.name == "esm1b"
+    assert ESM2_TOOL.name == "esm2"
+    assert get_tool("esm1b") is ESM1B_TOOL
+    assert get_tool("esm2") is ESM2_TOOL

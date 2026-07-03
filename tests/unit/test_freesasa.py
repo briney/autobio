@@ -112,6 +112,28 @@ def test_bsa_overlapping_partners_rejected(_pdb: Path, tmp_path: Path) -> None:
         )
 
 
+def test_extra_shadowing_typed_field_rejected(_pdb: Path, tmp_path: Path) -> None:
+    from autobio.schemas.scoring import FreeSASASASAInput
+
+    runner = _make_runner("sasa")
+    with pytest.raises(AutobioError, match="shadow typed input fields"):
+        _written_config(
+            runner,
+            FreeSASASASAInput(structure_path=_pdb, extra={"probe_radius": 2.0}),
+            tmp_path,
+        )
+
+
+def test_extra_unknown_key_passed_through(_pdb: Path, tmp_path: Path) -> None:
+    from autobio.schemas.scoring import FreeSASASASAInput
+
+    runner = _make_runner("sasa")
+    cfg = _written_config(
+        runner, FreeSASASASAInput(structure_path=_pdb, extra={"custom_flag": True}), tmp_path
+    )
+    assert cfg["custom_flag"] is True
+
+
 def test_info_snapshot_freesasa() -> None:
     import autobio.tools  # noqa: F401
     from autobio.cli.formatters import OutputFormat, format_tool_info_catalog

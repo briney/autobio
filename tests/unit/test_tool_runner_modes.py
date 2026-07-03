@@ -32,6 +32,14 @@ class _Output(BaseOutput):
     pass
 
 
+class _TypedInput(BaseInput):
+    alpha_param: int = 0
+
+
+def _typed_mode() -> Mode:
+    return Mode("alpha", "Alpha", "a", _TypedInput, _Output, default_timeout=111)
+
+
 class _CaptureRunner(ToolRunner):
     """Records the mode active during prepare_workspace; minimal parse_output."""
 
@@ -106,6 +114,23 @@ def test_resolve_mode_unknown_raises() -> None:
     runner = _make_runner("faketool")
     with pytest.raises(AutobioError, match="Unknown mode"):
         runner._resolve_mode("gamma")
+
+
+def test_apply_extra_passes_through_unknown_keys() -> None:
+    _register_faketool()
+    runner = _make_runner("faketool")
+    runner.current_mode = _typed_mode()
+    config: dict[str, object] = {"base": 1}
+    runner._apply_extra(config, _TypedInput(extra={"beta_param": 7}))
+    assert config == {"base": 1, "beta_param": 7}
+
+
+def test_apply_extra_rejects_shadowing_typed_field() -> None:
+    _register_faketool()
+    runner = _make_runner("faketool")
+    runner.current_mode = _typed_mode()
+    with pytest.raises(AutobioError, match="shadow typed input fields: alpha_param"):
+        runner._apply_extra({}, _TypedInput(extra={"alpha_param": 5}))
 
 
 def test_image_and_timeout_use_mode_override() -> None:
