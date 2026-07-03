@@ -202,6 +202,20 @@ _RFD3_NOTES = (
     "Advanced sampler args: 'use_classifier_free_guidance' (bool), "
     "'cfg_scale' (float), 'cfg_features' (list), 'noise_scale' (float), "
     "'s_jitter_origin' (float), 'allow_realignment' (bool).",
+    # Use-case recipes
+    "Common use case patterns for design_specs entries: "
+    "(1) Protein binder: set 'input' (target PDB), 'contig' (designed + target "
+    "residues), 'select_hotspots' (target interface atoms), "
+    "'infer_ori_strategy': 'hotspots', 'is_non_loopy': true. "
+    "(2) Unconditioned design: set 'length' (e.g., '100' or '80-120'), no "
+    "'input' needed. "
+    "(3) Enzyme design: set 'input', 'ligand' (component codes), 'unindex' "
+    "(catalytic residues to float), 'select_fixed_atoms' (key atoms). "
+    "(4) Nucleic acid binder: set 'input', 'contig', 'select_hbond_donor' "
+    "and 'select_hbond_acceptor' on nucleic acid residues. "
+    "(5) Partial diffusion: set 'input', 'partial_t' (noise level in Å, "
+    "recommended 5.0-15.0). "
+    "(6) Symmetric design: add 'symmetry': {'id': 'C3'} (C or D groups).",
 )
 
 RFD3_TOOL = Tool(
