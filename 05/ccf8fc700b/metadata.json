@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.7.8",
+  "checkpoint_version": "branch-v1",
+  "checkpoint_id": "05ccf8fc700b",
+  "strategy": "manual-commit",
+  "branch": "feature/tools-modes-plan4j-antibody-lm",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/05/ccf8fc700b/0/metadata.json",
+      "transcript": "/05/ccf8fc700b/0/full.jsonl",
+      "compact_transcript": "/05/ccf8fc700b/0/transcript.jsonl",
+      "content_hash": "/05/ccf8fc700b/0/content_hash.txt",
+      "prompt": "/05/ccf8fc700b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42064,
+    "cache_creation_tokens": 2229509,
+    "cache_read_tokens": 193629116,
+    "output_tokens": 709519,
+    "api_call_count": 411
+  }
+}
