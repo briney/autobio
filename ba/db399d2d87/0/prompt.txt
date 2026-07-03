@@ -734,3 +734,7 @@ None.
 **Reasoning:** The migration achieves its stated success criterion — byte-for-byte-compatible `config.json` and generated `input.yaml`, backed by genuine full-dict/full-string equality pins — with the promotion complete, `StructurePredictionInput` untouched, and the two-Tools-one-runner pattern correct. The only substantive finding (unrendered `Mode.notes`) is a pre-existing cross-cutting formatter gap that 4b did not introduce and partially mitigated; it is appropriate to defer to the contracts/teardown plan rather than block this PR.</result>
 <usage><subagent_tokens>107258</subagent_tokens><tool_uses>11</tool_uses><duration_ms>226445</duration_ms></usage>
 </task-notification>
+
+---
+
+For the one thing that needs my decision: let's add `notes` to `autobio info` output so that the agent-facing guidance is visible to agents. PR #11 is merged and branch deleted. Ready to move on to 4c
